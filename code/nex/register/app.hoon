@@ -42,7 +42,7 @@
             info+s+'Baby Steps Camino sign-up and backoffice'
             color+s+'#0b7fc2'
             image+s+'/grubbery/tiles/icon/register'
-            href+s+'/apps/register/admin'
+            href+s+'/apps/register/'
         ==
       =/  link=json
         (pairs:enjs:format ~[['name' s+'register'] ['description' s+'Baby Steps Camino registration']])
@@ -128,7 +128,7 @@
   |=  [=from:fiber:nexus =sage:tarball]
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
-  ?.  =([/ %json] p.sage)  (pure:m |)
+  ?.  =([/ %json] p.sage)  (refuse 'poke' 'not json')
   ;<  our=@p  bind:m  get-our:io
   =/  src=(unit @p)  (get-poke-src:io from)
   ?.  ?|(?=(~ src) =(our u.src))
@@ -183,7 +183,7 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
-  =/  ms=@ud  ?:((lth now ~1970.1.1) 0 (div (sub now ~1970.1.1) (div ~s1 1.000)))
+  =/  ms=@ud  ?:((lth now ~1970.1.1) 0 (div (mul 1.000 (sub now ~1970.1.1)) ~s1))
   (over:io (rf 0 /beacon %rev) [[/ %json] (numb:enjs:format ms)])
 ::  +by-of: who a poke says acted, capped
 ::
@@ -255,6 +255,8 @@
     ?~  cur  (new-reg:reg rid (gs:reg jon 'token') %web p.got now)
     (with-input:reg u.cur p.got)
   ;<  regs=(list reg:reg)  bind:m  (load-regs 0)
+  =/  dup=(unit reg:reg)  (dup-of regs email.contact.base rid)
+  ?^  dup  (refuse 'submit' 'email: already registered')
   =/  c=counts:reg  (tally:reg s regs now)
   =/  sold=(unit @t)  (socials-ok:reg s c people.base)
   ?^  sold  (refuse 'submit' u.sold)
@@ -304,7 +306,10 @@
   (pure:m &)
 ::  +do-advance: one step of the flow, with what the step recorded: the
 ::  waiver's envelope, the payment's session. The route computed the
-::  step; the machine refuses one that does not follow.
+::  step; the machine refuses one that does not follow. A `position`
+::  key, when present, is written as given: on a lapsed hold going to
+::  the wait list the route had just read the tree, so the writer takes
+::  its word rather than folding the caps a second time.
 ::
 ++  do-advance
   |=  jon=json
@@ -336,6 +341,8 @@
   =/  r=reg:reg
     ?~  wj  r
     r(waiver [`@tas`(gs:reg wj 'method') (gs:reg wj 'envelope') `@tas`(gs:reg wj 'status') `now])
+  =/  posn=(unit @ud)  (gn:reg jon 'position')
+  =/  r=reg:reg  ?~(posn r r(position u.posn))
   =/  r=reg:reg  (set-status:reg r to by (end [3 max-notes:reg] (gs:reg jon 'what')) now)
   ;<  ~  bind:m  (write-reg 0 r |)
   ;<  ~  bind:m  (note-rid 'advance' & to by rid)
@@ -633,6 +640,9 @@
   |=  [eyre-id=@ta jon=json]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  s=settings:reg  bind:m  (read-settings 1)
+  ?.  (window-open:reg s now)  (send-err eyre-id 403 'closed')
   =/  got  (de-input:reg jon |)
   ?:  ?=(%| -.got)  (send-err eyre-id 400 p.got)
   =/  want=@t  (gs:reg jon 'rid')
@@ -692,13 +702,29 @@
     ==
   ;<  err=(unit tang)  bind:m  (poke-writer pk)
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  =/  posn=@ud  ?:(=(%waitlist to) +(waitlist.c) 0)
+  ::  the stub email: only the subject, so no {{link}} body reaches the ring
+  ;<  ~  bind:m
+    ?.  =(%waitlist to)  (pure:m ~)
+    ;<  cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
+    =/  who=@t  ?~(people.p.got '' first.i.people.p.got)
+    =/  subj=@t
+      %+  fill:reg  (gs:reg cj 'email.waitlist.subject')
+      ~[['first' who] ['position' (crip (a-co:co posn))]]
+    ;<  *  bind:m
+      %-  poke-writer
+      %-  pairs:enjs:format
+      :~  ['op' s+'note']  ['what' s+'email.waitlist']  ['ok' b+&]
+          ['why' s+subj]  ['by' s+'stub']  ['rid' s+rid]
+      ==
+    (pure:m ~)
   =/  probe=reg:reg  (new-reg:reg rid token %web p.got now)
   %^  send-json  eyre-id  200
   %-  pairs:enjs:format
   :~  ['rid' s+rid]
       ['token' s+token]
       ['status' s+to]
-      ['position' (en-num:reg ?:(=(%waitlist to) +(waitlist.c) 0))]
+      ['position' (en-num:reg posn)]
       ['fees' (en-num:reg (fees-total:reg s probe))]
   ==
 ::  +serve-reg: the pilgrim's view of their own registration
@@ -711,13 +737,17 @@
   ?~  cur  (send-err eyre-id 404 'no such registration')
   ;<  now=@da  bind:m  get-time:io
   ;<  s=settings:reg  bind:m  (read-settings 1)
-  =/  j=json  (en-reg-pilgrim:reg u.cur (fees-total:reg s u.cur))
+  ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
+  =/  j=json
+    %-  en-reg-pilgrim:reg
+    [u.cur (fees-total:reg s u.cur) (position-of:reg regs u.cur)]
   ?.  ?=([%o *] j)  (send-json eyre-id 200 j)
   =/  extra=(map @t json)
     %-  malt
     ^-  (list [@t json])
     :~  ['changes_open' b+(changes-open:reg s now)]
         ['mode' s+mode.s]
+        ['lapsed' b+!(counted:reg s u.cur now)]
     ==
   (send-json eyre-id 200 [%o (~(uni by p.j) extra)])
 ::  +serve-edit: a change to an active registration. A pilgrim is held
@@ -783,6 +813,28 @@
   ;<  err=(unit tang)  bind:m  (poke-writer pk)
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-ok eyre-id)
+::  +lapse-to-waitlist: a hold that aged out while the track filled.
+::  The route reads the tree, decides, and tells the writer where the
+::  registration lands on the wait list.
+::
+++  lapse-to-waitlist
+  |=  [eyre-id=@ta s=settings:reg regs=(list reg:reg) r=reg:reg now=@da]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  c=counts:reg  (tally:reg s (without regs id.r) now)
+  =/  pk=json
+    %-  pairs:enjs:format
+    :~  ['op' s+'advance']  ['rid' s+id.r]  ['to' s+'waitlist']  ['by' s+'pilgrim']
+        ['what' s+'hold lapsed, wait listed']
+        ['position' (en-num:reg +(waitlist.c))]
+    ==
+  ;<  err=(unit tang)  bind:m  (poke-writer pk)
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  %^  send-json  eyre-id  409
+  %-  pairs:enjs:format
+  :~  ['error' s+'the track filled while your registration waited']
+      ['code' s+'waitlist']
+  ==
 ::  +serve-sign: the waiver step. In stub mode it completes itself; the
 ::  live branch is phase 2.
 ::
@@ -794,6 +846,10 @@
   ?~  cur  (send-err eyre-id 404 'no such registration')
   ?.  =(%waiver status.u.cur)  (send-err eyre-id 409 'not at the waiver step')
   ;<  s=settings:reg  bind:m  (read-settings 1)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
+  ?.  (room-for:reg s regs u.cur now)
+    (lapse-to-waitlist eyre-id s regs u.cur now)
   ?:  =(%live mode.s)  (send-err eyre-id 501 'signing is not configured yet')
   =/  to=@tas  (after-waiver:reg u.cur)
   =/  pk=json
@@ -816,6 +872,10 @@
   ?:  =(%assistance status.u.cur)  (send-err eyre-id 409 'awaiting the assistance decision')
   ?.  =(%payment status.u.cur)  (send-err eyre-id 409 'not at the payment step')
   ;<  s=settings:reg  bind:m  (read-settings 1)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
+  ?.  (room-for:reg s regs u.cur now)
+    (lapse-to-waitlist eyre-id s regs u.cur now)
   ?:  =(%live mode.s)  (send-err eyre-id 501 'payment is not configured yet')
   =/  fees=@ud  (fees-total:reg s u.cur)
   =/  pk=json
@@ -861,7 +921,7 @@
   =/  c=counts:reg  (tally:reg s regs now)
   %^  send-json  eyre-id  200
   %-  pairs:enjs:format
-  :~  ['regs' a+(turn regs |=(r=reg:reg (en-reg:reg r (fees-total:reg s r))))]
+  :~  ['regs' a+(turn regs |=(r=reg:reg (en-reg:reg r (fees-total:reg s r) (position-of:reg regs r))))]
       :-  'counts'
       %-  pairs:enjs:format
       :~  ['full' (en-num:reg full.c)]  ['bambino' (en-num:reg bambino.c)]
@@ -876,7 +936,9 @@
   ;<  cur=(unit reg:reg)  bind:m  (find-reg 1 ?:((ok-rid rid) `@ta`rid %$))
   ?~  cur  (send-err eyre-id 404 'no such registration')
   ;<  s=settings:reg  bind:m  (read-settings 1)
-  (send-json eyre-id 200 (en-reg:reg u.cur (fees-total:reg s u.cur)))
+  ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
+  %^  send-json  eyre-id  200
+  (en-reg:reg u.cur (fees-total:reg s u.cur) (position-of:reg regs u.cur))
 ::  +serve-admin-act: an organizer's action on one registration, named
 ::  by op. Phase 3 grows this list.
 ::
