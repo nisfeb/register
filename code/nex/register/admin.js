@@ -80,6 +80,28 @@
       throw e;
     });
   }
+  // the check-in route is the volunteers' own, not under /admin, so it
+  // needs its own call. It names the organizer the same way.
+  function writeApi(path, body) {
+    return api(API + path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-actor': actor },
+      body: JSON.stringify(body === undefined ? {} : body)
+    }).catch(function (e) {
+      if (e.status === 400 && /actor/.test(String(e.message))) askActor();
+      throw e;
+    });
+  }
+  // the party's check-ins for a day, as ticks
+  function ticks(r) {
+    var got = r.checked || {};
+    var out = DAYS.map(function (d) {
+      var n = Number(got[d[0]]) || 0;
+      if (!n) return '';
+      return '<span class="tag">' + esc(d[1].slice(0, 3)) + (n === Number(r.people) ? '' : ' ' + n) + '</span>';
+    }).join('');
+    return out || '<span class="muted">-</span>';
+  }
   function toLocal(iso) {
     if (!iso) return '';
     var d = new Date(iso);
@@ -309,7 +331,7 @@
       head('name', 'Party') + head('state', 'State') + head('status', 'Status') + head('track', 'Track') +
       '<th class="num">People</th><th class="num">Walkers</th>' +
       head('created', 'Created') + head('fees', 'Fees', ' num') +
-      '<th>Paid</th><th>Waiver</th><th>Flags</th></tr></thead><tbody>';
+      '<th>Paid</th><th>Waiver</th><th>Check-ins</th><th>Flags</th></tr></thead><tbody>';
     list.forEach(function (r) {
       var names = (r.names || []).join('; ');
       var flags = '';
@@ -331,6 +353,7 @@
         '<td class="num">' + esc(money(r.fees)) + '</td>' +
         '<td>' + esc(r.paid === 'none' ? '' : r.paid) + '</td>' +
         '<td>' + esc(r.waiver === 'none' ? '' : r.waiver) + '</td>' +
+        '<td>' + ticks(r) + '</td>' +
         '<td>' + flags + '</td></tr>';
     });
     out += '</tbody></table>';
@@ -396,6 +419,30 @@
       '<button type="button" class="btn small" data-act="resend">Send</button></div>';
     return out + '</div>';
   }
+  // +en-person carries each person's check-ins, so the organizer sees
+  // who was there, when, and who tapped, and can take one back
+  function checkinCard(r) {
+    var out = '<div class="card"><h3>Check-ins</h3>';
+    var any = false;
+    (r.people || []).forEach(function (p, i) {
+      var got = p.checkins || {};
+      var mine = DAYS.filter(function (d) { return got[d[0]]; });
+      if (mine.length) any = true;
+      out += '<p><strong>' + esc(p.first + ' ' + p.last) + '</strong>';
+      if (!mine.length) { out += ' <span class="muted">not checked in</span></p>'; return; }
+      out += '</p><ul class="hist">';
+      mine.forEach(function (d) {
+        var c = got[d[0]];
+        out += '<li><span class="when">' + esc(when(c.at)) + '</span> ' + esc(d[1]) +
+          ', by ' + esc(c.by) +
+          ' <button type="button" class="btn quiet small" data-act="undo-checkin" data-day="' +
+          esc(d[0]) + '" data-i="' + i + '">Undo</button></li>';
+      });
+      out += '</ul>';
+    });
+    if (!any) out += '<p class="muted">Nobody in this party has been checked in.</p>';
+    return out + '</div>';
+  }
   function historyCard(r) {
     var h = (r.history || []).slice().reverse();
     var out = '<div class="card"><h3>History</h3><ul class="hist">';
@@ -420,7 +467,7 @@
       '<dt>updated</dt><dd>' + esc(when(r.updated)) + '</dd>' +
       '<dt>exempt</dt><dd>' + (r.exempt ? 'yes' : 'no') + '</dd>' +
       (r.prior ? '<dt>was</dt><dd>' + esc(r.prior) + '</dd>' : '') + '</dl></div>';
-    out += paymentCard(r) + waiverCard(r) + actionsCard(r) + historyCard(r);
+    out += paymentCard(r) + waiverCard(r) + actionsCard(r) + checkinCard(r) + historyCard(r);
     return out + '</div></div>';
   }
   function addView() {
@@ -532,7 +579,8 @@
       sun: { walk: plan.sun, mass: 0, holy_hour: 0, social: 0, bus: plan.bus }
     };
     out += '<h2>Planned and actual, per day</h2><table><thead><tr><th>day</th>' +
-      ACTS.map(function (a) { return '<th class="num">' + esc(a[1]) + '</th>'; }).join('') + '</tr></thead><tbody>';
+      ACTS.map(function (a) { return '<th class="num">' + esc(a[1]) + '</th>'; }).join('') +
+      '<th class="num">Checked in</th></tr></thead><tbody>';
     DAYS.forEach(function (d) {
       out += '<tr><td>' + esc(d[1]) + '</td>';
       ACTS.forEach(function (a) {
@@ -540,9 +588,11 @@
         var got = getPath(cd, d[0] + '.' + a[0] + '.count');
         out += '<td class="num">' + esc(want) + (got === undefined || got === null || got === '' ? '' : ' / ' + esc(got)) + '</td>';
       });
-      out += '</tr>';
+      var seen = all.reduce(function (n, r) { return n + (Number((r.checked || {})[d[0]]) || 0); }, 0);
+      out += '<td class="num">' + esc(seen) + '</td></tr>';
     });
-    out += '</tbody></table><p class="help">Planned from the registrations, actual from the counts screen. ' +
+    out += '</tbody></table><p class="help">Planned from the registrations, actual from the counts screen, ' +
+      'checked in from the volunteers\' app. ' +
       'Mass and the Holy Hour are Friday choices and the bus is a party need, so those figures repeat rather than split by day.</p>';
     out += '<p>Sunday at the Shrine: <strong>' + esc(plan.sun) + '</strong> of ' + esc(sunCap) + ' across both tracks</p>' + meter(plan.sun, sunCap);
     out += '<p class="muted">' + esc(plan.people + ' people planned, ' + plan.walkers + ' walking, ' +
@@ -845,6 +895,15 @@
     if (a === 'refund') {
       if (!window.confirm('Mark this payment refunded?')) return;
       return act(function () { post({ op: 'refund', note: 'refunded by ' + actor }); });
+    }
+    if (a === 'undo-checkin') {
+      var undoDay = el.getAttribute('data-day');
+      var undoI = Number(el.getAttribute('data-i'));
+      return act(function () {
+        writeApi('/checkin', { day: undoDay, checkins: [{ rid: rid, i: undoI, undo: true }] })
+          .then(function () { say('check-in undone', true); later(); })
+          .catch(function (e) { say(e.message); });
+      });
     }
     if (a === 'waiver-paper') return act(function () { post({ op: 'waiver-paper' }); });
     if (a === 'recheck-waiver') return act(function () { post({ op: 'recheck-waiver' }); });
