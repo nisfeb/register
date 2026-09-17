@@ -9,7 +9,8 @@
   var status = null;          // the last /api/status
   var model = null;           // the form's data, the shape /api/submit takes
   var rid = null, token = null, mode = 'new';
-  var saveTimer = null, dirty = false;
+  var saveTimer = null, dirty = false, pending = null;
+  var leaving = null;         // the status the last write left; #next waits past it
   var routeGen = 0;           // bumped on every route() call; stale callbacks bail out
 
   // ---- helpers ----
@@ -36,7 +37,23 @@
     });
   }
   function post(path, body) {
-    return api(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
+    return api(path, { method: 'POST', keepalive: true, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
+  }
+  function wait(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+  // the writer applies after the answer leaves, so a read right after a
+  // write can still see the old status. Retry while it does.
+  function loadReg(id, tok, expectNot) {
+    var tries = 0;
+    function once() {
+      return api('/reg/' + id + '?t=' + encodeURIComponent(tok)).then(function (r) {
+        if (expectNot && r.status === expectNot && tries++ < 8) return wait(300).then(once);
+        return r;
+      }, function (e) {
+        if (expectNot && e.status === 404 && tries++ < 8) return wait(300).then(once);
+        throw e;
+      });
+    }
+    return once();
   }
   function blankPerson() {
     return { first: '', last: '', child: false, days: { fri: false, sat: false, sun: false }, sun_ten: false,
@@ -72,7 +89,8 @@
   function landing() {
     var pct = Math.min(100, Math.round(100 * status.counts.full / Math.max(1, status.caps.full)));
     var out = '<h1>' + esc(t('landing.title')) + '</h1><p>' + esc(t('landing.intro')) + '</p>';
-    out += '<div class="meter"><div class="bar"><div class="fill" style="width:' + pct + '%"></div></div>' +
+    out += '<div class="meter"><div class="bar" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100">' +
+      '<div class="fill" style="width:' + pct + '%"></div></div>' +
       '<div class="label">' + esc(t('landing.meter', { count: status.counts.full, cap: status.caps.full, percent: pct })) + '</div></div>';
     if (!status.open) return out + '<div class="card soft"><p>' + esc(t('landing.closed')) + '</p></div>';
     function door(track) {
@@ -155,8 +173,9 @@
   function nextStep(r) {
     var s = r.status, out = '';
     function block(key, vars) { return '<h1>' + esc(t('next.' + key + '.title')) + '</h1><p>' + esc(t('next.' + key + '.body', vars)) + '</p>'; }
-    if (s === 'waiver') out = block('waiver') + '<button type="button" class="btn" data-act="sign">' + esc(t('next.waiver.button')) + '</button>';
-    else if (s === 'payment') out = block('payment') + '<button type="button" class="btn" data-act="pay">' + esc(t('next.payment.button', { total: money(r.fees) })) + '</button>';
+    var lapsed = r.lapsed && (s === 'waiver' || s === 'payment') ? '<p class="muted">' + esc(t('next.lapsed')) + '</p>' : '';
+    if (s === 'waiver') out = block('waiver') + lapsed + '<button type="button" class="btn" data-act="sign">' + esc(t('next.waiver.button')) + '</button>';
+    else if (s === 'payment') out = block('payment') + lapsed + '<button type="button" class="btn" data-act="pay">' + esc(t('next.payment.button', { total: money(r.fees) })) + '</button>';
     else if (s === 'assistance') out = block('assistance');
     else if (s === 'waitlist') out = block('waitlist', { position: r.position });
     else if (s === 'complete') out = block('complete', { email: r.contact.email }) + '<p><a class="btn quiet" href="#manage/' + esc(rid) + '/' + esc(token) + '">' + esc(t('manage.title')) + '</a></p>';
@@ -188,16 +207,23 @@
     dirty = false;
     var body = JSON.parse(JSON.stringify(model));
     if (rid) { body.rid = rid; body.token = token; }
-    return post('/draft', body).then(function (d) { rid = d.rid; token = d.token; remember(); say(t('form.saving')); })
-      .catch(function () { say(''); });
+    pending = post('/draft', body).then(function (d) {
+      if (mode !== 'new') return;   // the form moved on; its rid is the submit's now
+      rid = d.rid; token = d.token; remember(); say(t('form.saving'));
+    }).catch(function () { say(''); });
+    return pending;
   }
   function submit() {
-    var body = JSON.parse(JSON.stringify(model));
-    if (rid) { body.rid = rid; body.token = token; }
     showError('');
-    post('/submit', body).then(function (d) {
-      rid = d.rid; token = d.token; try { sessionStorage.removeItem('bsc.draft'); } catch (e) { }
-      location.hash = '#next/' + rid + '/' + token;
+    // an autosave in flight owns the rid, so let it land first
+    Promise.resolve(pending).then(function () {
+      var body = JSON.parse(JSON.stringify(model));
+      if (rid) { body.rid = rid; body.token = token; }
+      return post('/submit', body).then(function (d) {
+        rid = d.rid; token = d.token; try { sessionStorage.removeItem('bsc.draft'); } catch (e) { }
+        leaving = 'draft';
+        location.hash = '#next/' + rid + '/' + token;
+      });
     }).catch(function (e) {
       if (e.code === 'duplicate') {
         showError(t('form.error.duplicate'), '<p><button type="button" class="btn quiet small" data-act="resend">' + esc(t('form.resend')) + '</button></p>');
@@ -214,6 +240,7 @@
     refreshStatus().then(function () {
       if (gen !== routeGen) return;
       if (parts[0] === 'form' && (parts[1] === 'full' || parts[1] === 'bambino')) {
+        if (!status.open) { mode = 'landing'; return render('<div class="card soft"><p>' + esc(t('landing.closed')) + '</p></div>'); }
         mode = 'new';
         if (!model || model.track !== parts[1]) {
           model = blankModel(parts[1]);
@@ -233,10 +260,13 @@
       }
       if (parts[0] === 'next' && parts[1] && parts[2]) {
         rid = parts[1]; token = parts[2]; mode = 'next';
-        return api('/reg/' + rid + '?t=' + encodeURIComponent(token)).then(function (r) {
+        var was = leaving;
+        return loadReg(rid, token, was).then(function (r) {
+          leaving = null;
           if (gen !== routeGen) return;
           render(nextStep(r));
         }).catch(function (e) {
+          leaving = null;
           if (gen !== routeGen) return;
           render('<div id="error"></div>'); showError(e.message);
         });
@@ -265,6 +295,9 @@
   function onChange(ev) {
     var el = ev.target, k = el.getAttribute('data-k');
     if (!k || !model) return;
+    var box = el.type === 'checkbox';
+    if (ev.type === 'change' && !box) return;
+    if (ev.type === 'input' && box) return;
     var val = el.type === 'checkbox' ? el.checked : el.value;
     setPath(model, k, val);
     // structural changes re-render; a keystroke only updates the fees
@@ -293,13 +326,21 @@
     }
     else if (act === 'sign' || act === 'pay') {
       el.disabled = true;
+      leaving = act === 'sign' ? 'waiver' : 'payment';
       post('/reg/' + rid + '/' + act + '?t=' + encodeURIComponent(token), {}).then(function (d) {
         if (d.url) { location.href = d.url; return; }
         route();
-      }).catch(function (e) { el.disabled = false; showError(e.message); });
+      }).catch(function (e) {
+        el.disabled = false;
+        // the hold lapsed and the track filled: the reg is wait listed now
+        if (e.code === 'waitlist') return route();
+        leaving = null;
+        showError(e.message);
+      });
     }
     else if (act === 'resend') {
-      post('/resend-link', { email: model.contact.email }).then(function () { showError(t('form.resend.done')); });
+      post('/resend-link', { email: model.contact.email }).then(function () { showError(t('form.resend.done')); })
+        .catch(function (e) { showError(e.message); });
     }
   });
   window.addEventListener('hashchange', route);
