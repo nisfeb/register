@@ -11,7 +11,7 @@
 ::    /counts.json         actual counts per day per activity
 ::    /beacon/rev          the change beacon, nested so it streams
 ::    /tr/last  /tr/log    the last writer outcome, the audit ring of 2000
-::    the page and the manifests     laid fresh on every load, not %fall
+::    the two pages and the manifests   laid fresh on every load, not %fall
 ::
 ::  ROADS ARE NEXUS-RELATIVE. A desk-installed app cannot learn its own
 ::  absolute path, so every road is [%| up lane], where up is the number
@@ -31,6 +31,9 @@
 /&  public-html  public.html
 /&  public-css   public.css
 /&  public-js    public.js
+/&  admin-html   admin.html
+/&  admin-css    admin.css
+/&  admin-js     admin.js
 =<  ^-  nexus:nexus
     |%
     ++  on-load
@@ -55,6 +58,9 @@
           [%over %& [/ %'public.html'] [[/ %mime] public-html]]
           [%over %& [/ %'public.css'] [[/ %mime] public-css]]
           [%over %& [/ %'public.js'] [[/ %mime] public-js]]
+          [%over %& [/ %'admin.html'] [[/ %mime] admin-html]]
+          [%over %& [/ %'admin.css'] [[/ %mime] admin-css]]
+          [%over %& [/ %'admin.js'] [[/ %mime] admin-js]]
           [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'web.sig'] [[/ %sig] ~]]
           [%fall %| /requests empty-dir:loader]
@@ -128,11 +134,13 @@
   |=  [=from:fiber:nexus =sage:tarball]
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
-  ?.  =([/ %json] p.sage)  (refuse 'poke' 'not json')
   ;<  our=@p  bind:m  get-our:io
   =/  src=(unit @p)  (get-poke-src:io from)
   ?.  ?|(?=(~ src) =(our u.src))
     (refuse 'poke' 'a foreign ship may not write here')
+  ::  a restore comes as a noun, not as JSON: a whole bundle in one poke
+  ?:  =([/register %bundle] p.sage)  (do-restore q.q.sage)
+  ?.  =([/ %json] p.sage)  (refuse 'poke' 'not json')
   =/  jon=json  (fall (mole |.(!<(json q.sage))) ~)
   =/  op=@t  (gs:reg jon 'op')
   ?:  =('save-draft' op)  (do-save-draft jon)
@@ -143,6 +151,13 @@
   ?:  =('promote' op)  (do-promote jon)
   ?:  =('assist' op)  (do-assist jon)
   ?:  =('note' op)  (do-note jon)
+  ?:  =('pay' op)  (do-pay jon)
+  ?:  =('set-waiver' op)  (do-set-waiver jon)
+  ?:  =('refund' op)  (do-refund jon)
+  ?:  =('exempt' op)  (do-exempt jon)
+  ?:  =('reinstate' op)  (do-reinstate jon)
+  ?:  =('set-notes' op)  (do-set-notes jon)
+  ?:  =('add' op)  (do-add jon)
   ?:  =('set-settings' op)  (do-set-doc %'settings.json' 'set-settings' jon)
   ?:  =('set-copy' op)  (do-set-doc %'copy.json' 'set-copy' jon)
   ?:  =('set-counts' op)  (do-set-doc %'counts.json' 'set-counts' jon)
@@ -300,7 +315,8 @@
   ?~  cur  (refuse 'cancel' 'no such registration')
   ?.  (transition-ok:reg status.u.cur %cancelled)  (refuse 'cancel' 'cannot cancel')
   =/  what=@t  (cat 3 'cancelled: ' (end [3 max-notes:reg] (gs:reg jon 'note')))
-  =/  r=reg:reg  (set-status:reg u.cur(position 0) %cancelled by what now)
+  =/  was=@tas  status.u.cur
+  =/  r=reg:reg  (set-status:reg u.cur(position 0, prior was) %cancelled by what now)
   ;<  ~  bind:m  (write-reg 0 r |)
   ;<  ~  bind:m  (note-rid 'cancel' & '' by rid)
   (pure:m &)
@@ -463,8 +479,8 @@
   ^-  form:m
   =/  road=road:tarball  (rf up /regs id.r)
   ?.  fresh
-    (over:io road [[/register %reg] `stored-reg:reg`[%1 r]])
-  ;<  *  bind:m  (make-gained-soft:io road |+[[[/register %reg] `stored-reg:reg`[%1 r]] ~])
+    (over:io road [[/register %reg] `stored-reg:reg`[%2 r]])
+  ;<  *  bind:m  (make-gained-soft:io road |+[[[/register %reg] `stored-reg:reg`[%2 r]] ~])
   (pure:m ~)
 ::  +poke-writer: one op to /main.sig from a request fiber
 ::
@@ -533,6 +549,9 @@
       %'public.html'  `'text/html; charset=utf-8'
       %'public.css'   `'text/css; charset=utf-8'
       %'public.js'    `'text/javascript; charset=utf-8'
+      %'admin.html'   `'text/html; charset=utf-8'
+      %'admin.css'    `'text/css; charset=utf-8'
+      %'admin.js'     `'text/javascript; charset=utf-8'
     ==
   ?~  ct  (send-err eyre-id 404 'no such file')
   ;<  vw=view:nexus  bind:m  (peek:io (rf 1 / name) `[/ %mime])
@@ -601,6 +620,12 @@
   ?:  &(=('POST' meth) ?=([%api %reg @ %sign ~] suffix))         (serve-sign eyre-id s2 tok)
   ?:  &(=('POST' meth) ?=([%api %reg @ %pay ~] suffix))          (serve-pay eyre-id s2 tok)
   ?:  &(=('POST' meth) ?=([%api %resend-link ~] suffix))         (serve-resend eyre-id jon)
+  ::  the backoffice itself. Without the cookie it is a redirect to
+  ::  eyre's login form, not a refusal: an organizer opened a link.
+  ?:  &(=('GET' meth) ?=([%admin ~] suffix))
+    ?.(owner (send-login eyre-id) (serve-file eyre-id %'admin.html'))
+  ?:  &(=('GET' meth) ?=([%'admin.css' ~] suffix))               (own (serve-file eyre-id %'admin.css'))
+  ?:  &(=('GET' meth) ?=([%'admin.js' ~] suffix))                (own (serve-file eyre-id %'admin.js'))
   ?:  &(=('GET' meth) ?=([%api %admin %regs ~] suffix))          (own (serve-regs eyre-id))
   ?:  &(=('GET' meth) ?=([%api %admin %reg @ ~] suffix))         (own (serve-admin-reg eyre-id s3))
   ?:  &(=('POST' meth) ?=([%api %admin %reg @ ~] suffix))        (own (act (serve-admin-act eyre-id s3 jon admin-by)))
@@ -608,6 +633,11 @@
   ?:  &(=('PUT' meth) ?=([%api %admin %settings ~] suffix))      (own (act (serve-set-settings eyre-id jon admin-by)))
   ?:  &(=('GET' meth) ?=([%api %admin %copy ~] suffix))          (own (serve-doc eyre-id %'copy.json'))
   ?:  &(=('PUT' meth) ?=([%api %admin %copy ~] suffix))          (own (act (serve-set-doc eyre-id 'set-copy' jon admin-by)))
+  ?:  &(=('GET' meth) ?=([%api %admin %counts ~] suffix))        (own (serve-doc eyre-id %'counts.json'))
+  ?:  &(=('PUT' meth) ?=([%api %admin %counts ~] suffix))        (own (act (serve-set-doc eyre-id 'set-counts' jon admin-by)))
+  ?:  &(=('POST' meth) ?=([%api %admin %add ~] suffix))          (own (act (serve-add eyre-id jon admin-by)))
+  ?:  &(=('GET' meth) ?=([%api %admin %export @ ~] suffix))      (own (serve-export eyre-id s3))
+  ?:  &(=('POST' meth) ?=([%api %admin %import ~] suffix))       (own (act (serve-import eyre-id jon args admin-by)))
   (send-err eyre-id 404 'no such route')
 ::  +with-reg: the registration a public route names, proven by its
 ::  token. A wrong token and a missing registration answer the same.
@@ -921,13 +951,20 @@
   =/  c=counts:reg  (tally:reg s regs now)
   %^  send-json  eyre-id  200
   %-  pairs:enjs:format
-  :~  ['regs' a+(turn regs |=(r=reg:reg (en-reg:reg r (fees-total:reg s r) (position-of:reg regs r))))]
+  :~  ['regs' a+(turn regs |=(r=reg:reg (en-row:reg r (fees-total:reg s r) (position-of:reg regs r))))]
       :-  'counts'
       %-  pairs:enjs:format
       :~  ['full' (en-num:reg full.c)]  ['bambino' (en-num:reg bambino.c)]
           ['social_fri' (en-num:reg social-fri.c)]  ['social_sat' (en-num:reg social-sat.c)]
           ['late' (en-num:reg late.c)]  ['waitlist' (en-num:reg waitlist.c)]
       ==
+      :-  'caps'
+      %-  pairs:enjs:format
+      :~  ['full' (en-num:reg full.caps.s)]  ['bambino' (en-num:reg bambino.caps.s)]
+          ['social_fri' (en-num:reg social-fri.caps.s)]  ['social_sat' (en-num:reg social-sat.caps.s)]
+          ['late_adds' (en-num:reg late.caps.s)]  ['party' (en-num:reg max-party:reg)]
+      ==
+      ['now' (en-time:reg now)]
   ==
 ++  serve-admin-reg
   |=  [eyre-id=@ta rid=@t]
@@ -940,7 +977,8 @@
   %^  send-json  eyre-id  200
   (en-reg:reg u.cur (fees-total:reg s u.cur) (position-of:reg regs u.cur))
 ::  +serve-admin-act: an organizer's action on one registration, named
-::  by op. Phase 3 grows this list.
+::  by op. Each op's status rule is checked here, so the page gets a
+::  409 with a reason rather than a silent refusal in the ring.
 ::
 ++  serve-admin-act
   |=  [eyre-id=@ta rid=@t jon=json by=@t]
@@ -949,17 +987,47 @@
   =/  op=@t  (gs:reg jon 'op')
   ?:  =('edit' op)  (serve-edit eyre-id rid '' (gj:reg jon 'input') by)
   ?:  =('cancel' op)  (serve-cancel eyre-id rid '' jon by)
+  ?:  =('recheck-waiver' op)  (send-err eyre-id 501 'waiver recheck is phase 2')
   ;<  cur=(unit reg:reg)  bind:m  (find-reg 1 ?:((ok-rid rid) `@ta`rid %$))
   ?~  cur  (send-err eyre-id 404 'no such registration')
+  ?:  =('resend' op)  (serve-resend-template eyre-id u.cur jon)
+  =/  r=reg:reg  u.cur
+  =/  meth=@t  (gs:reg jon 'method')
+  ?:  &(=('promote' op) !=(%waitlist status.r))  (send-err eyre-id 409 'not on the wait list')
+  ?:  &(=('assist' op) !=(%assistance status.r))  (send-err eyre-id 409 'not awaiting assistance')
+  ?:  &(=('pay' op) !?=(?(%payment %assistance) status.r))
+    (send-err eyre-id 409 'not awaiting payment')
+  ?:  &(=('pay' op) !?=(?(%check %cash %other) meth))
+    (send-err eyre-id 400 'method: check, cash or other')
+  ?:  &(=('waiver-paper' op) !(active:reg r))  (send-err eyre-id 409 'not active')
+  ?:  &(=('refund' op) =(%none method.payment.r))  (send-err eyre-id 409 'no payment to refund')
+  ?:  &(=('reinstate' op) !=(%cancelled status.r))  (send-err eyre-id 409 'not cancelled')
+  ?:  &(=('reinstate' op) =(%$ prior.r))  (send-err eyre-id 409 'nothing to reinstate to')
   =/  pk=(unit json)
     ?:  =('promote' op)
-      `(pairs:enjs:format ~[['op' s+'promote'] ['rid' s+id.u.cur] ['by' s+by]])
+      `(pairs:enjs:format ~[['op' s+'promote'] ['rid' s+id.r] ['by' s+by]])
     ?:  =('assist' op)
-      `(pairs:enjs:format ~[['op' s+'assist'] ['rid' s+id.u.cur] ['by' s+by] ['approve' b+(gb:reg jon 'approve')]])
+      `(pairs:enjs:format ~[['op' s+'assist'] ['rid' s+id.r] ['by' s+by] ['approve' b+(gb:reg jon 'approve')]])
+    ?:  =('pay' op)
+      :-  ~
+      %-  pairs:enjs:format
+      :~  ['op' s+'pay']  ['rid' s+id.r]  ['by' s+by]  ['method' s+meth]
+          ['amount' (en-num:reg (fall (gn:reg jon 'amount') 0))]
+          ['gift' (en-num:reg (fall (gn:reg jon 'gift') 0))]
+          ['ref' s+(gs:reg jon 'ref')]  ['note' s+(gs:reg jon 'note')]
+      ==
+    ?:  =('waiver-paper' op)
+      `(pairs:enjs:format ~[['op' s+'set-waiver'] ['rid' s+id.r] ['by' s+by]])
+    ?:  =('refund' op)
+      `(pairs:enjs:format ~[['op' s+'refund'] ['rid' s+id.r] ['by' s+by] ['note' s+(gs:reg jon 'note')]])
+    ?:  =('exempt' op)
+      `(pairs:enjs:format ~[['op' s+'exempt'] ['rid' s+id.r] ['by' s+by] ['on' b+(gb:reg jon 'on')]])
+    ?:  =('reinstate' op)
+      `(pairs:enjs:format ~[['op' s+'reinstate'] ['rid' s+id.r] ['by' s+by]])
+    ?:  =('note' op)
+      `(pairs:enjs:format ~[['op' s+'set-notes'] ['rid' s+id.r] ['by' s+by] ['notes' s+(gs:reg jon 'notes')]])
     ~
-  ?~  pk  (send-err eyre-id 400 'op: promote, assist, edit or cancel')
-  ?:  &(=('promote' op) !=(%waitlist status.u.cur))  (send-err eyre-id 409 'not on the wait list')
-  ?:  &(=('assist' op) !=(%assistance status.u.cur))  (send-err eyre-id 409 'not awaiting assistance')
+  ?~  pk  (send-err eyre-id 400 'op: not an organizer op this ship knows')
   ;<  err=(unit tang)  bind:m  (poke-writer u.pk)
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-ok eyre-id)
@@ -996,4 +1064,433 @@
   ;<  err=(unit tang)  bind:m  (poke-writer pk)
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-ok eyre-id)
+::  ==  the organizer's writer ops
+::
+::  +do-pay: an organizer records a check, cash or another payment. The
+::  route checked the status and the method.
+::
+++  do-pay
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  rid=@ta  (rid-of jon)
+  =/  by=@t  (by-of jon)
+  =/  meth=@t  (gs:reg jon 'method')
+  ?.  ?=(?(%check %cash %other) meth)  (refuse 'pay' 'method: check, cash or other')
+  ;<  now=@da  bind:m  get-time:io
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
+  ?~  cur  (refuse 'pay' 'no such registration')
+  ?.  ?=(?(%payment %assistance) status.u.cur)  (refuse 'pay' 'not awaiting payment')
+  =/  paid=payment:reg
+    :*  `@tas`meth
+        (fall (gn:reg jon 'amount') 0)
+        (fall (gn:reg jon 'gift') 0)
+        `now
+        (gs:reg jon 'ref')
+        |
+        (end [3 max-notes:reg] (gs:reg jon 'note'))
+    ==
+  =/  what=@t  (cat 3 'payment recorded: ' meth)
+  =/  r=reg:reg  (set-status:reg u.cur(payment paid) %complete by what now)
+  ;<  ~  bind:m  (write-reg 0 r |)
+  ;<  ~  bind:m  (note-rid 'pay' & meth by rid)
+  (pure:m &)
+::  +do-set-waiver: a waiver signed on paper. At the waiver step it also
+::  advances; anywhere else only the record changes.
+::
+++  do-set-waiver
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  rid=@ta  (rid-of jon)
+  =/  by=@t  (by-of jon)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
+  ?~  cur  (refuse 'set-waiver' 'no such registration')
+  ?.  (active:reg u.cur)  (refuse 'set-waiver' 'not active')
+  =/  base=reg:reg  u.cur(waiver [%paper '' %completed `now])
+  =/  what=@t  'waiver signed on paper'
+  =/  r=reg:reg
+    ?.  =(%waiver status.base)  (note-hist:reg base by what now)
+    (set-status:reg base (after-waiver:reg base) by what now)
+  ;<  ~  bind:m  (write-reg 0 r |)
+  ;<  ~  bind:m  (note-rid 'set-waiver' & status.r by rid)
+  (pure:m &)
+::  +do-refund: the money went back. The status does not move: the spot
+::  is freed by a cancel, not by a refund.
+::
+++  do-refund
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  rid=@ta  (rid-of jon)
+  =/  by=@t  (by-of jon)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
+  ?~  cur  (refuse 'refund' 'no such registration')
+  ?:  =(%none method.payment.u.cur)  (refuse 'refund' 'no payment to refund')
+  =/  note=@t  (end [3 max-notes:reg] (gs:reg jon 'note'))
+  =/  was=@t  note.payment.u.cur
+  =/  joined=@t
+    ?:  =('' note)  was
+    ?:  =('' was)  note
+    (rap 3 was '; ' note ~)
+  =/  p=payment:reg  payment.u.cur
+  =/  p2=payment:reg  p(refunded &, note (end [3 max-notes:reg] joined))
+  =/  r=reg:reg  (note-hist:reg u.cur(payment p2) by 'refunded' now)
+  ;<  ~  bind:m  (write-reg 0 r |)
+  ;<  ~  bind:m  (note-rid 'refund' & '' by rid)
+  (pure:m &)
+::  +do-exempt: the organizer's mark. An exempt party holds no spot on
+::  its track and none in the late-add pool.
+::
+++  do-exempt
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  rid=@ta  (rid-of jon)
+  =/  by=@t  (by-of jon)
+  =/  on=?  (gb:reg jon 'on')
+  ;<  now=@da  bind:m  get-time:io
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
+  ?~  cur  (refuse 'exempt' 'no such registration')
+  =/  what=@t  ?:(on 'marked exempt' 'exempt cleared')
+  =/  r=reg:reg  (note-hist:reg u.cur(exempt on) by what now)
+  ;<  ~  bind:m  (write-reg 0 r |)
+  ;<  ~  bind:m  (note-rid 'exempt' & what by rid)
+  (pure:m &)
+::  +do-reinstate: a cancel undone, back to the status it left
+::
+++  do-reinstate
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  rid=@ta  (rid-of jon)
+  =/  by=@t  (by-of jon)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
+  ?~  cur  (refuse 'reinstate' 'no such registration')
+  =/  got=(unit reg:reg)  (reinstate:reg u.cur by now)
+  ?~  got  (refuse 'reinstate' 'cannot reinstate')
+  =/  r=reg:reg  u.got(prior %$)
+  ;<  ~  bind:m  (write-reg 0 r |)
+  ;<  ~  bind:m  (note-rid 'reinstate' & status.r by rid)
+  (pure:m &)
+::  +do-set-notes: the organizers' private note on a registration
+::
+++  do-set-notes
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  rid=@ta  (rid-of jon)
+  =/  by=@t  (by-of jon)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
+  ?~  cur  (refuse 'set-notes' 'no such registration')
+  =/  notes=@t  (end [3 max-notes:reg] (gs:reg jon 'notes'))
+  =/  r=reg:reg  (note-hist:reg u.cur(notes notes) by 'notes changed' now)
+  ;<  ~  bind:m  (write-reg 0 r |)
+  ;<  ~  bind:m  (note-rid 'set-notes' & '' by rid)
+  (pure:m &)
+::  +do-add: an organizer's manual registration. No window and no cap:
+::  the organizer looked. The waiver and the payment the organizer took
+::  on the spot are applied in this one op, each with its history line.
+::
+++  do-add
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  rid=@ta  (rid-of jon)
+  ?:  =('' rid)  (refuse 'add' 'rid: bad')
+  =/  by=@t  (by-of jon)
+  =/  got  (de-input:reg (gj:reg jon 'input') &)
+  ?:  ?=(%| -.got)  (refuse 'add' p.got)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
+  ?^  cur  (refuse 'add' 'rid: taken')
+  =/  base=reg:reg  (new-reg:reg rid (gs:reg jon 'token') %admin p.got now)
+  =/  held=reg:reg
+    (set-status:reg base(exempt (gb:reg jon 'exempt')) %waiver by 'added by organizer' now)
+  =/  paper=?  (gb:reg jon 'waiver_paper')
+  =/  signed=reg:reg
+    ?.  paper  held
+    =/  w=reg:reg  held(waiver [%paper '' %completed `now])
+    (set-status:reg w (after-waiver:reg w) by 'waiver signed on paper' now)
+  =/  pj=json  (gj:reg jon 'paid')
+  =/  meth=@t  (gs:reg pj 'method')
+  =/  can-pay=?
+    ?&  ?=([%o *] pj)
+        ?=(?(%check %cash %other) meth)
+        ?=(?(%payment %assistance) status.signed)
+    ==
+  =/  r=reg:reg
+    ?.  can-pay  signed
+    =/  paid=payment:reg
+      :*  `@tas`meth
+          (fall (gn:reg pj 'amount') 0)
+          (fall (gn:reg pj 'gift') 0)
+          `now
+          (gs:reg pj 'ref')
+          |
+          (end [3 max-notes:reg] (gs:reg pj 'note'))
+      ==
+    =/  what=@t  (cat 3 'payment recorded: ' meth)
+    (set-status:reg signed(payment paid) %complete by what now)
+  ;<  ~  bind:m  (write-reg 0 r &)
+  ;<  ~  bind:m  (note-rid 'add' & status.r by rid)
+  (pure:m &)
+::  +do-restore: a backup applied. Every registration in the bundle is
+::  written, fresh or over the one that is there, with a history line.
+::  The three documents are replaced, with a masked secret keeping the
+::  stored one. With wipe, a registration the bundle does not name is
+::  culled, which is the true restore.
+::
+++  do-restore
+  |=  n=*
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  got=(unit [wipe=? by=@t b=bundle:reg])  (mole |.(;;([? @t bundle:reg] n)))
+  ?~  got  (refuse 'restore' 'the bundle did not read')
+  =/  wipe=?  wipe.u.got
+  =/  by=@t  by.u.got
+  =/  b=bundle:reg  b.u.got
+  ;<  now=@da  bind:m  get-time:io
+  ;<  have=(list reg:reg)  bind:m  (load-regs 0)
+  =/  here=(set @ta)  (sy (turn have |=(r=reg:reg id.r)))
+  =/  keep=(set @ta)  (sy (turn regs.b |=(r=reg:reg id.r)))
+  =/  dead=(list @ta)
+    (skim (turn have |=(r=reg:reg id.r)) |=(i=@ta !(~(has in keep) i)))
+  =/  marked=(list reg:reg)
+    (turn regs.b |=(r=reg:reg (note-hist:reg r by 'restored from backup' now)))
+  ;<  ~  bind:m  (restore-regs here marked)
+  ;<  sj=json  bind:m  (read-json (rf 0 / %'settings.json'))
+  ;<  ~  bind:m  (over:io (rf 0 / %'settings.json') [[/ %json] (unmask:reg settings.b sj)])
+  ;<  ~  bind:m  (over:io (rf 0 / %'copy.json') [[/ %json] copy.b])
+  ;<  ~  bind:m  (over:io (rf 0 / %'counts.json') [[/ %json] counts.b])
+  =/  doomed=(list @ta)  ?:(wipe dead ~)
+  ;<  ~  bind:m  (cull-each 0 /regs doomed)
+  =/  culled=@ud  (lent doomed)
+  =/  wrote=@t  (crip (a-co:co (lent regs.b)))
+  =/  gone=@t  (crip (a-co:co culled))
+  =/  why=@t  (rap 3 'restored ' wrote ' registrations, culled ' gone ~)
+  ;<  ~  bind:m  (note-rid 'restore' & why by '')
+  (pure:m &)
+::  +restore-regs: one write per registration, fresh ones with retention
+::
+++  restore-regs
+  |=  [here=(set @ta) regs=(list reg:reg)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  regs  (pure:m ~)
+  ;<  ~  bind:m  (write-reg 0 i.regs !(~(has in here) id.i.regs))
+  (restore-regs here t.regs)
+::  +cull-each: remove each named grub from a directory, best effort
+::
+++  cull-each
+  |=  [up=@ud dir=path names=(list @ta)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  names  (pure:m ~)
+  ;<  *  bind:m  (cull-soft:io (rf up dir i.names))
+  (cull-each up dir t.names)
+::  ==  the backoffice's HTTP helpers
+::
+::  +send-login: eyre's own login form, so an organizer who opens the
+::  link gets asked for the code instead of a bare refusal
+::
+++  send-login
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  heads  ~[['location' '/~/login?redirect=/apps/register/admin']]
+  (send-simple:srv eyre-id [[302 heads] ~])
+::  +send-download: a file the browser saves
+::
+++  send-download
+  |=  [eyre-id=@ta ctype=@t fname=@t body=octs]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  heads
+    :~  ['content-type' ctype]
+        ['cache-control' 'no-store']
+        ['content-disposition' (rap 3 'attachment; filename="' fname '"' ~)]
+    ==
+  (send-simple:srv eyre-id [[200 heads] `body])
+++  min-date
+  |=  l=(list @da)
+  ^-  (unit @da)
+  ?~  l  ~
+  =/  out=@da  i.l
+  =/  rest=(list @da)  t.l
+  |-  ^-  (unit @da)
+  ?~  rest  `out
+  $(rest t.rest, out ?:((lth i.rest out) i.rest out))
+++  max-date
+  |=  l=(list @da)
+  ^-  (unit @da)
+  ?~  l  ~
+  =/  out=@da  i.l
+  =/  rest=(list @da)  t.l
+  |-  ^-  (unit @da)
+  ?~  rest  `out
+  $(rest t.rest, out ?:((gth i.rest out) i.rest out))
+::  +read-bundle: the tree as a bundle. The settings go out masked, as
+::  every settings read does, and a restore unmasks against the stored
+::  document, so a backup never carries a secret off the ship.
+::
+++  read-bundle
+  |=  up=@ud
+  =/  m  (fiber:fiber:nexus ,bundle:reg)
+  ^-  form:m
+  ;<  regs=(list reg:reg)  bind:m  (load-regs up)
+  ;<  sj=json  bind:m  (read-json (rf up / %'settings.json'))
+  ;<  cj=json  bind:m  (read-json (rf up / %'copy.json'))
+  ;<  nj=json  bind:m  (read-json (rf up / %'counts.json'))
+  (pure:m [%1 regs (mask:reg sj) cj nj])
+::  +serve-export: the four downloads
+::
+++  serve-export
+  |=  [eyre-id=@ta which=@ta]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  ?=(?(%'people.csv' %'regs.csv' %'bundle.json' %'bundle.jam') which)
+    (send-err eyre-id 404 'no such export')
+  ;<  now=@da  bind:m  get-time:io
+  ;<  s=settings:reg  bind:m  (read-settings 1)
+  ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
+  =/  day=@t  (end [3 10] (en-iso:reg now))
+  ?:  =(%'people.csv' which)
+    =/  fname=@t  (rap 3 'register-people-' day '.csv' ~)
+    =/  body=octs  (as-octs:mimes:html (csv-people:reg regs s))
+    (send-download eyre-id 'text/csv; charset=utf-8' fname body)
+  ?:  =(%'regs.csv' which)
+    =/  fname=@t  (rap 3 'register-regs-' day '.csv' ~)
+    =/  body=octs  (as-octs:mimes:html (csv-regs:reg regs s))
+    (send-download eyre-id 'text/csv; charset=utf-8' fname body)
+  ;<  b=bundle:reg  bind:m  (read-bundle 1)
+  ?:  =(%'bundle.json' which)
+    =/  fname=@t  (rap 3 'register-' day '.json' ~)
+    =/  body=octs  (as-octs:mimes:html (en:json:html (en-bundle:reg b)))
+    (send-download eyre-id 'application/json; charset=utf-8' fname body)
+  =/  a=@  (jam-bundle:reg b)
+  =/  fname=@t  (rap 3 'register-' day '.jam' ~)
+  (send-download eyre-id 'application/octet-stream' fname [(met 3 a) a])
+::  +serve-import: a jam or a JSON bundle, inspected with dry=1 and
+::  applied otherwise. A bundle that does not read answers 400 saying
+::  what was wrong with it, and nothing is written.
+::
+++  serve-import
+  |=  [eyre-id=@ta jon=json args=quay:eyre by=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  dry=?  =('1' (fall (get-key:kv:html-utils 'dry' args) ''))
+  =/  wipe=?  =('1' (fall (get-key:kv:html-utils 'wipe' args) ''))
+  =/  b64=@t  (gs:reg jon 'jam')
+  =/  got=(each bundle:reg @t)
+    ?.  =('' b64)
+      =/  dec=(unit (unit octs))  (mole |.((de:base64:mimes:html b64)))
+      ?~  dec  [%| 'jam: not base64']
+      ?~  u.dec  [%| 'jam: not base64']
+      =/  cued=(unit bundle:reg)  (cue-bundle:reg q.u.u.dec)
+      ?~  cued  [%| 'jam: not a register bundle']
+      [%& u.cued]
+    ?.  (has-key:reg jon 'bundle')  [%| 'jam or bundle is required']
+    (de-bundle-why:reg (gj:reg jon 'bundle'))
+  ?:  ?=(%| -.got)  (send-err eyre-id 400 p.got)
+  =/  b=bundle:reg  p.got
+  ;<  have=(list reg:reg)  bind:m  (load-regs 1)
+  ?:  dry
+    =/  here=(set @ta)  (sy (turn have |=(r=reg:reg id.r)))
+    =/  ids=(list @ta)  (turn regs.b |=(r=reg:reg id.r))
+    =/  stamps=(list @da)  (turn regs.b |=(r=reg:reg created.r))
+    =/  over=@ud  (lent (skim ids |=(i=@ta (~(has in here) i))))
+    =/  done=@ud  (lent (skim regs.b |=(r=reg:reg =(%complete status.r))))
+    =/  wl=@ud  (lent (skim regs.b |=(r=reg:reg =(%waitlist status.r))))
+    =/  gone=@ud  (lent (skim regs.b |=(r=reg:reg =(%cancelled status.r))))
+    %^  send-json  eyre-id  200
+    %-  pairs:enjs:format
+    :~  ['regs' (en-num:reg (lent regs.b))]
+        ['complete' (en-num:reg done)]
+        ['waitlist' (en-num:reg wl)]
+        ['cancelled' (en-num:reg gone)]
+        ['earliest' (en-maybe-time:reg (min-date stamps))]
+        ['latest' (en-maybe-time:reg (max-date stamps))]
+        ['event_days' (gj:reg (gj:reg settings.b 'event') 'days')]
+        ['overwrite' (en-num:reg over)]
+    ==
+  ;<  err=(unit tang)  bind:m
+    (poke-soft:io (rf 1 / %'main.sig') [[/register %bundle] [wipe by b]])
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  %^  send-json  eyre-id  200
+  (pairs:enjs:format ~[['ok' b+&] ['applied' (en-num:reg (lent regs.b))]])
+::  +serve-add: a manual registration. Strict input, the duplicate rule
+::  the pilgrims have, and no window or cap check at all.
+::
+++  serve-add
+  |=  [eyre-id=@ta jon=json by=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  got  (de-input:reg (gj:reg jon 'input') &)
+  ?:  ?=(%| -.got)  (send-err eyre-id 400 p.got)
+  ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
+  =/  dup=(unit reg:reg)  (dup-of regs email.contact.p.got %$)
+  ?^  dup
+    %^  send-json  eyre-id  409
+    (pairs:enjs:format ~[['error' s+'email: already registered'] ['code' s+'duplicate']])
+  ;<  eny=@uvJ  bind:m  get-entropy:io
+  =/  rid=@ta  (rid-from:reg eny)
+  =/  token=@t  (token-from:reg eny)
+  =/  paper=?  (gb:reg jon 'waiver_paper')
+  =/  pj=json  (gj:reg jon 'paid')
+  =/  meth=@t  (gs:reg pj 'method')
+  =/  paid=?  &(?=([%o *] pj) ?=(?(%check %cash %other) meth))
+  =/  after=@tas  ?:(assistance.p.got %assistance %payment)
+  =/  final=@tas  ?.(paper %waiver ?.(paid after %complete))
+  =/  pk=json
+    %-  pairs:enjs:format
+    :~  ['op' s+'add']  ['rid' s+rid]  ['token' s+token]  ['by' s+by]
+        ['input' (gj:reg jon 'input')]
+        ['exempt' b+(gb:reg jon 'exempt')]
+        ['waiver_paper' b+paper]
+        ['paid' pj]
+    ==
+  ;<  err=(unit tang)  bind:m  (poke-writer pk)
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  %^  send-json  eyre-id  200
+  (pairs:enjs:format ~[['rid' s+rid] ['token' s+token] ['status' s+final]])
+::  +serve-resend-template: phase 2 sends the mail. Here the subject is
+::  filled and noted in the ring, so a rehearsal reads what would go
+::  out. Never a body: a body carries the manage link.
+::
+++  serve-resend-template
+  |=  [eyre-id=@ta r=reg:reg jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  tpl=@t  (gs:reg jon 'template')
+  ::  the names carry underscores, which a term may not, so they are
+  ::  compared as cords
+  =/  known=?
+    ?|  =('confirmation' tpl)  =('manage' tpl)  =('promoted' tpl)
+        =('assistance_approved' tpl)  =('assistance_declined' tpl)
+        =('reminder' tpl)  =('cancelled' tpl)
+    ==
+  ?.  known
+    (send-err eyre-id 400 'template: not one of the seven')
+  ;<  cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
+  ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
+  =/  raw=@t  (gs:reg cj (rap 3 'email.' tpl '.subject' ~))
+  =/  who=@t  ?~(people.r '' first.i.people.r)
+  =/  posn=@t  (crip (a-co:co (position-of:reg regs r)))
+  =/  subj=@t
+    ?:  =('' raw)  (rap 3 'no copy for email.' tpl '.subject' ~)
+    (fill:reg raw ~[['first' who] ['position' posn]])
+  =/  pk=json
+    %-  pairs:enjs:format
+    :~  ['op' s+'note']  ['what' s+(rap 3 'email.' tpl ~)]  ['ok' b+&]
+        ['why' s+subj]  ['by' s+'stub']  ['rid' s+id.r]
+    ==
+  ;<  err=(unit tang)  bind:m  (poke-writer pk)
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  %^  send-json  eyre-id  200
+  (pairs:enjs:format ~[['ok' b+&] ['template' s+tpl] ['subject' s+subj]])
 --
