@@ -23,6 +23,20 @@ def get(path):
     return code, headers, body
 
 
+def head(path):
+    # a PNG body is not text, so an icon check reads the headers only
+    out = subprocess.run(['curl', '-s', '-m', '30', '-D', '-', '-o', '/dev/null', HOST + path],
+                         capture_output=True, text=True).stdout.replace('\r', '')
+    lines = out.split('\n')
+    code = int(lines[0].split(' ')[1]) if lines[0].startswith('HTTP/') else 0
+    headers = {}
+    for ln in lines[1:]:
+        k, _, v = ln.partition(':')
+        if k.strip():
+            headers[k.strip().lower()] = v.strip()
+    return code, headers
+
+
 def check(label, cond, detail=''):
     print(('  ok   ' if cond else '  FAIL ') + label + ('' if cond else '   ' + str(detail)[:300]))
     if not cond:
@@ -67,7 +81,7 @@ check('the service worker answers 200 without a cookie as javascript',
 check('the worker may claim the whole app scope and is not cached',
       h.get('service-worker-allowed') == '/apps/register/' and 'no-cache' in h.get('cache-control', ''), h)
 for icon in ('icon-192.png', 'icon-512.png'):
-    code, h, b = get('/apps/register/' + icon)
+    code, h = head('/apps/register/' + icon)
     check(icon + ' answers 200 without a cookie as a png that may be cached',
           code == 200 and h.get('content-type', '') == 'image/png'
           and 'max-age' in h.get('cache-control', ''), (code, h))
