@@ -100,11 +100,6 @@
 ++  max-log      2.000
 ::  ==  time
 ::
-++  unix-secs
-  |=  d=@da
-  ^-  @ud
-  ?:  (lth d ~1970.1.1)  0
-  (div (sub d ~1970.1.1) ~s1)
 ::  +de-iso: "2026-09-16T22:05:00Z" (a fraction is allowed and dropped,
 ::  Z only) to a @da, or ~. A day the month does not have is refused.
 ::
@@ -439,6 +434,30 @@
   ?:  =(%bambino track)
     ?:((lte (add bambino.c w) bambino.caps.s) %waiver %waitlist)
   ?:((lte (add full.c w) full.caps.s) %waiver %waitlist)
+::  +room-for: does this registration have a spot right now? A counted
+::  hold has it by definition. A lapsed one is decided again against
+::  the tree without itself, exactly like a fresh submit.
+::
+++  room-for
+  |=  [s=settings regs=(list reg) r=reg now=@da]
+  ^-  ?
+  ?:  (counted s r now)  &
+  =/  others=(list reg)  (skip regs |=(o=reg =(id.r id.o)))
+  =(%waiver (decide-submit s (tally s others now) track.r people.r))
+::  +position-of: where a wait listed registration stands, oldest
+::  first, ties broken by id. 0 when it is not on the wait list.
+::
+++  position-of
+  |=  [regs=(list reg) r=reg]
+  ^-  @ud
+  ?.  =(%waitlist status.r)  0
+  %+  add  1
+  %-  lent
+  %+  skim  regs
+  |=  o=reg
+  ?.  =(%waitlist status.o)  |
+  ?:  (lth created.o created.r)  &
+  &(=(created.o created.r) (lth id.o id.r))
 ::  +socials-ok: ~, or the social that is sold out
 ::
 ++  socials-ok
@@ -457,8 +476,8 @@
   ?+  from  |
     %draft       ?=(?(%waitlist %waiver) to)
     %waitlist    ?=(?(%waiver %cancelled) to)
-    %waiver      ?=(?(%payment %assistance %cancelled) to)
-    %payment     ?=(?(%complete %cancelled) to)
+    %waiver      ?=(?(%payment %assistance %waitlist %cancelled) to)
+    %payment     ?=(?(%complete %waitlist %cancelled) to)
     %assistance  ?=(?(%complete %payment %cancelled) to)
     %complete    ?=(%cancelled to)
   ==
@@ -550,7 +569,7 @@
 ::  +en-reg: the organizer's view. The token never leaves in a view.
 ::
 ++  en-reg
-  |=  [r=reg fees=@ud]
+  |=  [r=reg fees=@ud position=@ud]
   ^-  json
   %-  pairs:enjs:format
   :~  ['id' s+id.r]
@@ -567,7 +586,7 @@
       ['people' a+(turn people.r en-person)]
       ['payment' (en-payment payment.r)]
       ['waiver' (en-waiver waiver.r)]
-      ['position' (en-num position.r)]
+      ['position' (en-num position)]
       ['fees' (en-num fees)]
       ['notes' s+notes.r]
       ['history' a+(turn history.r en-step)]
@@ -575,9 +594,9 @@
 ::  +en-reg-pilgrim: the same without the organizers' notes and history
 ::
 ++  en-reg-pilgrim
-  |=  [r=reg fees=@ud]
+  |=  [r=reg fees=@ud position=@ud]
   ^-  json
-  =/  j=json  (en-reg r fees)
+  =/  j=json  (en-reg r fees position)
   ?.  ?=([%o *] j)  j
   [%o (~(del by (~(del by p.j) 'notes')) 'history')]
 ::  +read-reg: the shape ladder. Newest first; anything else is ~.
@@ -789,6 +808,7 @@
       ['next.payment.button' s+'Pay {{total}}']
       ['next.assistance.title' s+'Thank you']
       ['next.assistance.body' s+'Your waiver is signed and your request for assistance is with the organizers. We will email you when it is decided.']
+      ['next.lapsed' s+'Your spots were held for 48 hours and that time has passed. You can still continue; if the track filled in the meantime you will be offered the wait list.']
       ['next.waitlist.title' s+'You are on the wait list']
       ['next.waitlist.body' s+'You are number {{position}} on the wait list. We will email you if a spot opens.']
       ['next.complete.title' s+'You are registered']

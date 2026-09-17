@@ -145,7 +145,9 @@
         (some-reg %i %complete %full 1 t0)
     ==
   =/  late=reg:reg  =/(r (some-reg %j %waiver %full 4 (sub t0 ~d3)) r(source %admin))
-  =/  c=counts:reg  (tally:reg st (snoc regs late) now)
+  ::  the hold ends on the tick: now equals updated plus the hold
+  =/  edge=reg:reg  (some-reg %k %waiver %full 7 (sub now ~h48))
+  =/  c=counts:reg  (tally:reg st (snoc (snoc regs late) edge) now)
   ;:  weld
     (expect-eq !>(5) !>(full.c))
     (expect-eq !>(3) !>(bambino.c))
@@ -172,6 +174,44 @@
     (expect-eq !>(`(unit @t)`[~ 'social_sat: sold out']) !>((socials-ok:reg st [0 0 0 199 0 0] ~[p p])))
     (expect-eq !>(`(unit @t)`[~ 'social_fri: sold out']) !>((socials-ok:reg st [0 0 300 0 0 0] ~[p])))
   ==
+++  test-room-for
+  =/  now=@da  (add t0 ~h1)
+  =/  p=person:reg  some-person
+  =/  nw=person:reg  p(days [| | |])
+  ::  a track of two spots, both taken by a complete registration
+  =/  s0=settings:reg  st
+  =/  sm=settings:reg  s0(full.caps 2)
+  =/  taken=reg:reg  (some-reg %c %complete %full 2 now)
+  =/  live=reg:reg  (some-reg %a %waiver %full 2 now)
+  =/  lapsed=reg:reg  (some-reg %b %waiver %full 2 (sub now ~d3))
+  =/  none=reg:reg
+    =/  r=reg:reg  (some-reg %e %waiver %full 3 (sub now ~d3))
+    r(people (reap 3 nw))
+  ;:  weld
+    ::  a counted hold keeps its spots even at the cap
+    (expect !>((room-for:reg sm ~[live taken] live now)))
+    ::  a lapsed hold at a filled track has none
+    (expect !>(!(room-for:reg sm ~[lapsed taken] lapsed now)))
+    ::  a lapsed hold decided against a tree with room has one
+    (expect !>((room-for:reg sm ~[lapsed] lapsed now)))
+    ::  a lapsed party of non-walkers never needs a spot
+    (expect !>((room-for:reg sm ~[none taken] none now)))
+  ==
+++  test-position-of
+  =/  w1=reg:reg  (some-reg %a %waitlist %full 1 t0)
+  =/  w2=reg:reg  (some-reg %b %waitlist %full 1 (add t0 ~m1))
+  =/  w3=reg:reg  (some-reg %c %waitlist %full 1 (add t0 ~m2))
+  =/  gone=reg:reg  (some-reg %d %cancelled %full 1 t0)
+  =/  regs=(list reg:reg)  ~[w1 w2 w3 gone]
+  =/  after=(list reg:reg)  ~[w1(status %waiver, position 0) w2 w3 gone]
+  ;:  weld
+    (expect-eq !>(1) !>((position-of:reg regs w1)))
+    (expect-eq !>(2) !>((position-of:reg regs w2)))
+    (expect-eq !>(3) !>((position-of:reg regs w3)))
+    (expect-eq !>(0) !>((position-of:reg regs gone)))
+    ::  promoting the first moves the second up
+    (expect-eq !>(1) !>((position-of:reg after w2)))
+  ==
 ::  ==  the status machine
 ::
 ++  test-transitions
@@ -184,6 +224,8 @@
     (expect !>((transition-ok:reg %payment %complete)))
     (expect !>((transition-ok:reg %assistance %complete)))
     (expect !>((transition-ok:reg %assistance %payment)))
+    (expect !>((transition-ok:reg %waiver %waitlist)))
+    (expect !>((transition-ok:reg %payment %waitlist)))
     (expect !>((transition-ok:reg %complete %cancelled)))
     (expect !>(!(transition-ok:reg %cancelled %waiver)))
     (expect !>(!(transition-ok:reg %draft %complete)))
@@ -210,16 +252,18 @@
 ::
 ++  test-roundtrip
   =/  r=reg:reg  (some-reg %abc123 %complete %full 2 t0)
-  =/  j=json  (en-reg:reg r 15.000)
+  =/  j=json  (en-reg:reg r 15.000 4)
   ;:  weld
     (expect-eq !>('abc123') !>((gs:reg j 'id')))
     (expect-eq !>(`(unit @ud)`[~ 15.000]) !>((gn:reg j 'fees')))
+    ::  the position the caller computed, not the stored one
+    (expect-eq !>(`(unit @ud)`[~ 4]) !>((gn:reg j 'position')))
     (expect-eq !>(2) !>((lent (ga:reg j 'people'))))
     ::  the token never leaves in a view
     (expect !>(!(has-key:reg j 'token')))
     (expect !>((has-key:reg j 'history')))
-    (expect !>(!(has-key:reg (en-reg-pilgrim:reg r 0) 'history')))
-    (expect !>(!(has-key:reg (en-reg-pilgrim:reg r 0) 'notes')))
+    (expect !>(!(has-key:reg (en-reg-pilgrim:reg r 0 0) 'history')))
+    (expect !>(!(has-key:reg (en-reg-pilgrim:reg r 0 0) 'notes')))
   ==
 ++  test-read-reg
   =/  r=reg:reg  (some-reg %abc123 %complete %full 2 t0)
@@ -271,5 +315,6 @@
     (expect !>(!=('' (gs:reg c 'landing.title'))))
     (expect !>(!=('' (gs:reg c 'email.waitlist.body'))))
     (expect !>(!=('' (gs:reg c 'form.social_soldout'))))
+    (expect !>(!=('' (gs:reg c 'next.lapsed'))))
   ==
 --
