@@ -10,6 +10,7 @@
   var model = null;           // the form's data, the shape /api/submit takes
   var rid = null, token = null, mode = 'new';
   var saveTimer = null, dirty = false;
+  var routeGen = 0;           // bumped on every route() call; stale callbacks bail out
 
   // ---- helpers ----
   function esc(s) {
@@ -209,7 +210,9 @@
   function route() {
     var h = location.hash.replace(/^#\/?/, '');
     var parts = h.split('/');
+    var gen = ++routeGen;
     refreshStatus().then(function () {
+      if (gen !== routeGen) return;
       if (parts[0] === 'form' && (parts[1] === 'full' || parts[1] === 'bambino')) {
         mode = 'new';
         if (!model || model.track !== parts[1]) {
@@ -217,29 +220,45 @@
           var d = recall(parts[1]); rid = d ? d.rid : null; token = d ? d.token : null;
           if (rid) {
             return api('/reg/' + rid + '?t=' + encodeURIComponent(token)).then(function (r) {
+              if (gen !== routeGen) return;
               if (r.status === 'draft') model = fromReg(r); else { rid = null; token = null; }
               render(form(model));
-            }).catch(function () { rid = null; token = null; render(form(model)); });
+            }).catch(function () {
+              if (gen !== routeGen) return;
+              rid = null; token = null; render(form(model));
+            });
           }
         }
         return render(form(model));
       }
       if (parts[0] === 'next' && parts[1] && parts[2]) {
         rid = parts[1]; token = parts[2]; mode = 'next';
-        return api('/reg/' + rid + '?t=' + encodeURIComponent(token)).then(function (r) { render(nextStep(r)); })
-          .catch(function (e) { render('<div id="error"></div>'); showError(e.message); });
+        return api('/reg/' + rid + '?t=' + encodeURIComponent(token)).then(function (r) {
+          if (gen !== routeGen) return;
+          render(nextStep(r));
+        }).catch(function (e) {
+          if (gen !== routeGen) return;
+          render('<div id="error"></div>'); showError(e.message);
+        });
       }
       if (parts[0] === 'manage' && parts[1] && parts[2]) {
         rid = parts[1]; token = parts[2]; mode = 'manage';
         return api('/reg/' + rid + '?t=' + encodeURIComponent(token)).then(function (r) {
+          if (gen !== routeGen) return;
           status.changes_open = r.changes_open;
           if (r.status === 'draft' || r.status === 'cancelled') { location.hash = '#next/' + rid + '/' + token; return; }
           model = fromReg(r); render(form(model));
-        }).catch(function (e) { render('<div id="error"></div>'); showError(e.message); });
+        }).catch(function (e) {
+          if (gen !== routeGen) return;
+          render('<div id="error"></div>'); showError(e.message);
+        });
       }
       model = null; rid = null; token = null; mode = 'landing';
       render(landing());
-    }).catch(function (e) { render('<p class="bad">' + esc(e.message) + '</p>'); });
+    }).catch(function (e) {
+      if (gen !== routeGen) return;
+      render('<p class="bad">' + esc(e.message) + '</p>');
+    });
   }
   view.addEventListener('input', onChange);
   view.addEventListener('change', onChange);
