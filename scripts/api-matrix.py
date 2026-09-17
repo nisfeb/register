@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """api-matrix.py HOST JAR
-The HTTP gate for register, phase 1: the pilgrim's flow in stub mode
-against a fake ship. HOST like http://localhost:8080; JAR a curl cookie
-jar with the owner cookie. Exits 1 on any failure. Safe to rerun: it
-cancels what an earlier run left and restores the settings it changed."""
-import json, subprocess, sys, time, traceback
+The HTTP gate for register: the pilgrim's flow and the organizers'
+backoffice in stub mode against a fake ship. HOST like
+http://localhost:8080; JAR a curl cookie jar with the owner cookie.
+Exits 1 on any failure. Safe to rerun: it cancels what an earlier run
+left and restores the settings and the counts it changed."""
+import base64, csv, json, os, subprocess, sys, tempfile, time, traceback
 
 HOST, JAR = sys.argv[1:3]
 API = HOST + '/apps/register/api'
 INSTANCE = HOST + '/grubbery/ball/apps/shell.shell/desks/register.desk/desk/data/register.register_app'
 ACTOR = 'matrix'
+TMP = tempfile.mkdtemp(prefix='register-matrix-')
 fails = []
 
 
@@ -20,7 +22,11 @@ def curl(method, url, body=None, jar=None, actor=None, timeout=60):
     if actor:
         cmd += ['-H', 'x-actor: ' + actor]
     if body is not None:
-        cmd += ['-H', 'content-type: application/json', '-d', json.dumps(body)]
+        # a bundle is far too big for a command line, so every body rides a file
+        path = os.path.join(TMP, 'body.json')
+        with open(path, 'w', encoding='utf-8') as fh:
+            json.dump(body, fh)
+        cmd += ['-H', 'content-type: application/json', '--data-binary', '@' + path]
     out = subprocess.run(cmd, capture_output=True, text=True).stdout
     text, _, code = out.rpartition('\n')
     try:
@@ -28,6 +34,32 @@ def curl(method, url, body=None, jar=None, actor=None, timeout=60):
     except json.JSONDecodeError:
         data = text
     return int(code or 0), data
+
+
+def head(path, jar=None):
+    cmd = ['curl', '-s', '-m', '30', '-D', '-', '-o', '/dev/null', HOST + path]
+    if jar:
+        cmd += ['-b', jar]
+    out = subprocess.run(cmd, capture_output=True, text=True).stdout.replace('\r', '')
+    lines = out.split('\n')
+    code = int(lines[0].split(' ')[1]) if lines[0].startswith('HTTP/') else 0
+    headers = {}
+    for ln in lines[1:]:
+        k, _, v = ln.partition(':')
+        if k.strip():
+            headers[k.strip().lower()] = v.strip()
+    return code, headers
+
+
+def download(path, name):
+    dest = os.path.join(TMP, name)
+    subprocess.run(['curl', '-s', '-m', '180', '-b', JAR, '-o', dest, API + '/admin' + path], capture_output=True)
+    return dest
+
+
+def csv_rows(path, name):
+    with open(download(path, name), newline='', encoding='utf-8') as fh:
+        return list(csv.reader(fh))
 
 
 def check(label, cond, detail=''):
@@ -82,6 +114,9 @@ code, _ = curl('PUT', API + '/admin/settings', original, jar=JAR)
 check('PUT /admin/settings without x-actor is 400', code == 400, code)
 check('secrets come back masked or empty', original.get('mail', {}).get('resend_key', '') in ('', '****'), original.get('mail'))
 
+code, orig_counts = admin('GET', '/counts')
+check('GET /admin/counts answers 200 with a document', code == 200 and isinstance(orig_counts, dict), (code, orig_counts))
+
 settings = json.loads(json.dumps(original))
 settings['window'] = {'open': '2026-01-01T00:00:00Z', 'close': '2036-01-01T00:00:00Z', 'change_cutoff': '2036-01-01T00:00:00Z'}
 settings['caps'] = {'full': 325, 'bambino': 25, 'social_fri': 300, 'social_sat': 200, 'late_adds': 50}
@@ -97,7 +132,9 @@ def run():
     code, d = admin('GET', '/regs')
     check('GET /admin/regs answers 200', code == 200, (code, d))
     for r in (d or {}).get('regs', []):
-        if r['contact']['email'].lower().startswith('matrix-') and r['status'] not in ('draft', 'cancelled'):
+        if r['email'].lower().startswith('matrix-') and r['status'] not in ('draft', 'cancelled'):
+            if r.get('exempt'):
+                admin('POST', '/reg/' + r['id'], {'op': 'exempt', 'on': False})
             admin('POST', '/reg/' + r['id'], {'op': 'cancel', 'note': 'matrix cleanup'})
     settle()
     s0 = status()
@@ -156,10 +193,14 @@ def run():
     # ---- the admin routes: the owner's, and each mutating one names its actor ----
     for meth, path in [('GET', '/admin/regs'), ('GET', '/admin/reg/x'), ('POST', '/admin/reg/x'),
                        ('GET', '/admin/settings'), ('PUT', '/admin/settings'),
-                       ('GET', '/admin/copy'), ('PUT', '/admin/copy')]:
+                       ('GET', '/admin/copy'), ('PUT', '/admin/copy'),
+                       ('GET', '/admin/counts'), ('PUT', '/admin/counts'),
+                       ('POST', '/admin/add'), ('POST', '/admin/import'),
+                       ('GET', '/admin/export/people.csv'), ('GET', '/admin/export/bundle.jam')]:
         code, _ = curl(meth, API + path, {} if meth in ('POST', 'PUT') else None)
         check(f'{meth} {path} without the cookie is 403', code == 403, code)
-    for meth, path in [('POST', '/admin/reg/' + ana_rid), ('PUT', '/admin/settings'), ('PUT', '/admin/copy')]:
+    for meth, path in [('POST', '/admin/reg/' + ana_rid), ('PUT', '/admin/settings'), ('PUT', '/admin/copy'),
+                       ('PUT', '/admin/counts'), ('POST', '/admin/add'), ('POST', '/admin/import')]:
         code, _ = curl(meth, API + path, {}, jar=JAR)
         check(f'{meth} {path} with the cookie and no actor is 400', code == 400, code)
 
@@ -319,6 +360,8 @@ def run():
     code, d = curl('POST', API + f'/reg/{one_rid}/cancel?t={one_tok}', {})
     check('cancelling twice is 409', code == 409, code)
 
+    backoffice(ana_rid)
+
     # ---- the window ----
     settings['window']['close'] = '2020-01-01T00:00:00Z'
     admin('PUT', '/settings', settings); settle()
@@ -330,6 +373,257 @@ def run():
     check('status says closed', s8['open'] is False, s8['open'])
 
 
+def backoffice(live_rid):
+    # ---- the backoffice page and its assets ----
+    code, h = head('/apps/register/admin')
+    check('GET /admin without the cookie is a 302 to the login page',
+          code == 302 and '/~/login' in h.get('location', ''), (code, h.get('location')))
+    code, h = head('/apps/register/admin', jar=JAR)
+    check('GET /admin with the cookie is 200 html',
+          code == 200 and h.get('content-type', '').startswith('text/html'), (code, h))
+    code, h = head('/apps/register/admin.css', jar=JAR)
+    check('admin.css is text/css with nosniff',
+          code == 200 and h.get('content-type', '').startswith('text/css')
+          and h.get('x-content-type-options') == 'nosniff', (code, h))
+    code, h = head('/apps/register/admin.js', jar=JAR)
+    check('admin.js is text/javascript',
+          code == 200 and h.get('content-type', '').startswith('text/javascript'), (code, h))
+    code, h = head('/apps/register/admin.js')
+    check('admin.js without the cookie is 403', code == 403, code)
+
+    # ---- a manual add, paid by check with the waiver on paper ----
+    s0 = status()
+    code, d = admin('POST', '/add', {
+        'input': party('full', 'matrix-add@example.com', [person('Wal', 'Kin'), person('Kim', 'Kin')]),
+        'waiver_paper': True,
+        'paid': {'method': 'check', 'amount': 15000, 'ref': '1041', 'note': 'at the table'}})
+    check('a manual add with a paper waiver and a check answers complete',
+          code == 200 and d.get('status') == 'complete' and len(d.get('rid', '')) == 10
+          and len(d.get('token', '')) == 32, (code, d))
+    add_rid = d['rid']
+    settle()
+    code, d = admin('GET', '/reg/' + add_rid)
+    check('the manual add is complete, source admin, paper waiver, paid by check',
+          code == 200 and d['status'] == 'complete' and d['source'] == 'admin'
+          and d['payment']['method'] == 'check' and d['payment']['amount'] == 15000
+          and d['payment']['ref'] == '1041' and d['waiver']['method'] == 'paper'
+          and d['waiver']['status'] == 'completed', (code, d))
+    hist = [h['what'] for h in d['history']]
+    check('the history carries the three steps, all by the organizer',
+          any('added by organizer' in w for w in hist) and any('paper' in w for w in hist)
+          and any('payment recorded' in w for w in hist)
+          and all(h['by'] == 'admin:' + ACTOR for h in d['history']), (hist, d['history']))
+    s1 = status()
+    check('the late-add pool took its two walkers and the full track did not',
+          s1['counts']['late'] == s0['counts']['late'] + 2
+          and s1['counts']['full'] == s0['counts']['full'], (s0['counts'], s1['counts']))
+    code, d = admin('POST', '/add', {'input': party('full', 'matrix-add@example.com', [person('Dup', 'Kin')])})
+    check('a manual add under an email that is taken is 409 duplicate',
+          code == 409 and d.get('code') == 'duplicate', (code, d))
+    code, d = admin('POST', '/add', {'input': party('full', 'matrix-empty@example.com', [])})
+    check('a manual add with no people is 400 naming people',
+          code == 400 and 'people' in str((d or {}).get('error', '')), (code, d))
+
+    # ---- exempt from the caps ----
+    code, d = curl('POST', API + '/submit', party('full', 'matrix-exempt@example.com',
+                                                  [person('Eve', 'Exempt', social_sat=True),
+                                                   person('Abe', 'Exempt', social_sat=True)]))
+    check('the party to exempt submits', code == 200 and d['status'] == 'waiver', (code, d))
+    ex_rid, ex_tok = d['rid'], d['token']
+    settle()
+    curl('POST', API + f'/reg/{ex_rid}/sign?t={ex_tok}', {}); settle()
+    curl('POST', API + f'/reg/{ex_rid}/pay?t={ex_tok}', {}); settle()
+    s2 = status()
+    code, d = admin('POST', '/reg/' + ex_rid, {'op': 'exempt', 'on': True})
+    check('the organizer marks the party exempt', code == 200, (code, d))
+    settle()
+    s3 = status()
+    check('exempt frees the two track spots and leaves the socials alone',
+          s3['counts']['full'] == s2['counts']['full'] - 2
+          and s3['counts']['social_sat'] == s2['counts']['social_sat'], (s2['counts'], s3['counts']))
+    code, d = admin('GET', '/reg/' + ex_rid)
+    check('the registration reads exempt with its history line',
+          code == 200 and d['exempt'] is True and d['history'][-1]['what'] == 'marked exempt', (code, d))
+    code, d = admin('POST', '/reg/' + ex_rid, {'op': 'exempt', 'on': False})
+    check('exempt clears again', code == 200, (code, d))
+    settle()
+    s4 = status()
+    check('clearing exempt takes the spots back', s4['counts']['full'] == s2['counts']['full'], (s2['counts'], s4['counts']))
+
+    # ---- cancel and reinstate ----
+    code, d = admin('POST', '/reg/' + ex_rid, {'op': 'cancel', 'note': 'testing reinstate'})
+    check('the organizer cancels a complete party', code == 200, (code, d))
+    settle()
+    s5 = status()
+    check('the cancel freed the two spots', s5['counts']['full'] == s4['counts']['full'] - 2, (s4['counts'], s5['counts']))
+    code, d = admin('POST', '/reg/' + ex_rid, {'op': 'reinstate'})
+    check('the organizer reinstates it', code == 200, (code, d))
+    settle()
+    code, d = admin('GET', '/reg/' + ex_rid)
+    check('reinstated to complete with its history line',
+          code == 200 and d['status'] == 'complete' and d['history'][-1]['what'] == 'reinstated', (code, d))
+    s6 = status()
+    check('the spots came back', s6['counts']['full'] == s4['counts']['full'], (s4['counts'], s6['counts']))
+    code, d = admin('POST', '/reg/' + ex_rid, {'op': 'reinstate'})
+    check('reinstating a live registration is 409', code == 409, code)
+
+    # ---- a payment recorded by hand on an assistance party, then refunded ----
+    code, d = curl('POST', API + '/submit', party('full', 'matrix-check@example.com',
+                                                  [person('Cal', 'Check')], assistance=True))
+    check('an assistance party submits', code == 200 and d['status'] == 'waiver', (code, d))
+    ck_rid, ck_tok = d['rid'], d['token']
+    settle()
+    code, d = curl('POST', API + f'/reg/{ck_rid}/sign?t={ck_tok}', {})
+    check('it signs and waits for the decision', code == 200 and d['next'] == 'assistance', (code, d))
+    settle()
+    code, d = admin('POST', '/reg/' + ck_rid, {'op': 'pay', 'method': 'venmo', 'amount': 7500})
+    check('a payment method the ship does not take is 400', code == 400, (code, d))
+    code, d = admin('POST', '/reg/' + ck_rid,
+                    {'op': 'pay', 'method': 'check', 'amount': 7500, 'gift': 2500, 'ref': '204', 'note': 'in the mail'})
+    check('the organizer records a check on an assistance party', code == 200, (code, d))
+    settle()
+    code, d = admin('GET', '/reg/' + ck_rid)
+    check('recorded: complete, by check, with the gift and the reference',
+          code == 200 and d['status'] == 'complete' and d['payment']['method'] == 'check'
+          and d['payment']['amount'] == 7500 and d['payment']['gift'] == 2500
+          and d['payment']['ref'] == '204', (code, d))
+    code, d = admin('POST', '/reg/' + ck_rid, {'op': 'pay', 'method': 'check', 'amount': 7500})
+    check('recording a payment on a complete party is 409', code == 409, code)
+    code, d = admin('POST', '/reg/' + ck_rid, {'op': 'refund', 'note': 'returned by mail'})
+    check('the organizer marks it refunded', code == 200, (code, d))
+    settle()
+    code, d = admin('GET', '/reg/' + ck_rid)
+    check('refunded is true, the note is appended and the history says refunded',
+          code == 200 and d['payment']['refunded'] is True and 'returned by mail' in d['payment']['note']
+          and any(h['what'] == 'refunded' for h in d['history']), (code, d))
+    code, d = admin('POST', '/reg/' + add_rid, {'op': 'refund', 'note': 'x'})
+    check('a refund is allowed where a payment exists', code == 200, (code, d))
+    settle()
+
+    # ---- notes, the paper waiver record, the stub emails ----
+    code, d = admin('POST', '/reg/' + ck_rid, {'op': 'note', 'notes': 'called about the check'})
+    check('the organizer replaces the notes', code == 200, (code, d))
+    settle()
+    code, d = admin('GET', '/reg/' + ck_rid)
+    check('the notes read back with a history line',
+          code == 200 and d['notes'] == 'called about the check'
+          and d['history'][-1]['what'] == 'notes changed', (code, d))
+    code, d = admin('POST', '/reg/' + ck_rid, {'op': 'waiver-paper'})
+    check('a paper waiver on a complete party is taken', code == 200, (code, d))
+    settle()
+    code, d = admin('GET', '/reg/' + ck_rid)
+    check('it records the waiver and does not move the status',
+          code == 200 and d['waiver']['method'] == 'paper' and d['status'] == 'complete', (code, d))
+    code, d = admin('POST', '/reg/' + ck_rid, {'op': 'recheck-waiver'})
+    check('recheck-waiver is 501 until phase 2', code == 501, (code, d))
+    code, d = admin('POST', '/reg/' + ck_rid, {'op': 'resend', 'template': 'reminder'})
+    check('resend answers the filled subject',
+          code == 200 and d.get('template') == 'reminder' and d.get('subject'), (code, d))
+    code, d = admin('POST', '/reg/' + ck_rid, {'op': 'resend', 'template': 'nonsense'})
+    check('a template the ship does not know is 400', code == 400, code)
+    code, d = admin('POST', '/reg/' + ck_rid, {'op': 'nonsense'})
+    check('an op the ship does not know is 400', code == 400, code)
+    settle()
+    code, d = curl('GET', INSTANCE + '/tr/log?raw=1', jar=JAR)
+    check('the reminder stub is in the ring for that rid',
+          code == 200 and isinstance(d, list)
+          and any(e.get('op') == 'email.reminder' and e.get('rid') == ck_rid for e in d),
+          (code, str(d)[-300:]))
+
+    # ---- the counts document ----
+    code, d = admin('PUT', '/counts', {'fri': {'mass': {'count': 120, 'time': '08:00', 'note': 'full church'}}})
+    check('PUT /admin/counts takes the document', code == 200, (code, d))
+    settle()
+    code, d = admin('GET', '/counts')
+    check('GET /admin/counts reads it back',
+          code == 200 and d.get('fri', {}).get('mass', {}).get('count') == 120, (code, d))
+
+    # ---- the exports ----
+    code, roster = admin('GET', '/regs')
+    check('the roster answers rows with the caps and the clock',
+          code == 200 and 'caps' in roster and 'now' in roster and roster['regs']
+          and 'names' in roster['regs'][0] and 'plan' in roster['regs'][0]
+          and 'token' not in roster['regs'][0], (code, sorted((roster or {}).keys())))
+    people = csv_rows('/export/people.csv', 'people.csv')
+    regs = csv_rows('/export/regs.csv', 'regs.csv')
+    want_people = sum(r['people'] for r in roster['regs'])
+    check('people.csv parses and every row has the header count',
+          len(people) > 1 and all(len(r) == len(people[0]) for r in people), (len(people), len(people[0])))
+    check('people.csv has one row per person', len(people) - 1 == want_people, (len(people) - 1, want_people))
+    check('regs.csv parses with one row per registration and the header count',
+          len(regs) - 1 == len(roster['regs']) and all(len(r) == len(regs[0]) for r in regs),
+          (len(regs) - 1, len(roster['regs'])))
+    check('the csv headers name the fields the organizers asked for',
+          people[0][:6] == ['rid', 'status', 'track', 'source', 'created', 'updated']
+          and 'checkin_sun' in people[0] and 'exempt' in people[0]
+          and 'history' in regs[0] and 'walkers' in regs[0], (people[0][:6], regs[0][-4:]))
+    with open(download('/export/bundle.json', 'bundle.json'), encoding='utf-8') as fh:
+        bundle = json.load(fh)
+    check('bundle.json decodes with one entry per registration',
+          len(bundle.get('regs', [])) == len(roster['regs']), (len(bundle.get('regs', [])), len(roster['regs'])))
+    check('no secret leaves in the bundle',
+          bundle['settings'].get('mail', {}).get('resend_key', '') in ('', '****')
+          and bundle['settings'].get('stripe', {}).get('secret_key', '') in ('', '****'),
+          bundle['settings'].get('mail'))
+    check('the bundle carries the counts document it was taken with',
+          bundle.get('counts', {}).get('fri', {}).get('mass', {}).get('count') == 120, bundle.get('counts'))
+    with open(download('/export/bundle.jam', 'bundle.jam'), 'rb') as fh:
+        jam = fh.read()
+    check('bundle.jam is a non-empty run of bytes', len(jam) > 100, len(jam))
+    code, _ = curl('GET', API + '/admin/export/nothing.csv', jar=JAR, actor=ACTOR)
+    check('an export the ship does not have is 404', code == 404, code)
+
+    # ---- import: the dry run, then the apply ----
+    b64 = base64.b64encode(jam).decode()
+    code, d = admin('POST', '/import?dry=1', {'jam': b64})
+    check('the dry run counts what the jam holds and what it would overwrite',
+          code == 200 and d.get('regs') == len(roster['regs'])
+          and d.get('overwrite') == len(roster['regs']) and d.get('event_days')
+          and d.get('earliest') and d.get('latest'), (code, d))
+    code, d = admin('POST', '/import?dry=1', {'bundle': bundle})
+    check('the same dry run over the JSON bundle agrees',
+          code == 200 and d.get('regs') == len(roster['regs']) and d.get('overwrite') == len(roster['regs']), (code, d))
+    code, d = admin('POST', '/import?dry=1', {'jam': 'not base64 at all !!!'})
+    check('a jam that will not decode is 400 naming the jam',
+          code == 400 and 'jam' in str(d.get('error', '')), (code, d))
+    code, d = admin('POST', '/import?dry=1', {})
+    check('an import with neither a jam nor a bundle is 400', code == 400, (code, d))
+    code, d = admin('POST', '/import?dry=1', {'bundle': {'regs': [{'id': 'nope'}]}})
+    check('a bundle with a registration that will not read is 400 naming it',
+          code == 400 and 'nope' in str(d.get('error', '')), (code, d))
+    out = subprocess.run(['curl', '-s', '-m', '30', '-b', JAR, '-H', 'x-actor: ' + ACTOR,
+                          '-H', 'content-type: text/plain', '-X', 'POST', '-d', '{}',
+                          '-w', '\n%{http_code}', API + '/admin/import?dry=1'],
+                         capture_output=True, text=True).stdout
+    check('an import body that does not say it is JSON is 415', out.strip().endswith('415'), out[-60:])
+    code, d = admin('POST', '/import?wipe=0', {'jam': b64})
+    check('the apply answers how many it wrote', code == 200 and d.get('applied') == len(roster['regs']), (code, d))
+    time.sleep(15)
+    code, after = admin('GET', '/regs')
+    check('a restore over the same tree leaves the roster the same size',
+          code == 200 and len(after['regs']) == len(roster['regs']),
+          (len(after.get('regs', [])), len(roster['regs'])))
+    code, d = admin('POST', '/reg/' + ck_rid, {'op': 'cancel', 'note': 'cancelled after the backup'})
+    check('a registration is cancelled after the backup was taken', code == 200, (code, d))
+    settle()
+    code, d = admin('GET', '/reg/' + ck_rid)
+    check('it reads as cancelled', code == 200 and d['status'] == 'cancelled', (code, d['status']))
+    code, d = admin('POST', '/import?wipe=0', {'jam': b64})
+    check('the same jam applies again', code == 200, (code, d))
+    time.sleep(15)
+    code, d = admin('GET', '/reg/' + ck_rid)
+    check('the restore put it back to its status in the bundle, with a history line',
+          code == 200 and d['status'] == 'complete'
+          and any(h['what'] == 'restored from backup' for h in d['history']), (code, d.get('status')))
+    code, d = curl('GET', INSTANCE + '/tr/log?raw=1', jar=JAR)
+    check('the restore left one ring entry naming the counts',
+          code == 200 and isinstance(d, list) and any(e.get('op') == 'restore' for e in d),
+          (code, str(d)[-200:]))
+    check('the ring carries no secret after a restore', 'resend_key' not in json.dumps(d), '')
+    # the pilgrim's own registration still answers, so the restore kept the tokens
+    code, d = reg(ck_rid, ck_tok)
+    check('the restored registration still answers to its own token', code == 200, (code, d))
+
 try:
     run()
 except Exception:
@@ -339,10 +633,14 @@ finally:
     # ---- restore the settings, then cancel every matrix registration, no matter how run() ended ----
     code, _ = admin('PUT', '/settings', original)
     check('the original settings are restored', code == 200, code)
+    code, _ = admin('PUT', '/counts', orig_counts if isinstance(orig_counts, dict) else {})
+    check('the original counts are restored', code == 200, code)
     settle()
     code, d = admin('GET', '/regs')
     for r in (d or {}).get('regs', []):
-        if r['contact']['email'].lower().startswith('matrix-') and r['status'] not in ('draft', 'cancelled'):
+        if r['email'].lower().startswith('matrix-') and r['status'] not in ('draft', 'cancelled'):
+            if r.get('exempt'):
+                admin('POST', '/reg/' + r['id'], {'op': 'exempt', 'on': False})
             admin('POST', '/reg/' + r['id'], {'op': 'cancel', 'note': 'matrix cleanup'})
     settle()
 

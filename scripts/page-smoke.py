@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """page-smoke.py HOST
 The public page and its assets answer without a cookie, with the right
-types, nosniff and no-cache; the admin routes refuse without one."""
+types, nosniff and no-cache; the backoffice and its assets refuse
+without one, and its page redirects to the login form."""
 import subprocess, sys
 
 HOST = sys.argv[1]
@@ -39,6 +40,13 @@ code, h, b = get('/apps/register/api/status')
 check('status is json and not stored', code == 200 and h.get('content-type', '').startswith('application/json') and 'no-store' in h.get('cache-control', ''), (code, h))
 code, h, b = get('/apps/register/api/admin/regs')
 check('the admin api refuses without a cookie', code == 403, code)
+code, h, b = get('/apps/register/admin')
+check('the backoffice without a cookie redirects to the login form',
+      code == 302 and '/~/login' in h.get('location', ''), (code, h.get('location')))
+code, h, b = get('/apps/register/admin.css')
+check('the backoffice style refuses without a cookie', code == 403, code)
+code, h, b = get('/apps/register/admin.js')
+check('the backoffice script refuses without a cookie', code == 403, code)
 code, h, b = get('/apps/register/nothing')
 check('an unknown route is 404', code == 404, code)
 print()
