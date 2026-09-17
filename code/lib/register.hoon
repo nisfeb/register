@@ -64,11 +64,40 @@
       position=@ud                              ::  on the wait list, else 0
       notes=@t
       history=(list step)
+      exempt=?                                  ::  an organizer's mark: outside the track caps
+      prior=@tas                                ::  the status a cancel left, for reinstate
+  ==
+::  +$reg-1: the shape before exempt and prior. +read-reg lifts it.
+::
++$  reg-1
+  $:  id=@ta
+      status=@tas
+      track=@tas
+      source=@tas
+      created=@da
+      updated=@da
+      =contact
+      org=@t
+      why=@t
+      assistance=?
+      together=?
+      people=(list person)
+      =payment
+      =waiver
+      token=@t
+      position=@ud
+      notes=@t
+      history=(list step)
   ==
 ::  what the grub holds: a version head, so a later shape is told apart
 ::  by the reader instead of clamming by luck
 ::
-+$  stored-reg  [%1 =reg]
++$  stored-reg    [%2 =reg]
++$  stored-reg-1  [%1 old=reg-1]
+::  +$bundle: a whole backup. Every registration entire, with its token,
+::  and the three documents as they stand.
+::
++$  bundle  [%1 regs=(list reg) settings=json copy=json counts=json]
 ::  the settings the code reads. Everything else in settings.json (the
 ::  organizations, the provider credentials) stays JSON.
 ::
@@ -421,6 +450,8 @@
   =/  sf=@ud  (lent (skim people.r |=(p=person social-fri.p)))
   =/  ss=@ud  (lent (skim people.r |=(p=person social-sat.p)))
   =/  c2=counts  c(social-fri (add social-fri.c sf), social-sat (add social-sat.c ss))
+  ::  an exempt party attends the socials and counts against no track cap
+  ?:  exempt.r  $(regs t.regs, c c2)
   ?:  =(%admin source.r)  $(regs t.regs, c c2(late (add late.c2 w)))
   ?:  =(%bambino track.r)  $(regs t.regs, c c2(bambino (add bambino.c2 w)))
   $(regs t.regs, c c2(full (add full.c2 w)))
@@ -480,6 +511,7 @@
     %payment     ?=(?(%complete %waitlist %cancelled) to)
     %assistance  ?=(?(%complete %payment %cancelled) to)
     %complete    ?=(%cancelled to)
+    %cancelled   ?=(?(%waitlist %waiver %payment %assistance %complete) to)
   ==
 ++  after-waiver  |=(r=reg ^-(@tas ?:(assistance.r %assistance %payment)))
 ++  active        |=(r=reg ^-(? !?=(?(%draft %cancelled) status.r)))
@@ -493,6 +525,16 @@
   |=  [r=reg to=@tas by=@t what=@t now=@da]
   ^-  reg
   (note-hist r(status to) by what now)
+::  +reinstate: a cancelled registration back to the status the cancel
+::  left. ~ when it was never cancelled, or when no prior was kept.
+::
+++  reinstate
+  |=  [r=reg by=@t now=@da]
+  ^-  (unit reg)
+  ?.  =(%cancelled status.r)  ~
+  ?:  =(%$ prior.r)  ~
+  ?.  (transition-ok %cancelled prior.r)  ~
+  `(set-status r prior.r by 'reinstated' now)
 ::  +new-reg: a registration from a form, as a draft
 ::
 ++  new-reg
@@ -502,7 +544,7 @@
       contact.in  org.in  why.in  assistance.in  together.in  people.in
       [%none 0 0 ~ '' | '']
       [%none '' %none ~]
-      token  0  ''  ~
+      token  0  ''  ~  |  %$
   ==
 ::  +with-input: an edit onto an existing registration
 ::
@@ -589,24 +631,393 @@
       ['position' (en-num position)]
       ['fees' (en-num fees)]
       ['notes' s+notes.r]
+      ['exempt' b+exempt.r]
+      ['prior' s+prior.r]
       ['history' a+(turn history.r en-step)]
   ==
-::  +en-reg-pilgrim: the same without the organizers' notes and history
+::  +en-reg-pilgrim: the same without the organizers' own fields
 ::
 ++  en-reg-pilgrim
   |=  [r=reg fees=@ud position=@ud]
   ^-  json
   =/  j=json  (en-reg r fees position)
   ?.  ?=([%o *] j)  j
-  [%o (~(del by (~(del by p.j) 'notes')) 'history')]
+  =/  m=(map @t json)  p.j
+  =.  m  (~(del by m) 'notes')
+  =.  m  (~(del by m) 'history')
+  =.  m  (~(del by m) 'exempt')
+  =.  m  (~(del by m) 'prior')
+  [%o m]
+::  +en-reg-full: every field, the token too. A backup must round-trip,
+::  so this encoder hides nothing and computes nothing.
+::
+++  en-reg-full
+  |=  r=reg
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+id.r]
+      ['status' s+status.r]
+      ['track' s+track.r]
+      ['source' s+source.r]
+      ['created' (en-time created.r)]
+      ['updated' (en-time updated.r)]
+      ['contact' (en-contact contact.r)]
+      ['org' s+org.r]
+      ['why' s+why.r]
+      ['assistance' b+assistance.r]
+      ['together' b+together.r]
+      ['people' a+(turn people.r en-person)]
+      ['payment' (en-payment payment.r)]
+      ['waiver' (en-waiver waiver.r)]
+      ['token' s+token.r]
+      ['position' (en-num position.r)]
+      ['notes' s+notes.r]
+      ['history' a+(turn history.r en-step)]
+      ['exempt' b+exempt.r]
+      ['prior' s+prior.r]
+  ==
+::  +en-row: one roster row. Flat, so the backoffice filters and sorts
+::  the whole roster in the browser without reading each registration.
+::
+++  en-row
+  |=  [r=reg fees=@ud position=@ud]
+  ^-  json
+  =/  names=(list @t)  (turn people.r |=(p=person (rap 3 last.p ', ' first.p ~)))
+  =/  w=@ud  (walkers track.r people.r)
+  %-  pairs:enjs:format
+  :~  ['id' s+id.r]
+      ['status' s+status.r]
+      ['track' s+track.r]
+      ['source' s+source.r]
+      ['created' (en-time created.r)]
+      ['updated' (en-time updated.r)]
+      ['email' s+email.contact.r]
+      ['phone' s+phone.contact.r]
+      ['state' s+state.contact.r]
+      ['org' s+org.r]
+      ['names' a+(turn names |=(n=@t ^-(json s+n)))]
+      ['people' (en-num (lent people.r))]
+      ['walkers' (en-num w)]
+      ['position' (en-num position)]
+      ['fees' (en-num fees)]
+      ['paid' s+method.payment.r]
+      ['amount' (en-num amount.payment.r)]
+      ['gift' (en-num gift.payment.r)]
+      ['refunded' b+refunded.payment.r]
+      ['waiver' s+status.waiver.r]
+      ['exempt' b+exempt.r]
+      ['assistance' b+assistance.r]
+      ['knight_dame' b+(lien people.r |=(p=person knight-dame.p))]
+      ['volunteer' b+(lien people.r |=(p=person volunteer.p))]
+      ['nonwalker' [%b =(0 w)]]
+      ['plan' (en-plan people.r)]
+  ==
+::  +en-plan: how many of the party plan each day and each activity, so
+::  the reports add up without reading every registration whole
+::
+++  en-plan
+  |=  people=(list person)
+  ^-  json
+  =/  many  |=(f=$-(person ?) ^-(json (en-num (lent (skim people f)))))
+  %-  pairs:enjs:format
+  :~  ['fri' (many |=(p=person fri.days.p))]
+      ['sat' (many |=(p=person sat.days.p))]
+      ['sun' (many |=(p=person sun.days.p))]
+      ['sun_ten' (many |=(p=person &(sun.days.p sun-ten.p)))]
+      ['social_fri' (many |=(p=person social-fri.p))]
+      ['social_sat' (many |=(p=person social-sat.p))]
+      ['mass_fri' (many |=(p=person mass-fri.p))]
+      ['holy_hour' (many |=(p=person holy-hour.p))]
+      ['bus' (many |=(p=person bus.p))]
+      ['first_bsc' (many |=(p=person first-bsc.p))]
+      ['children' (many |=(p=person child.p))]
+      ['knight_dame' (many |=(p=person knight-dame.p))]
+      ['volunteer' (many |=(p=person volunteer.p))]
+  ==
 ::  +read-reg: the shape ladder. Newest first; anything else is ~.
 ::
 ++  read-reg
   |=  n=*
   ^-  (unit reg)
-  =/  v1=(unit stored-reg)  (mole |.(;;(stored-reg n)))
-  ?^  v1  `reg.u.v1
+  =/  v2=(unit stored-reg)  (mole |.(;;(stored-reg n)))
+  ?^  v2  `reg.u.v2
+  =/  v1=(unit stored-reg-1)  (mole |.(;;(stored-reg-1 n)))
+  ?^  v1
+    =/  o=reg-1  old.u.v1
+    :-  ~
+    :*  id.o  status.o  track.o  source.o  created.o  updated.o
+        contact.o  org.o  why.o  assistance.o  together.o  people.o
+        payment.o  waiver.o  token.o  position.o  notes.o  history.o
+        |  %$
+    ==
   ~
+::  ==  decoders for a backup: the inverse of +en-reg-full
+::
+++  de-checkins
+  |=  jon=json
+  ^-  (map @tas checkin)
+  ?.  ?=([%o *] jon)  ~
+  %-  malt
+  %+  murn  ~(tap by p.jon)
+  |=  [k=@t v=json]
+  ^-  (unit [@tas checkin])
+  =/  at=(unit @da)  (gt v 'at')
+  ?~  at  ~
+  `[`@tas`k [u.at (gs v 'by')]]
+++  de-person-full
+  |=  jon=json
+  ^-  person
+  =/  dj=json  (gj jon 'days')
+  :*  (gs jon 'first')
+      (gs jon 'last')
+      (gb jon 'child')
+      [(gb dj 'fri') (gb dj 'sat') (gb dj 'sun')]
+      (gb jon 'sun_ten')
+      (gb jon 'social_fri')
+      (gb jon 'social_sat')
+      (gb jon 'mass_fri')
+      (gb jon 'holy_hour')
+      (gb jon 'bus')
+      (gb jon 'first_bsc')
+      (gb jon 'knight_dame')
+      (gb jon 'volunteer')
+      (de-checkins (gj jon 'checkins'))
+  ==
+++  de-payment
+  |=  jon=json
+  ^-  payment
+  :*  `@tas`(gs jon 'method')
+      (fall (gn jon 'amount') 0)
+      (fall (gn jon 'gift') 0)
+      (gt jon 'at')
+      (gs jon 'ref')
+      (gb jon 'refunded')
+      (gs jon 'note')
+  ==
+++  de-waiver
+  |=  jon=json
+  ^-  waiver
+  :*  `@tas`(gs jon 'method')
+      (gs jon 'envelope')
+      `@tas`(gs jon 'status')
+      (gt jon 'at')
+  ==
+++  de-history
+  |=  raw=(list json)
+  ^-  (list step)
+  %+  murn  raw
+  |=  jon=json
+  ^-  (unit step)
+  =/  at=(unit @da)  (gt jon 'at')
+  ?~  at  ~
+  `[u.at (gs jon 'by') (gs jon 'what')]
+::  +de-reg-full: a registration out of a JSON bundle. ~ when it has no
+::  id or its stamps do not read, so a broken row is never half applied.
+::
+++  de-reg-full
+  |=  jon=json
+  ^-  (unit reg)
+  ?.  ?=([%o *] jon)  ~
+  =/  id=@t  (gs jon 'id')
+  ?:  =('' id)  ~
+  =/  cr=(unit @da)  (gt jon 'created')
+  ?~  cr  ~
+  =/  up=(unit @da)  (gt jon 'updated')
+  ?~  up  ~
+  =/  cj=json  (gj jon 'contact')
+  :-  ~
+  :*  `@ta`id
+      `@tas`(gs jon 'status')
+      `@tas`(gs jon 'track')
+      `@tas`(gs jon 'source')
+      u.cr
+      u.up
+      :*  (gs cj 'email')  (gs cj 'phone')  (gs cj 'street')
+          (gs cj 'city')  (gs cj 'state')  (gs cj 'zip')
+      ==
+      (gs jon 'org')
+      (gs jon 'why')
+      (gb jon 'assistance')
+      (gb jon 'together')
+      (turn (ga jon 'people') de-person-full)
+      (de-payment (gj jon 'payment'))
+      (de-waiver (gj jon 'waiver'))
+      (gs jon 'token')
+      (fall (gn jon 'position') 0)
+      (gs jon 'notes')
+      (de-history (ga jon 'history'))
+      (gb jon 'exempt')
+      `@tas`(gs jon 'prior')
+  ==
+::  ==  csv, for the spreadsheet exports
+::
+::  +csv-cell: a cell is quoted when it holds a comma, a quote or a
+::  newline, and a quote inside it is doubled
+::
+++  csv-cell
+  |=  t=@t
+  ^-  @t
+  =/  tap=tape  (trip t)
+  =/  bad=?  (lien `tape`tap |=(c=@ ?|(=(c ',') =(c '"') =(c 10) =(c 13))))
+  ?.  bad  t
+  =/  body=tape  (zing (turn `tape`tap |=(c=@ ^-(tape ?:(=(c '"') ~['"' '"'] ~[c])))))
+  =/  out=tape  (weld ~['"'] (weld body ~['"']))
+  (crip out)
+++  csv-row
+  |=  cells=(list @t)
+  ^-  @t
+  ?~  cells  ''
+  =/  out=@t  (csv-cell i.cells)
+  =/  rest=(list @t)  t.cells
+  |-  ^-  @t
+  ?~  rest  out
+  $(rest t.rest, out (rap 3 out ',' (csv-cell i.rest) ~))
+++  csv-doc
+  |=  rows=(list @t)
+  ^-  @t
+  (rap 3 (turn rows |=(r=@t (cat 3 r '\0a'))))
+++  yn       |=(b=? ^-(@t ?:(b 'yes' 'no')))
+++  num      |=(n=@ud ^-(@t (crip (a-co:co n))))
+++  opt-iso  |=(d=(unit @da) ^-(@t ?~(d '' (en-iso u.d))))
+::  +dollars: cents as a spreadsheet reads money
+::
+++  dollars
+  |=  cents=@ud
+  ^-  @t
+  =/  whole=tape  (a-co:co (div cents 100))
+  =/  frac=tape   ((d-co:co 2) (mod cents 100))
+  (crip "{whole}.{frac}")
+++  party-header
+  ^-  (list @t)
+  :~  'rid'  'status'  'track'  'source'  'created'  'updated'
+      'email'  'phone'  'street'  'city'  'state'  'zip'
+      'org'  'why'  'assistance'  'exempt'  'position'  'fees'
+      'payment_method'  'payment_amount'  'payment_gift'  'payment_at'
+      'payment_ref'  'refunded'  'waiver_method'  'waiver_status'
+      'waiver_at'  'notes'
+  ==
+++  person-header
+  ^-  (list @t)
+  :~  'first'  'last'  'child'  'fri'  'sat'  'sun'  'sun_ten'
+      'social_fri'  'social_sat'  'mass_fri'  'holy_hour'  'bus'
+      'first_bsc'  'knight_dame'  'volunteer'
+      'checkin_fri'  'checkin_sat'  'checkin_sun'
+  ==
+++  csv-people-header  ^-((list @t) (weld party-header person-header))
+++  csv-regs-header
+  ^-  (list @t)
+  (weld party-header `(list @t)`~['people' 'walkers' 'history'])
+++  party-cells
+  |=  [r=reg fees=@ud]
+  ^-  (list @t)
+  :~  id.r  status.r  track.r  source.r  (en-iso created.r)  (en-iso updated.r)
+      email.contact.r  phone.contact.r  street.contact.r  city.contact.r
+      state.contact.r  zip.contact.r  org.r  why.r  (yn assistance.r)
+      (yn exempt.r)  (num position.r)  (dollars fees)
+      method.payment.r  (dollars amount.payment.r)  (dollars gift.payment.r)
+      (opt-iso at.payment.r)  ref.payment.r  (yn refunded.payment.r)
+      method.waiver.r  status.waiver.r  (opt-iso at.waiver.r)  notes.r
+  ==
+++  checkin-cell
+  |=  [p=person day=@tas]
+  ^-  @t
+  =/  got=(unit checkin)  (~(get by checkins.p) day)
+  ?~  got  ''
+  (en-iso at.u.got)
+++  person-cells
+  |=  p=person
+  ^-  (list @t)
+  :~  first.p  last.p  (yn child.p)  (yn fri.days.p)  (yn sat.days.p)
+      (yn sun.days.p)  (yn sun-ten.p)  (yn social-fri.p)  (yn social-sat.p)
+      (yn mass-fri.p)  (yn holy-hour.p)  (yn bus.p)  (yn first-bsc.p)
+      (yn knight-dame.p)  (yn volunteer.p)
+      (checkin-cell p %fri)  (checkin-cell p %sat)  (checkin-cell p %sun)
+  ==
+::  +hist-cell: the whole history in one cell, each step as at by what
+::
+++  hist-cell
+  |=  h=(list step)
+  ^-  @t
+  =/  parts=(list @t)  (turn h |=(s=step (rap 3 (en-iso at.s) ' ' by.s ' ' what.s ~)))
+  ?~  parts  ''
+  =/  out=@t  i.parts
+  =/  rest=(list @t)  t.parts
+  |-  ^-  @t
+  ?~  rest  out
+  $(rest t.rest, out (rap 3 out '; ' i.rest ~))
+::  +csv-people: one row per person, the party's fields repeated
+::
+++  csv-people
+  |=  [regs=(list reg) s=settings]
+  ^-  @t
+  =/  rows=(list @t)
+    %-  zing
+    %+  turn  regs
+    |=  r=reg
+    ^-  (list @t)
+    =/  base=(list @t)  (party-cells r (fees-total s r))
+    %+  turn  people.r
+    |=  p=person
+    ^-  @t
+    (csv-row (weld base (person-cells p)))
+  (csv-doc [(csv-row csv-people-header) rows])
+::  +csv-regs: one row per registration, with the party counts and the
+::  whole history
+::
+++  csv-regs
+  |=  [regs=(list reg) s=settings]
+  ^-  @t
+  =/  rows=(list @t)
+    %+  turn  regs
+    |=  r=reg
+    ^-  @t
+    %-  csv-row
+    %+  weld  (party-cells r (fees-total s r))
+    ^-  (list @t)
+    :~  (num (lent people.r))
+        (num (walkers track.r people.r))
+        (hist-cell history.r)
+    ==
+  (csv-doc [(csv-row csv-regs-header) rows])
+::  ==  the bundle: the whole data set, readable or jammed
+::
+++  en-bundle
+  |=  b=bundle
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['version' (en-num 1)]
+      ['regs' a+(turn regs.b en-reg-full)]
+      ['settings' settings.b]
+      ['copy' copy.b]
+      ['counts' counts.b]
+  ==
+++  de-regs-full
+  |=  [raw=(list json) acc=(list reg)]
+  ^-  (each (list reg) @t)
+  ?~  raw  [%& (flop acc)]
+  =/  got=(unit reg)  (de-reg-full i.raw)
+  ?~  got  [%| (rap 3 'regs: cannot read ' (gs i.raw 'id') ~)]
+  (de-regs-full t.raw [u.got acc])
+::  +de-bundle-why: a bundle out of JSON, or what was wrong with it
+::
+++  de-bundle-why
+  |=  jon=json
+  ^-  (each bundle @t)
+  ?.  ?=([%o *] jon)  [%| 'bundle: a JSON object is required']
+  ?.  (has-key jon 'regs')  [%| 'bundle: regs is missing']
+  =/  got  (de-regs-full (ga jon 'regs') ~)
+  ?:  ?=(%| -.got)  [%| p.got]
+  [%& [%1 p.got (gj jon 'settings') (gj jon 'copy') (gj jon 'counts')]]
+++  de-bundle
+  |=  jon=json
+  ^-  (unit bundle)
+  =/  got  (de-bundle-why jon)
+  ?:(?=(%| -.got) ~ `p.got)
+++  jam-bundle  |=(b=bundle ^-(@ (jam b)))
+::  +cue-bundle: a jam from a file. A truncated or foreign atom answers
+::  ~ instead of crashing the fiber that read it.
+::
+++  cue-bundle  |=(a=@ ^-((unit bundle) (mole |.(;;(bundle (cue a))))))
 ::  ==  helpers
 ::
 ::  +ring: append to a JSON array and keep the last max entries

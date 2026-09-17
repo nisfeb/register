@@ -36,6 +36,29 @@
     ==
   extra
 ++  st  (de-settings:reg starter-settings:reg)
+::  +old-reg: the shape a %1 grub holds, built out of the new one
+++  old-reg
+  ^-  reg-1:reg
+  =/  r=reg:reg  (some-reg %abc123 %complete %full 2 t0)
+  :*  id.r  status.r  track.r  source.r  created.r  updated.r
+      contact.r  org.r  why.r  assistance.r  together.r  people.r
+      payment.r  waiver.r  token.r  position.r  notes.r  history.r
+  ==
+++  count-commas
+  |=  t=@t
+  ^-  @ud
+  (lent (skim `tape`(trip t) |=(c=@ =(c ','))))
+::  +split-nl: a document into its lines, the trailing newline dropped
+++  split-nl
+  |=  t=@t
+  ^-  (list @t)
+  =/  tap=tape  (trip t)
+  =|  cur=tape
+  =|  out=(list @t)
+  |-  ^-  (list @t)
+  ?~  tap  (flop ?~(cur out [(crip (flop cur)) out]))
+  ?:  =(10 i.tap)  $(tap t.tap, cur ~, out [(crip (flop cur)) out])
+  $(tap t.tap, cur [i.tap cur])
 ++  some-person
   ^-  person:reg
   =/  got  (de-person:reg pj & 0)
@@ -227,7 +250,9 @@
     (expect !>((transition-ok:reg %waiver %waitlist)))
     (expect !>((transition-ok:reg %payment %waitlist)))
     (expect !>((transition-ok:reg %complete %cancelled)))
-    (expect !>(!(transition-ok:reg %cancelled %waiver)))
+    ::  a cancel is undone by a reinstate, so cancelled has edges now
+    (expect !>((transition-ok:reg %cancelled %waiver)))
+    (expect !>(!(transition-ok:reg %cancelled %draft)))
     (expect !>(!(transition-ok:reg %draft %complete)))
     (expect !>(!(transition-ok:reg %waiver %complete)))
     (expect-eq !>(%payment) !>((after-waiver:reg (some-reg %a %waiver %full 1 t0))))
@@ -268,7 +293,7 @@
 ++  test-read-reg
   =/  r=reg:reg  (some-reg %abc123 %complete %full 2 t0)
   ;:  weld
-    (expect-eq !>(`(unit reg:reg)`[~ r]) !>((read-reg:reg `stored-reg:reg`[%1 r])))
+    (expect-eq !>(`(unit reg:reg)`[~ r]) !>((read-reg:reg `stored-reg:reg`[%2 r])))
     (expect-eq !>(`(unit reg:reg)`~) !>((read-reg:reg [%9 'garbage'])))
     (expect-eq !>(`(unit reg:reg)`~) !>((read-reg:reg 42)))
   ==
@@ -316,5 +341,173 @@
     (expect !>(!=('' (gs:reg c 'email.waitlist.body'))))
     (expect !>(!=('' (gs:reg c 'form.social_soldout'))))
     (expect !>(!=('' (gs:reg c 'next.lapsed'))))
+  ==
+::  ==  the shape ladder
+::
+++  test-read-reg-1
+  =/  o=reg-1:reg  old-reg
+  =/  got=(unit reg:reg)  (read-reg:reg `stored-reg-1:reg`[%1 o])
+  ?>  ?=(^ got)
+  =/  r=reg:reg  u.got
+  ;:  weld
+    (expect-eq !>('abc123') !>(id.r))
+    (expect-eq !>(%complete) !>(status.r))
+    (expect-eq !>(2) !>((lent people.r)))
+    ::  a %1 grub reads as %2 with the new fields at their defaults
+    (expect !>(!exempt.r))
+    (expect !>(=(%$ prior.r)))
+  ==
+::  ==  exempt and reinstate
+::
+++  test-tally-exempt
+  =/  now=@da  (add t0 ~h1)
+  =/  plain=reg:reg  (some-reg %a %complete %full 3 t0)
+  =/  free=reg:reg  =/(r (some-reg %b %complete %full 2 t0) r(exempt &))
+  =/  c=counts:reg  (tally:reg st ~[plain free] now)
+  =/  adm=counts:reg  (tally:reg st ~[free(source %admin)] now)
+  =/  bam=counts:reg  (tally:reg st ~[free(track %bambino)] now)
+  ;:  weld
+    ::  only the three non-exempt walkers hold a track spot
+    (expect-eq !>(3) !>(full.c))
+    ::  the exempt party still takes its socials
+    (expect-eq !>(5) !>(social-fri.c))
+    (expect-eq !>(5) !>(social-sat.c))
+    (expect-eq !>(0) !>(late.c))
+    ::  an exempt organizer add takes no late-add spot
+    (expect-eq !>(0) !>(late.adm))
+    (expect-eq !>(2) !>(social-sat.adm))
+    (expect-eq !>(0) !>(bambino.bam))
+  ==
+++  test-reinstate
+  =/  r=reg:reg  (some-reg %a %complete %full 2 t0)
+  =/  gone=reg:reg
+    (set-status:reg r(prior %complete) %cancelled 'admin:sue' 'cancelled: gone' (add t0 ~m1))
+  =/  back=(unit reg:reg)  (reinstate:reg gone 'admin:sue' (add t0 ~m2))
+  ?>  ?=(^ back)
+  =/  b=reg:reg  u.back
+  ;:  weld
+    (expect !>((transition-ok:reg %cancelled %complete)))
+    (expect !>((transition-ok:reg %cancelled %waitlist)))
+    (expect !>(!(transition-ok:reg %cancelled %draft)))
+    ::  a cancel then a reinstate lands on the status the cancel left
+    (expect-eq !>(%complete) !>(status.b))
+    (expect-eq !>('reinstated') !>(what:(rear history.b)))
+    ::  a row that was never cancelled cannot be reinstated
+    (expect-eq !>(`(unit reg:reg)`~) !>((reinstate:reg r 'admin:sue' t0)))
+    ::  neither can a cancel that kept no prior
+    (expect-eq !>(`(unit reg:reg)`~) !>((reinstate:reg gone(prior %$) 'admin:sue' t0)))
+  ==
+::  ==  csv
+::
+++  test-csv-cell
+  =/  nl=@t  (rap 3 'a' '\0a' 'b' ~)
+  ;:  weld
+    (expect-eq !>('plain') !>((csv-cell:reg 'plain')))
+    ::  a comma quotes the cell
+    (expect-eq !>('"a,b"') !>((csv-cell:reg 'a,b')))
+    ::  a quote is doubled inside a quoted cell
+    (expect-eq !>('"say ""hi"""') !>((csv-cell:reg 'say "hi"')))
+    (expect-eq !>('""""') !>((csv-cell:reg '"')))
+    ::  a newline quotes the cell too
+    (expect-eq !>('"') !>((end [3 1] (csv-cell:reg nl))))
+  ==
+++  test-csv-columns
+  =/  regs=(list reg:reg)
+    :~  (some-reg %aaa %complete %full 2 t0)
+        =/(r (some-reg %bbb %waitlist %bambino 1 t0) r(notes 'needs a ride'))
+    ==
+  =/  ppl=(list @t)  (split-nl (csv-people:reg regs st))
+  =/  rws=(list @t)  (split-nl (csv-regs:reg regs st))
+  ?>  ?=(^ ppl)
+  ?>  ?=(^ rws)
+  =/  hp=@ud  (count-commas i.ppl)
+  =/  hr=@ud  (count-commas i.rws)
+  ;:  weld
+    ::  the header and one row per person
+    (expect-eq !>(4) !>((lent ppl)))
+    (expect-eq !>(45) !>(hp))
+    ::  every row carries the header's column count
+    (expect !>((levy `(list @t)`t.ppl |=(l=@t =(hp (count-commas l))))))
+    ::  the header and one row per registration
+    (expect-eq !>(3) !>((lent rws)))
+    (expect-eq !>(30) !>(hr))
+    (expect !>((levy `(list @t)`t.rws |=(l=@t =(hr (count-commas l))))))
+    (expect-eq !>('rid') !>((end [3 3] i.ppl)))
+  ==
+::  ==  the bundle
+::
+++  test-bundle-jam
+  =/  b=bundle:reg
+    [%1 ~[(some-reg %aaa %complete %full 2 t0)] starter-settings:reg starter-copy:reg [%o ~]]
+  =/  a=@  (jam-bundle:reg b)
+  ;:  weld
+    ::  jam then cue is identity
+    (expect-eq !>(`(unit bundle:reg)`[~ b]) !>((cue-bundle:reg a)))
+    ::  a truncated atom answers ~ instead of crashing
+    (expect-eq !>(`(unit bundle:reg)`~) !>((cue-bundle:reg (rsh [0 1] a))))
+    (expect-eq !>(`(unit bundle:reg)`~) !>((cue-bundle:reg 42)))
+  ==
+++  test-bundle-json
+  =/  p=person:reg  some-person
+  =/  cks=(list [@tas checkin:reg])
+    ~[[%fri [t0 'admin:sue']] [%sun [(add t0 ~d2) 'admin:lee']]]
+  =/  pc=person:reg  p(checkins (malt cks))
+  =/  r0=reg:reg  (some-reg %abc123 %complete %full 1 t0)
+  =/  r=reg:reg
+    %=  r0
+      people   ~[pc]
+      notes    'a note'
+      exempt   &
+      prior    %payment
+      payment  [%check 15.000 500 `t0 'chk 41' & 'by hand']
+      waiver   [%paper '' %completed `t0]
+      history  ~[[t0 'pilgrim' 'submitted'] [(add t0 ~m5) 'admin:sue' 'edited']]
+    ==
+  =/  b=bundle:reg  [%1 ~[r] starter-settings:reg starter-copy:reg [%o ~]]
+  =/  j=json  (en-bundle:reg b)
+  =/  broke=json
+    (pairs:enjs:format ~[['regs' a+~[(pairs:enjs:format ~[['id' s+'oops']])]]])
+  =/  back  (de-bundle-why:reg j)
+  ;:  weld
+    ::  the JSON round trip is identity, history and check-ins included
+    (expect-eq !>(`(unit bundle:reg)`[~ b]) !>((de-bundle:reg j)))
+    (expect !>(?=(%& -.back)))
+    ::  a registration that will not read names itself
+    (expect-eq !>(`(each bundle:reg @t)`[%| 'regs: cannot read oops']) !>((de-bundle-why:reg broke)))
+    (expect-eq !>(`(each bundle:reg @t)`[%| 'bundle: regs is missing']) !>((de-bundle-why:reg `json`[%o ~])))
+    (expect-eq !>(`(each bundle:reg @t)`[%| 'bundle: a JSON object is required']) !>((de-bundle-why:reg `json`~)))
+  ==
+::  ==  the roster row
+::
+++  test-en-row
+  =/  p=person:reg  some-person
+  =/  nw=person:reg  p(days [| | |], knight-dame &)
+  =/  r0=reg:reg  (some-reg %abc123 %complete %full 2 t0)
+  =/  r=reg:reg  r0(people ~[p nw(last 'Bo', first 'Cy')])
+  =/  j=json  (en-row:reg r 15.000 0)
+  =/  names=(list @t)  (strings:reg (ga:reg j 'names'))
+  =/  flat=json  (en-row:reg r0(people ~[nw]) 7.500 0)
+  ;:  weld
+    (expect-eq !>('abc123') !>((gs:reg j 'id')))
+    (expect-eq !>('abc123') !>((gs:reg j 'email')))
+    (expect-eq !>('FL') !>((gs:reg j 'state')))
+    ::  one "Last, First" per person, in the party's order
+    (expect-eq !>(`(list @t)`~['Silva, Ana' 'Bo, Cy']) !>(names))
+    (expect-eq !>(`(unit @ud)`[~ 2]) !>((gn:reg j 'people')))
+    (expect-eq !>(`(unit @ud)`[~ 1]) !>((gn:reg j 'walkers')))
+    (expect-eq !>(`(unit @ud)`[~ 15.000]) !>((gn:reg j 'fees')))
+    (expect !>((gb:reg j 'knight_dame')))
+    (expect !>(!(gb:reg j 'volunteer')))
+    (expect !>(!(gb:reg j 'nonwalker')))
+    ::  a party in which nobody walks
+    (expect !>((gb:reg flat 'nonwalker')))
+    (expect-eq !>('none') !>((gs:reg j 'paid')))
+    (expect-eq !>('none') !>((gs:reg j 'waiver')))
+    (expect !>(!(has-key:reg j 'token')))
+    ::  the plan block counts the party per day and per activity
+    (expect-eq !>(`(unit @ud)`[~ 1]) !>((gn:reg (gj:reg j 'plan') 'fri')))
+    (expect-eq !>(`(unit @ud)`[~ 2]) !>((gn:reg (gj:reg j 'plan') 'social_sat')))
+    (expect-eq !>(`(unit @ud)`[~ 1]) !>((gn:reg (gj:reg j 'plan') 'knight_dame')))
+    (expect-eq !>(`(unit @ud)`[~ 0]) !>((gn:reg (gj:reg flat 'plan') 'sun')))
   ==
 --
