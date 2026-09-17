@@ -1,0 +1,1001 @@
+// register's backoffice: the roster, one registration with every
+// organizer action, manual adds, reports, the counts, the copy and the
+// settings editors, and the backup box. Owner only; the ship checks.
+// The strings here are the organizers' own, not copy.json, which holds
+// only what a pilgrim reads.
+(function () {
+  'use strict';
+  var API = '/apps/register/api';
+  var ADMIN = API + '/admin';
+  var KEEP = '/grubbery/api/keep/apps/shell.shell/desks/register.desk/desk/data/register.register_app/beacon/rev';
+  var SHRINE = 350;   // the Sunday capacity at the Shrine, reported not enforced
+  var TEMPLATES = ['confirmation', 'manage', 'promoted', 'assistance_approved',
+    'assistance_declined', 'reminder', 'cancelled'];
+  var DAYS = [['fri', 'Friday'], ['sat', 'Saturday'], ['sun', 'Sunday']];
+  var ACTS = [['walk', 'Walk'], ['mass', 'Mass'], ['holy_hour', 'Holy Hour'],
+    ['social', 'Social'], ['bus', 'Bus']];
+  var SEGMENTS = [['all', 'all'], ['complete', 'complete'], ['pending', 'pending'],
+    ['waitlist', 'wait list'], ['assistance', 'financial assistance'], ['unpaid', 'unpaid'],
+    ['unsigned', 'unsigned'], ['draft', 'drafts'], ['cancelled', 'cancelled'],
+    ['bambino', 'Bambino only'], ['nonwalker', 'non-walkers'],
+    ['malta', 'NE Florida Order of Malta and volunteers'], ['exempt', 'exempt'],
+    ['admin', 'admin adds']];
+
+  var view = document.getElementById('view');
+  var sayEl = document.getElementById('say');
+  var liveEl = document.getElementById('live');
+  var actorEl = document.getElementById('actor');
+  var promptEl = document.getElementById('prompt');
+
+  var roster = null, pub = null, detail = null;
+  var model = null, before = null;
+  var settingsDoc = null, copyDoc = null, countsDoc = null;
+  var dry = null, fileBody = null, fileName = '';
+  var sortBy = { col: 'created', up: false };
+  var filters = { seg: 'all', q: '', track: 'all' };
+  var routeGen = 0, lastRev = null, refreshTimer = null;
+
+  // ---- helpers ----
+  function esc(s) {
+    return String(s === undefined || s === null ? '' : s).replace(/[<>&"']/g, function (c) {
+      return { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function money(cents) {
+    var n = Number(cents) || 0;
+    return '$' + (n % 100 ? (n / 100).toFixed(2) : String(n / 100));
+  }
+  function cents(dollars) { return Math.round((Number(dollars) || 0) * 100); }
+  function day(t) { return t ? String(t).slice(0, 10) : ''; }
+  function when(t) { return t ? String(t).replace('T', ' ').replace('Z', '') : ''; }
+  function say(msg, good) {
+    sayEl.hidden = !msg;
+    sayEl.className = 'say' + (good ? ' ok' : '');
+    sayEl.textContent = msg || '';
+  }
+  function api(url, opts) {
+    return fetch(url, opts || {}).then(function (r) {
+      return r.text().then(function (txt) {
+        var d = {};
+        try { d = txt ? JSON.parse(txt) : {}; } catch (e) { d = {}; }
+        if (!r.ok) {
+          var err = new Error(d.error || ('http ' + r.status));
+          err.status = r.status; err.code = d.code;
+          throw err;
+        }
+        return d;
+      });
+    });
+  }
+  function read(path) { return api(ADMIN + path); }
+  // every mutating call names the organizer; the ship refuses one that
+  // does not, and that refusal reopens the prompt
+  function write(path, body, method) {
+    return api(ADMIN + path, {
+      method: method || 'POST',
+      headers: { 'content-type': 'application/json', 'x-actor': actor },
+      body: JSON.stringify(body === undefined ? {} : body)
+    }).catch(function (e) {
+      if (e.status === 400 && /actor/.test(String(e.message))) askActor();
+      throw e;
+    });
+  }
+  function toLocal(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+      'T' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  function fromLocal(v) {
+    if (!v) return '';
+    var d = new Date(v);
+    if (isNaN(d.getTime())) return '';
+    return d.toISOString().replace(/\.\d+Z$/, 'Z');
+  }
+  function getPath(obj, path) {
+    var ks = String(path).split('.'), o = obj;
+    for (var i = 0; i < ks.length; i++) { if (o === undefined || o === null) return undefined; o = o[ks[i]]; }
+    return o;
+  }
+  function setPath(obj, path, val) {
+    var ks = String(path).split('.'), o = obj;
+    for (var i = 0; i < ks.length - 1; i++) { if (!o[ks[i]]) o[ks[i]] = {}; o = o[ks[i]]; }
+    o[ks[ks.length - 1]] = val;
+  }
+
+  // ---- the organizer's name ----
+  var actor = '';
+  try { actor = localStorage.getItem('register.actor') || ''; } catch (e) { }
+  var queued = null;
+  function drawActor() {
+    actorEl.textContent = actor ? 'acting as ' + actor : 'set your name';
+  }
+  function askActor() {
+    promptEl.hidden = false;
+    var f = document.getElementById('actor-name');
+    f.value = actor;
+    f.focus();
+  }
+  function saveActor() {
+    var v = String(document.getElementById('actor-name').value || '').trim();
+    if (!v) return;
+    actor = v.slice(0, 64);
+    try { localStorage.setItem('register.actor', actor); } catch (e) { }
+    promptEl.hidden = true;
+    drawActor();
+    var q = queued; queued = null;
+    if (q) q();
+  }
+  // a mutating click with no name yet opens the prompt and goes on after
+  function act(fn) {
+    if (actor) return fn();
+    queued = fn;
+    askActor();
+  }
+  actorEl.addEventListener('click', askActor);
+  document.getElementById('actor-save').addEventListener('click', saveActor);
+  document.getElementById('actor-cancel').addEventListener('click', function () {
+    queued = null; promptEl.hidden = true;
+  });
+  document.getElementById('actor-name').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); saveActor(); }
+  });
+
+  // ---- the party form, the public form's field list ----
+  function blankPerson() {
+    return {
+      first: '', last: '', child: false, days: { fri: false, sat: false, sun: false }, sun_ten: false,
+      social_fri: false, social_sat: false, mass_fri: false, holy_hour: false, bus: false,
+      first_bsc: false, knight_dame: false, volunteer: false
+    };
+  }
+  function blankParty(track) {
+    return {
+      track: track || 'full',
+      contact: { email: '', phone: '', street: '', city: '', state: '', zip: '' },
+      org: '', why: '', assistance: false, together: false, notes: '', exempt: false,
+      people: [blankPerson()]
+    };
+  }
+  function fromReg(r) {
+    var keys = Object.keys(blankPerson());
+    return {
+      track: r.track, contact: r.contact, org: r.org, why: r.why,
+      assistance: !!r.assistance, together: !!r.together, notes: r.notes || '',
+      exempt: !!r.exempt,
+      people: (r.people || []).map(function (p) {
+        var q = {};
+        keys.forEach(function (k) { q[k] = k === 'days' ? { fri: !!p.days.fri, sat: !!p.days.sat, sun: !!p.days.sun } : p[k]; });
+        return q;
+      })
+    };
+  }
+  function partyInput(m) {
+    return {
+      track: m.track, contact: m.contact, org: m.org, why: m.why,
+      assistance: !!m.assistance, together: !!m.together,
+      people: m.people.map(function (p) {
+        var q = JSON.parse(JSON.stringify(p));
+        delete q.checkins;
+        return q;
+      })
+    };
+  }
+  function field(k, label, value, type, extra) {
+    return '<label>' + esc(label) + '<input type="' + esc(type || 'text') +
+      '" data-k="' + esc(k) + '" value="' + esc(value === undefined || value === null ? '' : value) + '"' + (extra || '') + '></label>';
+  }
+  function box(k, label, on) {
+    return '<label class="check"><input type="checkbox" data-k="' + esc(k) + '"' + (on ? ' checked' : '') +
+      '><span>' + esc(label) + '</span></label>';
+  }
+  function personCard(p, i, m) {
+    var k = 'people.' + i + '.';
+    var out = '<div class="card"><h3>Person ' + (i + 1) +
+      (m.people.length > 1 ? ' <button type="button" class="btn quiet small" data-act="remove-person" data-i="' + i + '">Remove</button>' : '') + '</h3>';
+    out += '<div class="row">' + field(k + 'first', 'First name', p.first) + field(k + 'last', 'Last name', p.last) + '</div>';
+    out += box(k + 'child', 'This is a child', p.child);
+    if (i === 0 || !m.together) {
+      out += '<h3>Walking days</h3>';
+      if (m.track === 'full') {
+        out += box(k + 'days.fri', 'Friday', p.days.fri) + box(k + 'days.sat', 'Saturday', p.days.sat) +
+          box(k + 'days.sun', 'Sunday', p.days.sun) + box(k + 'sun_ten', 'Sunday: the full 10 miles', p.sun_ten);
+      } else {
+        out += box(k + 'days.sun', 'Sunday', p.days.sun);
+      }
+      out += box(k + 'social_fri', 'Friday social', p.social_fri) + box(k + 'social_sat', 'Saturday social', p.social_sat) +
+        box(k + 'mass_fri', 'Friday Mass', p.mass_fri) + box(k + 'holy_hour', 'Holy Hour', p.holy_hour) +
+        box(k + 'bus', 'Bus', p.bus);
+    }
+    out += box(k + 'first_bsc', 'First Baby Steps Camino', p.first_bsc) +
+      box(k + 'knight_dame', 'Knight or Dame', p.knight_dame) + box(k + 'volunteer', 'Volunteering', p.volunteer);
+    if (p.checkins && Object.keys(p.checkins).length) {
+      out += '<p class="help">Checked in: ' + esc(Object.keys(p.checkins).join(', ')) + '</p>';
+    }
+    return out + '</div>';
+  }
+  function partyForm(m) {
+    var c = m.contact;
+    var out = '<div class="card"><h3>Contact</h3>';
+    out += '<label>Track<select data-k="track">' +
+      ['full', 'bambino'].map(function (t) {
+        return '<option value="' + t + '"' + (m.track === t ? ' selected' : '') + '>' + t + '</option>';
+      }).join('') + '</select></label>';
+    out += '<div class="row">' + field('contact.email', 'Email', c.email, 'email') + field('contact.phone', 'Phone', c.phone, 'tel') + '</div>';
+    out += field('contact.street', 'Street', c.street);
+    out += '<div class="row3">' + field('contact.city', 'City', c.city) +
+      field('contact.state', 'State', c.state, 'text', ' maxlength="40"') + field('contact.zip', 'ZIP', c.zip) + '</div>';
+    out += field('org', 'Organization', m.org);
+    out += '<label>Why they are walking<textarea data-k="why">' + esc(m.why) + '</textarea></label>';
+    out += box('assistance', 'Requests financial assistance', m.assistance);
+    out += box('exempt', 'Exempt from the track caps', m.exempt);
+    // a manual add has no notes route yet, so the field waits for the detail
+    if (!m.isAdd) out += '<label>Organizers’ notes<textarea data-k="notes">' + esc(m.notes) + '</textarea></label>';
+    out += '</div>';
+    if (m.people.length > 1) out += '<div class="card soft">' + box('together', 'Everyone does the same things', m.together) + '</div>';
+    m.people.forEach(function (p, i) { out += personCard(p, i, m); });
+    var cap = (roster && roster.caps ? roster.caps.party : 12) || 12;
+    if (m.people.length < cap) out += '<p><button type="button" class="btn quiet small" data-act="add-person">Add a person</button></p>';
+    return out;
+  }
+
+  // ---- the roster ----
+  function inSegment(r, seg) {
+    var live = r.status !== 'draft' && r.status !== 'cancelled';
+    if (seg === 'all') return true;
+    if (seg === 'complete') return r.status === 'complete';
+    if (seg === 'pending') return r.status === 'waiver' || r.status === 'payment' || r.status === 'assistance';
+    if (seg === 'waitlist') return r.status === 'waitlist';
+    if (seg === 'assistance') return r.status === 'assistance' || r.assistance;
+    if (seg === 'unpaid') return live && r.paid === 'none';
+    if (seg === 'unsigned') return live && r.waiver !== 'completed';
+    if (seg === 'draft') return r.status === 'draft';
+    if (seg === 'cancelled') return r.status === 'cancelled';
+    if (seg === 'bambino') return r.track === 'bambino';
+    if (seg === 'nonwalker') return !!r.nonwalker;
+    if (seg === 'malta') return (r.knight_dame || r.volunteer) && String(r.state || '').trim().toUpperCase() === 'FL';
+    if (seg === 'exempt') return !!r.exempt;
+    if (seg === 'admin') return r.source === 'admin';
+    return true;
+  }
+  function matches(r, q) {
+    if (!q) return true;
+    var hay = [r.email, r.phone, r.org].concat(r.names || []).join(' ').toLowerCase();
+    return hay.indexOf(q.toLowerCase()) >= 0;
+  }
+  function sortKey(r, col) {
+    if (col === 'name') return String((r.names || [])[0] || '').toLowerCase();
+    if (col === 'state') return String(r.state || '').toUpperCase();
+    if (col === 'fees') return Number(r.fees) || 0;
+    return String(r[col] || '');
+  }
+  function rows() {
+    var out = (roster.regs || []).filter(function (r) {
+      return inSegment(r, filters.seg) && matches(r, filters.q) &&
+        (filters.track === 'all' || r.track === filters.track);
+    });
+    out.sort(function (a, b) {
+      var x = sortKey(a, sortBy.col), y = sortKey(b, sortBy.col);
+      if (x === y) return String(a.id) < String(b.id) ? -1 : 1;
+      return (x < y ? -1 : 1) * (sortBy.up ? 1 : -1);
+    });
+    return out;
+  }
+  function head(col, label, extra) {
+    var arrow = sortBy.col === col ? (sortBy.up ? ' ↑' : ' ↓') : '';
+    return '<th class="sortable' + (extra || '') + '" data-sort="' + col + '">' + esc(label) + arrow + '</th>';
+  }
+  function rosterView() {
+    var all = roster.regs || [];
+    var drafts = all.filter(function (r) { return r.status === 'draft'; }).length;
+    var out = '<h1>Roster</h1>';
+    out += '<div class="bar">';
+    out += '<div><label>Segment</label><select id="f-seg">' + SEGMENTS.map(function (s) {
+      return '<option value="' + s[0] + '"' + (filters.seg === s[0] ? ' selected' : '') + '>' + esc(s[1]) + '</option>';
+    }).join('') + '</select></div>';
+    out += '<div><label>Search</label><input type="text" id="f-q" placeholder="name, email, phone, organization" value="' + esc(filters.q) + '"></div>';
+    out += '<div><label>Track</label><select id="f-track">' + ['all', 'full', 'bambino'].map(function (t) {
+      return '<option value="' + t + '"' + (filters.track === t ? ' selected' : '') + '>' + t + '</option>';
+    }).join('') + '</select></div>';
+    out += '<div><label>&nbsp;</label><a class="btn quiet small" href="#add">Add a registration</a></div>';
+    out += '</div>';
+    out += '<p class="muted">' + esc(roster.counts.full + ' of ' + roster.caps.full + ' pilgrims, ' +
+      roster.counts.bambino + ' of ' + roster.caps.bambino + ' Bambino, ' +
+      roster.counts.waitlist + ' on the wait list, ' + drafts + ' drafts') + '</p>';
+    var list = rows();
+    out += '<table><thead><tr>' +
+      head('name', 'Party') + head('state', 'State') + head('status', 'Status') + head('track', 'Track') +
+      '<th class="num">People</th><th class="num">Walkers</th>' +
+      head('created', 'Created') + head('fees', 'Fees', ' num') +
+      '<th>Paid</th><th>Waiver</th><th>Flags</th></tr></thead><tbody>';
+    list.forEach(function (r) {
+      var names = (r.names || []).join('; ');
+      var flags = '';
+      if (r.exempt) flags += '<span class="tag">exempt</span>';
+      if (r.assistance) flags += '<span class="tag">assist</span>';
+      if (r.source === 'admin') flags += '<span class="tag">admin</span>';
+      if (r.nonwalker) flags += '<span class="tag">non-walker</span>';
+      if (r.knight_dame) flags += '<span class="tag">K/D</span>';
+      if (r.volunteer) flags += '<span class="tag">vol</span>';
+      if (r.refunded) flags += '<span class="tag">refunded</span>';
+      out += '<tr><td><a href="#reg/' + esc(r.id) + '">' + esc(names || r.email || r.id) + '</a>' +
+        '<div class="muted">' + esc(r.email) + (r.org ? ' &middot; ' + esc(r.org) : '') + '</div></td>' +
+        '<td>' + esc(r.state) + '</td>' +
+        '<td><span class="badge ' + esc(r.status) + '">' + esc(r.status) + '</span>' +
+        (r.position ? ' <span class="muted">#' + esc(r.position) + '</span>' : '') + '</td>' +
+        '<td>' + esc(r.track) + '</td>' +
+        '<td class="num">' + esc(r.people) + '</td><td class="num">' + esc(r.walkers) + '</td>' +
+        '<td>' + esc(day(r.created)) + '</td>' +
+        '<td class="num">' + esc(money(r.fees)) + '</td>' +
+        '<td>' + esc(r.paid === 'none' ? '' : r.paid) + '</td>' +
+        '<td>' + esc(r.waiver === 'none' ? '' : r.waiver) + '</td>' +
+        '<td>' + flags + '</td></tr>';
+    });
+    out += '</tbody></table>';
+    if (!list.length) out += '<p class="muted">Nothing matches.</p>';
+    return out;
+  }
+
+  // ---- one registration ----
+  function paymentCard(r) {
+    var p = r.payment || {};
+    var out = '<div class="card"><h3>Payment</h3><dl class="kv">' +
+      '<dt>method</dt><dd>' + esc(p.method) + '</dd>' +
+      '<dt>amount</dt><dd>' + esc(money(p.amount)) + '</dd>' +
+      '<dt>gift</dt><dd>' + esc(money(p.gift)) + '</dd>' +
+      '<dt>at</dt><dd>' + esc(when(p.at)) + '</dd>' +
+      '<dt>reference</dt><dd>' + esc(p.ref) + '</dd>' +
+      '<dt>refunded</dt><dd>' + (p.refunded ? 'yes' : 'no') + '</dd>' +
+      '<dt>note</dt><dd>' + esc(p.note) + '</dd></dl>';
+    if (r.status === 'payment' || r.status === 'assistance') {
+      out += '<h3>Record a payment</h3>' +
+        '<label>Method<select id="pay-method"><option value="check">check</option>' +
+        '<option value="cash">cash</option><option value="other">other</option></select></label>' +
+        '<div class="row">' +
+        '<label>Amount<input type="number" id="pay-amount" step="0.01" min="0" value="' + esc((Number(r.fees) / 100).toFixed(2)) + '"></label>' +
+        '<label>Gift above the fee<input type="number" id="pay-gift" step="0.01" min="0" value="0.00"></label></div>' +
+        '<label>Reference<input type="text" id="pay-ref"></label>' +
+        '<label>Note<input type="text" id="pay-note"></label>' +
+        '<p><button type="button" class="btn" data-act="pay">Record payment</button></p>';
+    }
+    if (p.method && p.method !== 'none' && !p.refunded) {
+      out += '<p><button type="button" class="btn danger small" data-act="refund">Mark refunded</button></p>';
+    }
+    return out + '</div>';
+  }
+  function waiverCard(r) {
+    var w = r.waiver || {};
+    var out = '<div class="card"><h3>Waiver</h3><dl class="kv">' +
+      '<dt>method</dt><dd>' + esc(w.method) + '</dd>' +
+      '<dt>status</dt><dd>' + esc(w.status) + '</dd>' +
+      '<dt>envelope</dt><dd>' + esc(w.envelope) + '</dd>' +
+      '<dt>at</dt><dd>' + esc(when(w.at)) + '</dd></dl><div class="actions">';
+    out += '<button type="button" class="btn small" data-act="waiver-paper">Signed on paper</button>';
+    out += '<button type="button" class="btn quiet small" data-act="recheck-waiver">Re-read envelope</button>';
+    return out + '</div></div>';
+  }
+  function actionsCard(r) {
+    var out = '<div class="card"><h3>Actions</h3><div class="actions">';
+    if (r.status === 'waitlist') out += '<button type="button" class="btn small" data-act="promote">Promote</button>';
+    if (r.status === 'assistance') {
+      out += '<button type="button" class="btn small" data-act="assist-yes">Approve assistance</button>' +
+        '<button type="button" class="btn quiet small" data-act="assist-no">Decline assistance</button>';
+    }
+    if (r.status !== 'draft' && r.status !== 'cancelled') {
+      out += '<button type="button" class="btn danger small" data-act="cancel">Cancel</button>';
+    }
+    if (r.status === 'cancelled' && r.prior) out += '<button type="button" class="btn small" data-act="reinstate">Reinstate</button>';
+    out += '</div>';
+    if (r.status !== 'draft' && r.status !== 'cancelled') {
+      out += '<label>Cancellation note<input type="text" id="cancel-note"></label>';
+    }
+    out += '<h3>Email</h3><div class="actions">' +
+      '<select id="tpl">' + TEMPLATES.map(function (t) { return '<option value="' + t + '">' + esc(t) + '</option>'; }).join('') + '</select>' +
+      '<button type="button" class="btn small" data-act="resend">Send</button></div>';
+    return out + '</div>';
+  }
+  function historyCard(r) {
+    var h = (r.history || []).slice().reverse();
+    var out = '<div class="card"><h3>History</h3><ul class="hist">';
+    h.forEach(function (s) {
+      out += '<li><span class="when">' + esc(when(s.at)) + '</span> ' + esc(s.by) + ' &mdash; ' + esc(s.what) + '</li>';
+    });
+    if (!h.length) out += '<li class="muted">nothing yet</li>';
+    return out + '</ul></div>';
+  }
+  function detailView() {
+    var r = detail;
+    var out = '<h1>' + esc((r.people || []).map(function (p) { return p.first + ' ' + p.last; }).join(', ') || r.id) + '</h1>';
+    out += '<p><a href="#roster">back to the roster</a> &middot; <span class="muted">' + esc(r.id) + '</span></p>';
+    out += '<div class="two"><div>' + partyForm(model) +
+      '<div class="actions"><button type="button" class="btn" data-act="save">Save changes</button></div></div><div>';
+    out += '<div class="card"><h3>Status</h3><p><span class="badge ' + esc(r.status) + '">' + esc(r.status) + '</span>' +
+      (r.position ? ' <span class="muted">wait list #' + esc(r.position) + '</span>' : '') + '</p>' +
+      '<dl class="kv"><dt>track</dt><dd>' + esc(r.track) + '</dd>' +
+      '<dt>source</dt><dd>' + esc(r.source) + '</dd>' +
+      '<dt>fees</dt><dd>' + esc(money(r.fees)) + '</dd>' +
+      '<dt>created</dt><dd>' + esc(when(r.created)) + '</dd>' +
+      '<dt>updated</dt><dd>' + esc(when(r.updated)) + '</dd>' +
+      '<dt>exempt</dt><dd>' + (r.exempt ? 'yes' : 'no') + '</dd>' +
+      (r.prior ? '<dt>was</dt><dd>' + esc(r.prior) + '</dd>' : '') + '</dl></div>';
+    out += paymentCard(r) + waiverCard(r) + actionsCard(r) + historyCard(r);
+    return out + '</div></div>';
+  }
+  function addView() {
+    var out = '<h1>Add a registration</h1><p class="muted">No window and no cap check. It draws on the late-add pool.</p>';
+    out += '<div class="two"><div>' + partyForm(model) + '</div><div>';
+    out += '<div class="card"><h3>What the organizer took</h3>' +
+      box('waiver_paper', 'Waiver signed on paper', model.waiver_paper) +
+      '<label>Paid by<select data-k="pay_method"><option value="">none</option>' +
+      ['check', 'cash', 'other'].map(function (t) {
+        return '<option value="' + t + '"' + (model.pay_method === t ? ' selected' : '') + '>' + t + '</option>';
+      }).join('') + '</select></label>';
+    if (model.pay_method) {
+      out += '<div class="row"><label>Amount<input type="number" step="0.01" min="0" data-k="pay_amount" value="' + esc(model.pay_amount) + '"></label>' +
+        '<label>Gift<input type="number" step="0.01" min="0" data-k="pay_gift" value="' + esc(model.pay_gift) + '"></label></div>' +
+        '<label>Reference<input type="text" data-k="pay_ref" value="' + esc(model.pay_ref) + '"></label>';
+    }
+    out += '<p class="help">A payment is recorded only when the waiver is signed on paper too, since payment follows the waiver.</p>';
+    out += '<p><button type="button" class="btn" data-act="submit-add">Add</button></p></div>';
+    return out + '</div></div>';
+  }
+
+  // ---- reports ----
+  function planned(list) {
+    var keys = ['fri', 'sat', 'sun', 'sun_ten', 'social_fri', 'social_sat', 'mass_fri', 'holy_hour', 'bus', 'first_bsc', 'children', 'knight_dame', 'volunteer'];
+    var sum = { people: 0, walkers: 0 };
+    keys.forEach(function (k) { sum[k] = 0; });
+    list.forEach(function (r) {
+      sum.people += Number(r.people) || 0;
+      sum.walkers += Number(r.walkers) || 0;
+      keys.forEach(function (k) { sum[k] += Number((r.plan || {})[k]) || 0; });
+    });
+    return sum;
+  }
+  function meter(n, cap) {
+    var pct = cap ? Math.min(100, Math.round(100 * n / cap)) : 0;
+    return '<div class="meter"><i class="' + (n > cap ? 'over' : '') + '" style="width:' + pct + '%"></i></div>';
+  }
+  function line(label, n, cap) {
+    return '<p>' + esc(label) + ': <strong>' + esc(n) + '</strong> of ' + esc(cap) + '</p>' + meter(n, cap);
+  }
+  function tally(list, key) {
+    var by = {};
+    list.forEach(function (r) { var k = r[key] || ''; by[k] = (by[k] || 0) + 1; });
+    return by;
+  }
+  function barlist(pairs, total) {
+    var out = '<div class="barlist">';
+    pairs.forEach(function (p) {
+      var pct = total ? Math.round(100 * p[1] / total) : 0;
+      out += '<div><span>' + esc(p[0] || '(none)') + '</span><span class="b" style="width:' + pct + '%"></span><span>' +
+        esc(p[1]) + (total ? ' (' + pct + '%)' : '') + '</span></div>';
+    });
+    return out + '</div>';
+  }
+  function reportsView() {
+    var all = roster.regs || [];
+    var live = all.filter(function (r) {
+      return r.status === 'complete' || r.status === 'assistance' || r.status === 'waiver' || r.status === 'payment';
+    });
+    var plan = planned(live);
+    var caps = roster.caps || {};
+    var sunCap = Number(getPath(settingsDoc || {}, 'caps.sunday')) || SHRINE;
+    var out = '<h1>Reports</h1>';
+    out += '<p class="actions"><a class="btn quiet small" href="' + ADMIN + '/export/people.csv">people.csv</a>' +
+      '<a class="btn quiet small" href="' + ADMIN + '/export/regs.csv">regs.csv</a></p>';
+    out += '<div class="grid3">';
+    out += '<div class="card"><h3>Against the caps</h3>' +
+      line('Full track', roster.counts.full, caps.full) +
+      line('Bambino', roster.counts.bambino, caps.bambino) +
+      line('Friday social', roster.counts.social_fri, caps.social_fri) +
+      line('Saturday social', roster.counts.social_sat, caps.social_sat) +
+      line('Late adds', roster.counts.late, caps.late_adds) +
+      '<p>Wait list: <strong>' + esc(roster.counts.waitlist) + '</strong></p></div>';
+    var byStatus = tally(all, 'status');
+    var byTrack = tally(all, 'track');
+    out += '<div class="card"><h3>By status</h3><table><tbody>';
+    Object.keys(byStatus).sort().forEach(function (k) {
+      out += '<tr><td>' + esc(k) + '</td><td class="num">' + esc(byStatus[k]) + '</td></tr>';
+    });
+    out += '</tbody></table><h3>By track</h3><table><tbody>';
+    Object.keys(byTrack).sort().forEach(function (k) {
+      out += '<tr><td>' + esc(k) + '</td><td class="num">' + esc(byTrack[k]) + '</td></tr>';
+    });
+    out += '</tbody></table></div>';
+    var pay = {};
+    all.forEach(function (r) {
+      var k = r.paid || 'none';
+      if (k === 'none') return;
+      pay[k] = pay[k] || { amount: 0, gift: 0, n: 0 };
+      pay[k].amount += Number(r.amount) || 0;
+      pay[k].gift += Number(r.gift) || 0;
+      pay[k].n += 1;
+    });
+    out += '<div class="card"><h3>Payments</h3><table><thead><tr><th>method</th><th class="num">n</th>' +
+      '<th class="num">amount</th><th class="num">gift</th></tr></thead><tbody>';
+    Object.keys(pay).sort().forEach(function (k) {
+      out += '<tr><td>' + esc(k) + '</td><td class="num">' + esc(pay[k].n) + '</td><td class="num">' +
+        esc(money(pay[k].amount)) + '</td><td class="num">' + esc(money(pay[k].gift)) + '</td></tr>';
+    });
+    if (!Object.keys(pay).length) out += '<tr><td class="muted" colspan="4">nothing recorded</td></tr>';
+    out += '</tbody></table></div>';
+    out += '</div>';
+
+    // planned per day per activity, against the actual counts when they exist
+    var cd = countsDoc || {};
+    var plans = {
+      fri: { walk: plan.fri, mass: plan.mass_fri, holy_hour: plan.holy_hour, social: plan.social_fri, bus: plan.bus },
+      sat: { walk: plan.sat, mass: 0, holy_hour: 0, social: plan.social_sat, bus: plan.bus },
+      sun: { walk: plan.sun, mass: 0, holy_hour: 0, social: 0, bus: plan.bus }
+    };
+    out += '<h2>Planned and actual, per day</h2><table><thead><tr><th>day</th>' +
+      ACTS.map(function (a) { return '<th class="num">' + esc(a[1]) + '</th>'; }).join('') + '</tr></thead><tbody>';
+    DAYS.forEach(function (d) {
+      out += '<tr><td>' + esc(d[1]) + '</td>';
+      ACTS.forEach(function (a) {
+        var want = plans[d[0]][a[0]] || 0;
+        var got = getPath(cd, d[0] + '.' + a[0] + '.count');
+        out += '<td class="num">' + esc(want) + (got === undefined || got === null || got === '' ? '' : ' / ' + esc(got)) + '</td>';
+      });
+      out += '</tr>';
+    });
+    out += '</tbody></table><p class="help">Planned from the registrations, actual from the counts screen. ' +
+      'Mass and the Holy Hour are Friday choices and the bus is a party need, so those figures repeat rather than split by day.</p>';
+    out += '<p>Sunday at the Shrine: <strong>' + esc(plan.sun) + '</strong> of ' + esc(sunCap) + ' across both tracks</p>' + meter(plan.sun, sunCap);
+    out += '<p class="muted">' + esc(plan.people + ' people planned, ' + plan.walkers + ' walking, ' +
+      plan.children + ' children, ' + plan.first_bsc + ' first time, ' + plan.sun_ten + ' walking the full Sunday') + '</p>';
+
+    out += '<div class="grid3">';
+    var states = {};
+    live.forEach(function (r) { var k = String(r.state || '').toUpperCase(); states[k] = (states[k] || 0) + (Number(r.people) || 0); });
+    var topStates = Object.keys(states).map(function (k) { return [k, states[k]]; })
+      .sort(function (a, b) { return b[1] - a[1]; }).slice(0, 10);
+    out += '<div class="card"><h3>By state, top 10</h3>' + barlist(topStates, plan.people) + '</div>';
+    var orgs = {};
+    live.forEach(function (r) { var k = String(r.org || ''); orgs[k] = (orgs[k] || 0) + (Number(r.people) || 0); });
+    var topOrgs = Object.keys(orgs).map(function (k) { return [k, orgs[k]]; })
+      .sort(function (a, b) { return b[1] - a[1]; }).slice(0, 12);
+    out += '<div class="card"><h3>By organization</h3>' + barlist(topOrgs, plan.people) + '</div>';
+    var perDay = {};
+    all.forEach(function (r) { var k = day(r.created); if (k) perDay[k] = (perDay[k] || 0) + 1; });
+    var days = Object.keys(perDay).sort();
+    var most = days.reduce(function (m, k) { return Math.max(m, perDay[k]); }, 0);
+    out += '<div class="card"><h3>Registrations per day</h3>' +
+      barlist(days.map(function (k) { return [k, perDay[k]]; }), most) + '</div>';
+    return out + '</div>';
+  }
+
+  // ---- counts, copy, settings, backup ----
+  function countsView() {
+    var cd = countsDoc || {};
+    var out = '<h1>Counts</h1><p class="muted">What actually happened, per day and per activity.</p>';
+    DAYS.forEach(function (d) {
+      out += '<h2>' + esc(d[1]) + '</h2><div class="grid3">';
+      ACTS.forEach(function (a) {
+        var base = d[0] + '.' + a[0];
+        out += '<div class="card"><h3>' + esc(a[1]) + '</h3>' +
+          field(base + '.count', 'Count', getPath(cd, base + '.count'), 'number') +
+          field(base + '.time', 'Time', getPath(cd, base + '.time')) +
+          field(base + '.note', 'Note', getPath(cd, base + '.note')) + '</div>';
+      });
+      out += '</div>';
+    });
+    return out + '<div class="actions"><button type="button" class="btn" data-act="save-counts">Save</button></div>';
+  }
+  function groupOf(key) {
+    var pre = String(key).split('.')[0];
+    return ['landing', 'form', 'next', 'manage', 'email'].indexOf(pre) >= 0 ? pre : 'other';
+  }
+  function copyView() {
+    var keys = Object.keys(copyDoc || {}).sort();
+    var groups = {};
+    keys.forEach(function (k) { (groups[groupOf(k)] = groups[groupOf(k)] || []).push(k); });
+    var out = '<h1>Copy</h1><p class="muted">Every string a pilgrim reads. Placeholders in double braces are filled by the ship.</p>';
+    ['landing', 'form', 'next', 'manage', 'email', 'other'].forEach(function (g) {
+      if (!groups[g]) return;
+      out += '<h2>' + esc(g) + '</h2><div class="card copygroup">';
+      groups[g].forEach(function (k) {
+        out += '<label>' + esc(k) + '<textarea data-copy="' + esc(k) + '">' + esc(copyDoc[k]) + '</textarea></label>';
+      });
+      out += '</div>';
+    });
+    return out + '<div class="actions"><button type="button" class="btn" data-act="save-copy">Save</button></div>';
+  }
+  function settingsView() {
+    var s = settingsDoc || {};
+    var out = '<h1>Settings</h1>';
+    out += '<div class="card"><h3>Event</h3>' +
+      field('event.name', 'Name', getPath(s, 'event.name')) +
+      '<label>Days, one per line<textarea data-k="event.days">' + esc((getPath(s, 'event.days') || []).join('\n')) + '</textarea></label>' +
+      field('public_url', 'Public URL', s.public_url) + '</div>';
+    out += '<div class="card"><h3>Fees, in dollars</h3><div class="row">' +
+      field('fees.full', 'Full track', ((Number(getPath(s, 'fees.full')) || 0) / 100).toFixed(2), 'number', ' step="0.01"') +
+      field('fees.bambino', 'Bambino', ((Number(getPath(s, 'fees.bambino')) || 0) / 100).toFixed(2), 'number', ' step="0.01"') +
+      '</div></div>';
+    out += '<div class="card"><h3>Caps</h3><div class="row3">' +
+      field('caps.full', 'Full track', getPath(s, 'caps.full'), 'number') +
+      field('caps.bambino', 'Bambino', getPath(s, 'caps.bambino'), 'number') +
+      field('caps.late_adds', 'Late adds', getPath(s, 'caps.late_adds'), 'number') + '</div><div class="row3">' +
+      field('caps.social_fri', 'Friday social', getPath(s, 'caps.social_fri'), 'number') +
+      field('caps.social_sat', 'Saturday social', getPath(s, 'caps.social_sat'), 'number') +
+      field('caps.sunday', 'Sunday at the Shrine', getPath(s, 'caps.sunday') === undefined ? SHRINE : getPath(s, 'caps.sunday'), 'number') +
+      '</div><p class="help">The Shrine capacity is reported, not enforced.</p></div>';
+    out += '<div class="card"><h3>Window</h3><div class="row3">' +
+      field('window.open', 'Opens', toLocal(getPath(s, 'window.open')), 'datetime-local') +
+      field('window.close', 'Closes', toLocal(getPath(s, 'window.close')), 'datetime-local') +
+      field('window.change_cutoff', 'Changes close', toLocal(getPath(s, 'window.change_cutoff')), 'datetime-local') + '</div>' +
+      field('hold_hours', 'Hold hours', s.hold_hours, 'number') + '</div>';
+    out += '<div class="card"><h3>Organizations the form suggests</h3>' +
+      '<label>One per line<textarea data-k="orgs">' + esc((s.orgs || []).join('\n')) + '</textarea></label></div>';
+    out += '<div class="card"><h3>Providers</h3>' +
+      '<label>Mode<select data-k="providers.mode">' + ['stub', 'live'].map(function (t) {
+        return '<option value="' + t + '"' + (getPath(s, 'providers.mode') === t ? ' selected' : '') + '>' + t + '</option>';
+      }).join('') + '</select></label>' +
+      field('mail.from', 'Mail from', getPath(s, 'mail.from')) +
+      field('mail.resend_key', 'Resend key', getPath(s, 'mail.resend_key'), 'password') +
+      field('stripe.secret_key', 'Stripe secret key', getPath(s, 'stripe.secret_key'), 'password') +
+      '<div class="row">' +
+      field('docusign.integration_key', 'DocuSign integration key', getPath(s, 'docusign.integration_key'), 'password') +
+      field('docusign.secret', 'DocuSign secret', getPath(s, 'docusign.secret'), 'password') + '</div><div class="row">' +
+      field('docusign.account_id', 'DocuSign account id', getPath(s, 'docusign.account_id')) +
+      field('docusign.template_id', 'DocuSign template id', getPath(s, 'docusign.template_id')) + '</div><div class="row">' +
+      field('docusign.base_uri', 'DocuSign base URI', getPath(s, 'docusign.base_uri')) +
+      field('docusign.auth_host', 'DocuSign auth host', getPath(s, 'docusign.auth_host')) + '</div>' +
+      '<p class="help">A key shown as four stars is stored. Leave it alone to keep it.</p></div>';
+    return out + '<div class="actions"><button type="button" class="btn" data-act="save-settings">Save</button></div>';
+  }
+  function backupView() {
+    var out = '<h1>Backup</h1>';
+    out += '<div class="card"><h3>Download</h3><p class="actions">' +
+      '<a class="btn quiet small" href="' + ADMIN + '/export/bundle.json">JSON bundle</a>' +
+      '<a class="btn quiet small" href="' + ADMIN + '/export/bundle.jam">jam</a>' +
+      '<a class="btn quiet small" href="' + ADMIN + '/export/people.csv">people.csv</a>' +
+      '<a class="btn quiet small" href="' + ADMIN + '/export/regs.csv">regs.csv</a></p>' +
+      '<p class="help">The jam is the emergency copy. Secrets are masked in both bundles and a restore keeps the stored ones.</p></div>';
+    out += '<div class="card"><h3>Import</h3>' +
+      '<label>A .json bundle or a .jam<input type="file" id="file" accept=".json,.jam"></label>' +
+      '<p class="actions"><button type="button" class="btn small" data-act="inspect"' + (fileBody ? '' : ' disabled') + '>Inspect</button>' +
+      '<button type="button" class="btn danger small" data-act="apply"' + (dry ? '' : ' disabled') + '>Apply</button></p>' +
+      box2('wipe', 'Wipe registrations the file does not name');
+    if (dry) {
+      out += '<dl class="kv">' +
+        '<dt>registrations</dt><dd>' + esc(dry.regs) + '</dd>' +
+        '<dt>complete</dt><dd>' + esc(dry.complete) + '</dd>' +
+        '<dt>wait list</dt><dd>' + esc(dry.waitlist) + '</dd>' +
+        '<dt>cancelled</dt><dd>' + esc(dry.cancelled) + '</dd>' +
+        '<dt>earliest</dt><dd>' + esc(when(dry.earliest)) + '</dd>' +
+        '<dt>latest</dt><dd>' + esc(when(dry.latest)) + '</dd>' +
+        '<dt>event days</dt><dd>' + esc((dry.event_days || []).join(', ')) + '</dd>' +
+        '<dt>would overwrite</dt><dd>' + esc(dry.overwrite) + '</dd></dl>';
+    } else if (fileBody) {
+      out += '<p class="muted">' + esc(fileName) + ' is ready. Inspect it before applying.</p>';
+    }
+    return out + '</div>';
+  }
+  function box2(id, label) {
+    return '<label class="check"><input type="checkbox" id="' + id + '"><span>' + esc(label) + '</span></label>';
+  }
+
+  // ---- routing ----
+  function route() {
+    var h = location.hash.replace(/^#\/?/, '') || 'roster';
+    var parts = h.split('/');
+    return { name: parts[0], id: parts[1] || '' };
+  }
+  function markNav() {
+    var r = route();
+    Array.prototype.forEach.call(document.querySelectorAll('#nav a'), function (a) {
+      a.className = a.getAttribute('href') === '#' + r.name ? 'on' : '';
+    });
+  }
+  function needSettings() {
+    if (settingsDoc) return Promise.resolve(settingsDoc);
+    return read('/settings').then(function (d) { settingsDoc = d; return d; });
+  }
+  function needRoster() {
+    return read('/regs').then(function (d) { roster = d; return d; });
+  }
+  function render(html) { view.innerHTML = html; markNav(); }
+  function refresh() {
+    var r = route();
+    var mine = ++routeGen;
+    var p;
+    if (r.name === 'reg' && r.id) {
+      p = Promise.all([needRoster(), read('/reg/' + encodeURIComponent(r.id))]).then(function (d) {
+        detail = d[1];
+        model = fromReg(detail);
+        before = JSON.parse(JSON.stringify(model));
+        render(detailView());
+      });
+    } else if (r.name === 'add') {
+      p = needRoster().then(function () {
+        if (!model || !model.isAdd) {
+          model = blankParty('full');
+          model.isAdd = true;
+          model.waiver_paper = false;
+          model.pay_method = ''; model.pay_amount = ''; model.pay_gift = '0.00'; model.pay_ref = '';
+        }
+        render(addView());
+      });
+    } else if (r.name === 'reports') {
+      p = Promise.all([needRoster(), needSettings(), read('/counts')]).then(function (d) {
+        countsDoc = d[2];
+        render(reportsView());
+      });
+    } else if (r.name === 'counts') {
+      p = read('/counts').then(function (d) { countsDoc = d; render(countsView()); });
+    } else if (r.name === 'copy') {
+      p = read('/copy').then(function (d) { copyDoc = d; render(copyView()); });
+    } else if (r.name === 'settings') {
+      p = read('/settings').then(function (d) { settingsDoc = d; render(settingsView()); });
+    } else if (r.name === 'backup') {
+      p = Promise.resolve().then(function () { render(backupView()); });
+    } else {
+      p = needRoster().then(function () { model = null; render(rosterView()); });
+    }
+    return p.then(function () {
+      if (mine !== routeGen) return;
+      say('');
+    }).catch(function (e) {
+      if (mine !== routeGen) return;
+      if (e.status === 403) {
+        render('<p class="bad">This ship refused the request. Log in as the owner and reload.</p>');
+      } else {
+        render('<p class="bad">' + esc(e.message) + '</p>');
+      }
+    });
+  }
+  function later() { setTimeout(refresh, 400); }
+
+  // ---- input ----
+  view.addEventListener('input', onChange);
+  view.addEventListener('change', onChange);
+  function onChange(ev) {
+    var el = ev.target;
+    var k = el.getAttribute('data-k');
+    if (el.id === 'f-seg') { filters.seg = el.value; return render(rosterView()); }
+    if (el.id === 'f-track') { filters.track = el.value; return render(rosterView()); }
+    if (el.id === 'f-q') {
+      filters.q = el.value;
+      var tbody = view.querySelector('tbody');
+      if (tbody) { render(rosterView()); var box = document.getElementById('f-q'); if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); } }
+      return;
+    }
+    if (el.id === 'file') return pickFile(el);
+    var copyKey = el.getAttribute('data-copy');
+    if (copyKey && copyDoc) { copyDoc[copyKey] = el.value; return; }
+    if (!k) return;
+    var isBox = el.type === 'checkbox';
+    if (ev.type === 'change' && !isBox && el.tagName !== 'SELECT') return;
+    if (ev.type === 'input' && isBox) return;
+    var val = isBox ? el.checked : el.value;
+    var r = route();
+    if (r.name === 'counts') { setPath(countsDoc, k, val); return; }
+    if (r.name === 'settings') { setPath(settingsDoc, k, val); return; }
+    if (!model) return;
+    setPath(model, k, val);
+    // a structural change re-renders; a keystroke does not
+    if (k === 'together' || k === 'track' || k === 'pay_method') {
+      render(r.name === 'add' ? addView() : detailView());
+    }
+  }
+  function pickFile(el) {
+    var f = el.files && el.files[0];
+    dry = null; fileBody = null; fileName = '';
+    if (!f) return render(backupView());
+    fileName = f.name;
+    if (/\.jam$/i.test(f.name)) {
+      var fr = new FileReader();
+      fr.onload = function () {
+        var bytes = new Uint8Array(fr.result), s = '';
+        for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+        fileBody = { jam: btoa(s) };
+        render(backupView());
+      };
+      fr.readAsArrayBuffer(f);
+    } else {
+      f.text().then(function (txt) {
+        try { fileBody = { bundle: JSON.parse(txt) }; }
+        catch (e) { say('that file is not JSON'); return; }
+        render(backupView());
+      });
+    }
+  }
+  view.addEventListener('click', function (ev) {
+    var th = ev.target.closest('th[data-sort]');
+    if (th) {
+      var col = th.getAttribute('data-sort');
+      if (sortBy.col === col) sortBy.up = !sortBy.up; else { sortBy.col = col; sortBy.up = true; }
+      return render(rosterView());
+    }
+    var el = ev.target.closest('[data-act]');
+    if (!el) return;
+    var a = el.getAttribute('data-act');
+    var rid = detail ? detail.id : '';
+    function pick(id) { var n = document.getElementById(id); return n ? n.value : ''; }
+    function post(body) {
+      return write('/reg/' + encodeURIComponent(rid), body).then(function () { say('done', true); later(); })
+        .catch(function (e) { say(e.message); });
+    }
+    if (a === 'add-person') { model.people.push(blankPerson()); return render(route().name === 'add' ? addView() : detailView()); }
+    if (a === 'remove-person') { model.people.splice(+el.getAttribute('data-i'), 1); return render(route().name === 'add' ? addView() : detailView()); }
+    if (a === 'save') {
+      return act(function () {
+        var chain = write('/reg/' + encodeURIComponent(rid), { op: 'edit', input: partyInput(model) });
+        if (!!model.exempt !== !!before.exempt) {
+          chain = chain.then(function () { return write('/reg/' + encodeURIComponent(rid), { op: 'exempt', on: !!model.exempt }); });
+        }
+        if (String(model.notes) !== String(before.notes)) {
+          chain = chain.then(function () { return write('/reg/' + encodeURIComponent(rid), { op: 'note', notes: model.notes }); });
+        }
+        chain.then(function () { say('saved', true); later(); }).catch(function (e) { say(e.message); });
+      });
+    }
+    if (a === 'pay') {
+      return act(function () {
+        post({
+          op: 'pay', method: pick('pay-method'), amount: cents(pick('pay-amount')),
+          gift: cents(pick('pay-gift')), ref: pick('pay-ref'), note: pick('pay-note')
+        });
+      });
+    }
+    if (a === 'refund') {
+      if (!window.confirm('Mark this payment refunded?')) return;
+      return act(function () { post({ op: 'refund', note: 'refunded by ' + actor }); });
+    }
+    if (a === 'waiver-paper') return act(function () { post({ op: 'waiver-paper' }); });
+    if (a === 'recheck-waiver') return act(function () { post({ op: 'recheck-waiver' }); });
+    if (a === 'promote') return act(function () { post({ op: 'promote' }); });
+    if (a === 'assist-yes') return act(function () { post({ op: 'assist', approve: true }); });
+    if (a === 'assist-no') return act(function () { post({ op: 'assist', approve: false }); });
+    if (a === 'cancel') {
+      if (!window.confirm('Cancel this registration for everyone in the party?')) return;
+      return act(function () { post({ op: 'cancel', note: pick('cancel-note') }); });
+    }
+    if (a === 'reinstate') {
+      if (!window.confirm('Put this registration back to ' + detail.prior + '?')) return;
+      return act(function () { post({ op: 'reinstate' }); });
+    }
+    if (a === 'resend') return act(function () { post({ op: 'resend', template: pick('tpl') }); });
+    if (a === 'submit-add') {
+      return act(function () {
+        var body = { input: partyInput(model), exempt: !!model.exempt, waiver_paper: !!model.waiver_paper };
+        if (model.pay_method) {
+          body.paid = {
+            method: model.pay_method, amount: cents(model.pay_amount),
+            gift: cents(model.pay_gift), ref: model.pay_ref, note: 'taken by ' + actor
+          };
+        }
+        write('/add', body).then(function (d) {
+          model = null;
+          say('added as ' + d.status, true);
+          location.hash = '#reg/' + d.rid;
+        }).catch(function (e) { say(e.message); });
+      });
+    }
+    if (a === 'save-counts') {
+      return act(function () {
+        write('/counts', countsDoc, 'PUT').then(function () { say('counts saved', true); })
+          .catch(function (e) { say(e.message); });
+      });
+    }
+    if (a === 'save-copy') {
+      return act(function () {
+        write('/copy', copyDoc, 'PUT').then(function () { say('copy saved', true); })
+          .catch(function (e) { say(e.message); });
+      });
+    }
+    if (a === 'save-settings') {
+      return act(function () {
+        var doc = JSON.parse(JSON.stringify(settingsDoc));
+        ['fees.full', 'fees.bambino'].forEach(function (k) { setPath(doc, k, cents(getPath(settingsDoc, k))); });
+        ['caps.full', 'caps.bambino', 'caps.social_fri', 'caps.social_sat', 'caps.late_adds', 'caps.sunday', 'hold_hours']
+          .forEach(function (k) { setPath(doc, k, Number(getPath(settingsDoc, k)) || 0); });
+        ['window.open', 'window.close', 'window.change_cutoff']
+          .forEach(function (k) { setPath(doc, k, fromLocal(getPath(settingsDoc, k))); });
+        var days = getPath(settingsDoc, 'event.days');
+        setPath(doc, 'event.days', (typeof days === 'string' ? days.split('\n') : days || [])
+          .map(function (s) { return String(s).trim(); }).filter(Boolean));
+        doc.orgs = (typeof settingsDoc.orgs === 'string' ? settingsDoc.orgs.split('\n') : settingsDoc.orgs || [])
+          .map(function (s) { return String(s).trim(); }).filter(Boolean);
+        write('/settings', doc, 'PUT').then(function () {
+          settingsDoc = null;
+          say('settings saved', true);
+          later();
+        }).catch(function (e) { say(e.message); });
+      });
+    }
+    if (a === 'inspect') {
+      if (!fileBody) return;
+      return act(function () {
+        write('/import?dry=1', fileBody).then(function (d) { dry = d; say(''); render(backupView()); })
+          .catch(function (e) { dry = null; say(e.message); render(backupView()); });
+      });
+    }
+    if (a === 'apply') {
+      if (!dry || !fileBody) return;
+      var wipe = document.getElementById('wipe');
+      var on = wipe && wipe.checked;
+      if (!window.confirm('Restore ' + dry.regs + ' registrations, overwriting ' + dry.overwrite +
+        (on ? ', and wipe every registration the file does not name' : '') + '?')) return;
+      return act(function () {
+        write('/import?wipe=' + (on ? '1' : '0'), fileBody).then(function (d) {
+          dry = null; fileBody = null;
+          say('restored ' + d.applied + ' registrations', true);
+          later();
+        }).catch(function (e) { say(e.message); });
+      });
+    }
+  });
+
+  // ---- the beacon, read raw the way orrery's page does ----
+  function sseEvent(block) {
+    var name = '', data = '';
+    String(block).split('\n').forEach(function (ln) {
+      if (ln.indexOf('event: ') === 0) name = ln.slice(7).trim();
+      else if (ln.indexOf('data: ') === 0) data = ln.slice(6).trim();
+    });
+    return { name: name, data: data };
+  }
+  // a re-render replaces the inputs, so a bump waits while one has focus
+  function editing() {
+    var el = document.activeElement;
+    if (!el) return false;
+    if (!promptEl.hidden) return true;
+    return (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') &&
+      (view.contains(el) || promptEl.contains(el));
+  }
+  function bumped() {
+    if (editing()) return;
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(function () { if (!editing()) refresh(); }, 300);
+  }
+  async function stream() {
+    for (;;) {
+      if (document.hidden) { await new Promise(function (r) { setTimeout(r, 1000); }); continue; }
+      try {
+        var resp = await fetch(KEEP, { headers: { Accept: 'text/event-stream' } });
+        if (!resp.ok) {
+          liveEl.className = 'dot off';
+          await new Promise(function (r) { setTimeout(r, 30000); });
+          continue;
+        }
+        liveEl.className = 'dot on';
+        var rd = resp.body.getReader();
+        var dec = new TextDecoder();
+        var buf = '';
+        for (;;) {
+          var chunk = await rd.read();
+          if (chunk.done) break;
+          buf += dec.decode(chunk.value, { stream: true });
+          var evs = buf.split('\n\n');
+          buf = evs.pop();
+          evs.forEach(function (ev) {
+            if (document.hidden) return;
+            var parsed = sseEvent(ev);
+            if (!parsed.name || parsed.name.slice(-4) !== '/rev') return;
+            if (parsed.name.indexOf('old') === 0) {
+              if (lastRev !== null && parsed.data && parsed.data !== lastRev) bumped();
+              lastRev = parsed.data;
+              return;
+            }
+            lastRev = parsed.data;
+            bumped();
+          });
+        }
+      } catch (e) { /* the stream severed: reconnect below */ }
+      liveEl.className = 'dot off';
+      await new Promise(function (r) { setTimeout(r, 3000); });
+    }
+  }
+
+  window.addEventListener('hashchange', function () { model = null; dry = null; refresh(); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && !editing()) refresh(); });
+  setInterval(function () { if (!document.hidden && !editing()) refresh(); }, 60000);
+  drawActor();
+  refresh();
+  stream();
+})();

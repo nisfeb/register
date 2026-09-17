@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Register backoffice</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&family=Poppins:wght@500;600&display=swap">
+<link rel="stylesheet" href="/apps/register/admin.css">
+</head>
+<body>
+<header>
+  <a class="brand" href="#roster">Register</a>
+  <nav id="nav">
+    <a href="#roster">Roster</a>
+    <a href="#reports">Reports</a>
+    <a href="#counts">Counts</a>
+    <a href="#copy">Copy</a>
+    <a href="#settings">Settings</a>
+    <a href="#backup">Backup</a>
+  </nav>
+  <div class="who">
+    <span id="live" class="dot" title="live updates"></span>
+    <button type="button" id="actor" class="actor">set your name</button>
+  </div>
+</header>
+<div id="prompt" class="prompt" hidden>
+  <label for="actor-name">Your name, so every change records who made it</label>
+  <input type="text" id="actor-name" autocomplete="name" maxlength="64">
+  <button type="button" id="actor-save" class="btn small">Save</button>
+  <button type="button" id="actor-cancel" class="btn quiet small">Cancel</button>
+</div>
+<div id="say" class="say" hidden></div>
+<main id="view"><p class="muted">Loading.</p></main>
+<script src="/apps/register/admin.js"></script>
+</body>
+</html>
