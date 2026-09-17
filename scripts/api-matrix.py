@@ -94,7 +94,7 @@ settle()
 code, d = admin('GET', '/regs')
 check('GET /admin/regs answers 200', code == 200, (code, d))
 for r in (d or {}).get('regs', []):
-    if r['contact']['email'].startswith('matrix-') and r['status'] not in ('draft', 'cancelled'):
+    if r['contact']['email'].lower().startswith('matrix-') and r['status'] not in ('draft', 'cancelled'):
         admin('POST', '/reg/' + r['id'], {'op': 'cancel', 'note': 'matrix cleanup'})
 settle()
 s0 = status()
@@ -268,7 +268,7 @@ check('the original settings are restored', code == 200, code)
 settle()
 code, d = admin('GET', '/regs')
 for r in (d or {}).get('regs', []):
-    if r['contact']['email'].startswith('matrix-') and r['status'] not in ('draft', 'cancelled'):
+    if r['contact']['email'].lower().startswith('matrix-') and r['status'] not in ('draft', 'cancelled'):
         admin('POST', '/reg/' + r['id'], {'op': 'cancel', 'note': 'matrix cleanup'})
 settle()
 code, d = curl('GET', INSTANCE + '/tr/log?raw=1', jar=JAR)
