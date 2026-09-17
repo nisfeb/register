@@ -247,7 +247,10 @@
   ;<  s=settings:reg  bind:m  (read-settings 0)
   ?.  (window-open:reg s now)  (refuse 'submit' 'closed')
   ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
-  ?:  &(?=(^ cur) !=(%draft status.u.cur))  (refuse 'submit' 'already submitted')
+  ?:  ?&  ?=(^ cur)
+          !=(%draft status.u.cur)
+      ==
+    (refuse 'submit' 'already submitted')
   =/  base=reg:reg
     ?~  cur  (new-reg:reg rid (gs:reg jon 'token') %web p.got now)
     (with-input:reg u.cur p.got)
@@ -636,9 +639,14 @@
   =/  tok=@t  (gs:reg jon 'token')
   ;<  cur=(unit reg:reg)  bind:m  (with-reg eyre-id want tok)
   ;<  eny=@uvJ  bind:m  get-entropy:io
-  =/  fresh=?  |(?=(~ cur) !=(%draft status.u.cur))
-  =/  rid=@ta  ?:(fresh (rid-from:reg eny) id.u.cur)
-  =/  token=@t  ?:(fresh (token-from:reg eny) token.u.cur)
+  =/  rid=@ta
+    ?~  cur  (rid-from:reg eny)
+    ?.  =(%draft status.u.cur)  (rid-from:reg eny)
+    id.u.cur
+  =/  token=@t
+    ?~  cur  (token-from:reg eny)
+    ?.  =(%draft status.u.cur)  (token-from:reg eny)
+    token.u.cur
   =/  pk=json
     %-  pairs:enjs:format
     :~  ['op' s+'save-draft']  ['rid' s+rid]  ['token' s+token]  ['input' jon]
@@ -662,7 +670,10 @@
   =/  want=@t  (gs:reg jon 'rid')
   =/  tok=@t  (gs:reg jon 'token')
   ;<  cur=(unit reg:reg)  bind:m  (with-reg eyre-id want tok)
-  ?:  &(?=(^ cur) !=(%draft status.u.cur))  (send-err eyre-id 409 'already submitted')
+  ?:  ?&  ?=(^ cur)
+          !=(%draft status.u.cur)
+      ==
+    (send-err eyre-id 409 'already submitted')
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
   ;<  eny=@uvJ  bind:m  get-entropy:io
   =/  rid=@ta  ?~(cur (rid-from:reg eny) id.u.cur)
