@@ -711,7 +711,19 @@
       ['volunteer' b+(lien people.r |=(p=person volunteer.p))]
       ['nonwalker' [%b =(0 w)]]
       ['plan' (en-plan people.r)]
+      ['checked' (en-checked people.r)]
   ==
+::  +en-checked: how many of the party are checked in, per day, so the
+::  backoffice roster shows a tick without reading each registration
+::
+++  en-checked
+  |=  people=(list person)
+  ^-  json
+  =/  many
+    |=  day=@tas
+    ^-  json
+    (en-num (lent (skim people |=(p=person (~(has by checkins.p) day)))))
+  (pairs:enjs:format ~[['fri' (many %fri)] ['sat' (many %sat)] ['sun' (many %sun)]])
 ::  +en-plan: how many of the party plan each day and each activity, so
 ::  the reports add up without reading every registration whole
 ::
@@ -733,6 +745,155 @@
       ['children' (many |=(p=person child.p))]
       ['knight_dame' (many |=(p=person knight-dame.p))]
       ['volunteer' (many |=(p=person volunteer.p))]
+  ==
+::  ==  the check-in
+::
+::  +checkin-day: the day a check-in names, or ~
+::
+++  checkin-day
+  |=  t=@t
+  ^-  (unit @tas)
+  ?:  =('fri' t)  `%fri
+  ?:  =('sat' t)  `%sat
+  ?:  =('sun' t)  `%sun
+  ~
+::  +on-day: is this person here that day?
+::
+++  on-day
+  |=  [day=@tas p=person]
+  ^-  ?
+  ?+  day  |
+    %fri  fri.days.p
+    %sat  sat.days.p
+    %sun  sun.days.p
+  ==
+::  +social-day: the social that day. Sunday has none.
+::
+++  social-day
+  |=  [day=@tas p=person]
+  ^-  ?
+  ?+  day  |
+    %fri  social-fri.p
+    %sat  social-sat.p
+  ==
+::  +put-nth: the party with the person at i replaced
+::
+++  put-nth
+  |=  [i=@ud people=(list person) p=person]
+  ^-  (list person)
+  ?~  people  ~
+  ?:  =(0 i)  [p t.people]
+  [i.people $(i (dec i), people t.people)]
+::  +with-checkin: one person checked in for a day, or the check-in
+::  removed. ~ when the party has no person at i. Idempotent both ways:
+::  a check-in that is already there keeps its first at and adds no
+::  history line, and removing one that is not there changes nothing.
+::
+::    The sample names the volunteer `by`, which shadows the map door of
+::    that name, so every map call here reaches past it with ^by.
+::
+++  with-checkin
+  |=  [r=reg i=@ud day=@tas by=@t now=@da undo=?]
+  ^-  (unit reg)
+  ?.  (lth i (lent people.r))  ~
+  =/  p=person  (snag i people.r)
+  =/  had=(unit checkin)  (~(get ^by checkins.p) day)
+  =/  who=@t  (rap 3 first.p ' ' last.p ' ' day ~)
+  ?:  undo
+    ?~  had  `r
+    =/  p2=person  p(checkins (~(del ^by checkins.p) day))
+    =/  what=@t  (cat 3 'undid check-in ' who)
+    `(note-hist r(people (put-nth i people.r p2)) by what now)
+  ?^  had  `r
+  =/  p2=person  p(checkins (~(put ^by checkins.p) day [now by]))
+  =/  what=@t  (cat 3 'checked in ' who)
+  `(note-hist r(people (put-nth i people.r p2)) by what now)
+::  +wristband: the answer the volunteer's tap gives. Green when the
+::  party is complete and its waiver is in, on paper or by signature.
+::  Red carries the reason, which stays on the record.
+::
+++  wristband
+  |=  r=reg
+  ^-  (each ~ @t)
+  =/  signed=?  |(=(%completed status.waiver.r) =(%paper method.waiver.r))
+  ?:  &(=(%complete status.r) signed)  [%& ~]
+  ?+  status.r  [%| 'not registered']
+    %complete    [%| 'waiver not signed']
+    %payment     [%| 'unpaid']
+    %assistance  [%| 'awaiting assistance decision']
+    %waiver      [%| 'waiver not signed']
+    %waitlist    [%| 'on the wait list']
+    %cancelled   [%| 'cancelled']
+    %draft       [%| 'draft']
+  ==
+::  +en-roster-person: one person as the check-in app reads them. Every
+::  day flag is already narrowed to the day asked for, so the page shows
+::  a tag without knowing the day's rules.
+::
+++  en-roster-person
+  |=  [p=person day=@tas i=@ud]
+  ^-  json
+  =/  c=(unit checkin)  (~(get by checkins.p) day)
+  %-  pairs:enjs:format
+  :~  ['i' (en-num i)]
+      ['first' s+first.p]
+      ['last' s+last.p]
+      ['child' b+child.p]
+      ['walks' [%b (on-day day p)]]
+      ['bus' b+bus.p]
+      ['mass_fri' [%b &(=(%fri day) mass-fri.p)]]
+      ['holy_hour' [%b &(=(%fri day) holy-hour.p)]]
+      ['social' [%b (social-day day p)]]
+      ['sun_ten' [%b &(=(%sun day) sun.days.p sun-ten.p)]]
+      ['checked' [%b ?=(^ c)]]
+      ['at' ?~(c ~ (en-time at.u.c))]
+      ['by' ?~(c s+'' s+by.u.c)]
+  ==
+::  +en-roster-people: the party in order, each with its index
+::
+++  en-roster-people
+  |=  [people=(list person) day=@tas i=@ud]
+  ^-  (list json)
+  ?~  people  ~
+  [(en-roster-person i.people day i) $(people t.people, i +(i))]
+::  +en-roster-row: one party as the check-in app reads it
+::
+++  en-roster-row
+  |=  [r=reg day=@tas]
+  ^-  json
+  =/  band=(each ~ @t)  (wristband r)
+  =/  why=@t  ?:(?=(%| -.band) p.band '')
+  %-  pairs:enjs:format
+  :~  ['rid' s+id.r]
+      ['status' s+status.r]
+      ['track' s+track.r]
+      ['exempt' b+exempt.r]
+      :-  'wristband'
+      (pairs:enjs:format ~[['ok' [%b ?=(%& -.band)]] ['why' s+why]])
+      ['people' a+(en-roster-people people.r day 0)]
+  ==
+::  +planned: the day's planned counts. Only a party that will be there
+::  plans anything: a wait listed or cancelled one plans nothing. The
+::  checked figure counts every person checked in that day, whatever
+::  their party's status, because the volunteer saw them.
+::
+++  planned
+  |=  [regs=(list reg) day=@tas]
+  ^-  json
+  =/  live=(list reg)
+    (skim regs |=(r=reg ?=(?(%complete %waiver %payment %assistance) status.r)))
+  =/  folk=(list person)  (zing (turn live |=(r=reg people.r)))
+  =/  all=(list person)  (zing (turn regs |=(r=reg people.r)))
+  =/  many  |=(f=$-(person ?) ^-(json (en-num (lent (skim folk f)))))
+  %-  pairs:enjs:format
+  :~  ['walk' (many |=(p=person (on-day day p)))]
+      ['mass' (many |=(p=person &(=(%fri day) mass-fri.p)))]
+      ['holy_hour' (many |=(p=person &(=(%fri day) holy-hour.p)))]
+      ['social' (many |=(p=person (social-day day p)))]
+      ['bus' (many |=(p=person bus.p))]
+      ['sun_ten' (many |=(p=person &(=(%sun day) sun.days.p sun-ten.p)))]
+      ['sun_short' (many |=(p=person &(=(%sun day) sun.days.p !sun-ten.p)))]
+      ['checked' (en-num (lent (skim all |=(p=person (~(has by checkins.p) day)))))]
   ==
 ::  +read-reg: the shape ladder. Newest first; anything else is ~.
 ::

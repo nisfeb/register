@@ -5,6 +5,15 @@
 |%
 ++  jo  |=(t=@t ^-(json (need (de:json:html t))))
 ++  t0  ~2026.10.1..12.00.00
+++  t1  ~2026.12.4..13.05.00
+++  t2  ~2026.12.4..13.06.00
+::  +at-n: the item at i in a JSON array, or null
+++  at-n
+  |=  [l=(list json) i=@ud]
+  ^-  json
+  ?~  l  ~
+  ?:  =(0 i)  i.l
+  $(l t.l, i (dec i))
 ::  a full-track adult who walks every day and takes both socials
 ++  pj
   %-  jo
@@ -509,5 +518,137 @@
     (expect-eq !>(`(unit @ud)`[~ 2]) !>((gn:reg (gj:reg j 'plan') 'social_sat')))
     (expect-eq !>(`(unit @ud)`[~ 1]) !>((gn:reg (gj:reg j 'plan') 'knight_dame')))
     (expect-eq !>(`(unit @ud)`[~ 0]) !>((gn:reg (gj:reg flat 'plan') 'sun')))
+  ==
+::  ==  the check-in
+::
+++  test-checkin-day
+  ;:  weld
+    (expect-eq !>(`(unit @tas)`[~ %fri]) !>((checkin-day:reg 'fri')))
+    (expect-eq !>(`(unit @tas)`[~ %sat]) !>((checkin-day:reg 'sat')))
+    (expect-eq !>(`(unit @tas)`[~ %sun]) !>((checkin-day:reg 'sun')))
+    (expect-eq !>(`(unit @tas)`~) !>((checkin-day:reg 'mon')))
+    (expect-eq !>(`(unit @tas)`~) !>((checkin-day:reg '')))
+  ==
+++  test-with-checkin
+  =/  r=reg:reg  (some-reg %abc123 %complete %full 2 t0)
+  =/  one=reg:reg  (need (with-checkin:reg r 0 %fri 'admin:Sue' t1 |))
+  =/  again=reg:reg  (need (with-checkin:reg one 0 %fri 'admin:Bob' t2 |))
+  =/  gone=reg:reg  (need (with-checkin:reg one 0 %fri 'admin:Sue' t2 &))
+  =/  gone2=reg:reg  (need (with-checkin:reg gone 0 %fri 'admin:Sue' t2 &))
+  =/  first-p=person:reg  (snag 0 people.one)
+  =/  second-p=person:reg  (snag 1 people.one)
+  =/  after-p=person:reg  (snag 0 people.gone)
+  =/  c=(unit checkin:reg)  (~(get by checkins.first-p) %fri)
+  =/  set-line=step:reg  (rear history.one)
+  =/  undo-line=step:reg  (rear history.gone)
+  ;:  weld
+    ::  the check-in carries the time and the volunteer
+    (expect-eq !>(`(unit checkin:reg)`[~ [t1 'admin:Sue']]) !>(c))
+    ::  nobody else in the party moved
+    (expect-eq !>(0) !>(~(wyt by checkins.second-p)))
+    (expect-eq !>('checked in Ana Silva fri') !>(what.set-line))
+    (expect-eq !>('admin:Sue') !>(by.set-line))
+    ::  setting a check-in that is already there changes nothing at all
+    (expect !>(=(one again)))
+    ::  the undo takes the day off and says so
+    (expect-eq !>(0) !>(~(wyt by checkins.after-p)))
+    (expect-eq !>('undid check-in Ana Silva fri') !>(what.undo-line))
+    ::  undoing twice changes nothing
+    (expect !>(=(gone gone2)))
+    ::  a party has no person at that index
+    (expect-eq !>(`(unit reg:reg)`~) !>((with-checkin:reg r 5 %fri 'admin:Sue' t1 |)))
+  ==
+++  test-wristband
+  =/  done=reg:reg  (some-reg %abc123 %complete %full 1 t0)
+  =/  green=reg:reg  done(waiver [%stub '' %completed `t0])
+  =/  paper=reg:reg  done(waiver [%paper '' %none ~])
+  =/  band  |=(r=reg:reg ^-((each ~ @t) (wristband:reg r)))
+  ;:  weld
+    (expect-eq !>(`(each ~ @t)`[%& ~]) !>((band green)))
+    ::  a waiver signed on paper is signed
+    (expect-eq !>(`(each ~ @t)`[%& ~]) !>((band paper)))
+    (expect-eq !>(`(each ~ @t)`[%| 'waiver not signed']) !>((band done)))
+    (expect-eq !>(`(each ~ @t)`[%| 'unpaid']) !>((band green(status %payment))))
+    (expect-eq !>(`(each ~ @t)`[%| 'awaiting assistance decision']) !>((band green(status %assistance))))
+    (expect-eq !>(`(each ~ @t)`[%| 'waiver not signed']) !>((band green(status %waiver))))
+    (expect-eq !>(`(each ~ @t)`[%| 'on the wait list']) !>((band green(status %waitlist))))
+    (expect-eq !>(`(each ~ @t)`[%| 'cancelled']) !>((band green(status %cancelled))))
+    (expect-eq !>(`(each ~ @t)`[%| 'draft']) !>((band green(status %draft))))
+    (expect-eq !>(`(each ~ @t)`[%| 'not registered']) !>((band green(status %nonsense))))
+  ==
+++  test-roster-row
+  =/  p=person:reg  some-person
+  =/  kid=person:reg  p(first 'Bo', last 'Silva', child &, sun-ten |, holy-hour &)
+  =/  r0=reg:reg  (some-reg %abc123 %complete %full 2 t0)
+  =/  r1=reg:reg  r0(people ~[p kid], waiver [%stub '' %completed `t0])
+  =/  r=reg:reg  (need (with-checkin:reg r1 1 %fri 'admin:Sue' t1 |))
+  =/  fri=json  (en-roster-row:reg r %fri)
+  =/  sun=json  (en-roster-row:reg r %sun)
+  =/  folk=(list json)  (ga:reg fri 'people')
+  =/  ana=json  (at-n folk 0)
+  =/  bo=json  (at-n folk 1)
+  =/  sun-ana=json  (at-n (ga:reg sun 'people') 0)
+  ;:  weld
+    (expect-eq !>('abc123') !>((gs:reg fri 'rid')))
+    (expect-eq !>('complete') !>((gs:reg fri 'status')))
+    (expect !>((gb:reg (gj:reg fri 'wristband') 'ok')))
+    (expect-eq !>('') !>((gs:reg (gj:reg fri 'wristband') 'why')))
+    ::  each person carries their index, so a tap names them
+    (expect-eq !>(`(unit @ud)`[~ 0]) !>((gn:reg ana 'i')))
+    (expect-eq !>(`(unit @ud)`[~ 1]) !>((gn:reg bo 'i')))
+    (expect-eq !>('Silva') !>((gs:reg ana 'last')))
+    ::  the Friday row carries the Friday choices and the Friday social
+    (expect !>((gb:reg ana 'walks')))
+    (expect !>((gb:reg ana 'mass_fri')))
+    (expect !>((gb:reg bo 'holy_hour')))
+    (expect !>((gb:reg ana 'social')))
+    ::  sun_ten belongs to Sunday only
+    (expect !>(!(gb:reg ana 'sun_ten')))
+    (expect !>((gb:reg sun-ana 'sun_ten')))
+    ::  Sunday has no social and no Mass
+    (expect !>(!(gb:reg sun-ana 'social')))
+    (expect !>(!(gb:reg sun-ana 'mass_fri')))
+    ::  the check-in shows on the person it was made for
+    (expect !>(!(gb:reg ana 'checked')))
+    (expect !>((gb:reg bo 'checked')))
+    (expect-eq !>('admin:Sue') !>((gs:reg bo 'by')))
+    (expect-eq !>(`(unit @da)`[~ t1]) !>((gt:reg bo 'at')))
+  ==
+++  test-planned
+  =/  p=person:reg  some-person
+  =/  kid=person:reg  p(first 'Bo', child &, sun-ten |, social-fri |, mass-fri |, bus |)
+  =/  base=reg:reg  (some-reg %abc123 %complete %full 2 t0)
+  =/  full=reg:reg  base(people ~[p kid], waiver [%stub '' %completed `t0])
+  =/  waiting=reg:reg  base(id %def456, status %waitlist, people ~[p])
+  =/  done=reg:reg  (need (with-checkin:reg full 0 %fri 'admin:Sue' t1 |))
+  =/  fri=json  (planned:reg ~[done waiting] %fri)
+  =/  sun=json  (planned:reg ~[done waiting] %sun)
+  =/  n  |=([j=json k=@t] ^-((unit @ud) (gn:reg j k)))
+  ;:  weld
+    ::  two walkers on Friday: the wait listed party plans nothing
+    (expect-eq !>(`(unit @ud)`[~ 2]) !>((n fri 'walk')))
+    (expect-eq !>(`(unit @ud)`[~ 1]) !>((n fri 'mass')))
+    (expect-eq !>(`(unit @ud)`[~ 0]) !>((n fri 'holy_hour')))
+    (expect-eq !>(`(unit @ud)`[~ 1]) !>((n fri 'social')))
+    (expect-eq !>(`(unit @ud)`[~ 1]) !>((n fri 'bus')))
+    ::  one check-in that day, counted wherever the party stands
+    (expect-eq !>(`(unit @ud)`[~ 1]) !>((n fri 'checked')))
+    ::  Sunday splits the ten miles from the two and a half
+    (expect-eq !>(`(unit @ud)`[~ 2]) !>((n sun 'walk')))
+    (expect-eq !>(`(unit @ud)`[~ 1]) !>((n sun 'sun_ten')))
+    (expect-eq !>(`(unit @ud)`[~ 1]) !>((n sun 'sun_short')))
+    (expect-eq !>(`(unit @ud)`[~ 0]) !>((n sun 'social')))
+    (expect-eq !>(`(unit @ud)`[~ 0]) !>((n sun 'checked')))
+  ==
+++  test-en-row-checked
+  =/  p=person:reg  some-person
+  =/  r0=reg:reg  (some-reg %abc123 %complete %full 2 t0)
+  =/  r=reg:reg  (need (with-checkin:reg r0 1 %sat 'admin:Sue' t1 |))
+  =/  j=json  (en-row:reg r 15.000 0)
+  =/  ck=json  (gj:reg j 'checked')
+  ;:  weld
+    (expect-eq !>(`(unit @ud)`[~ 0]) !>((gn:reg ck 'fri')))
+    (expect-eq !>(`(unit @ud)`[~ 1]) !>((gn:reg ck 'sat')))
+    (expect-eq !>(`(unit @ud)`[~ 0]) !>((gn:reg ck 'sun')))
   ==
 --
