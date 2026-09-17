@@ -75,7 +75,7 @@ def status():
 code, original = admin('GET', '/settings')
 check('GET /admin/settings answers 200 with the cookie', code == 200 and isinstance(original, dict), (code, original))
 code, _ = curl('GET', API + '/settings')
-check('GET /admin/settings without the cookie is 404 (no such public route)', code == 404, code)
+check('GET /api/settings is not a public route (404)', code == 404, code)
 code, _ = curl('GET', API + '/admin/regs')
 check('GET /admin/regs without the cookie is 403', code == 403, code)
 code, _ = curl('PUT', API + '/admin/settings', original, jar=JAR)
@@ -153,6 +153,16 @@ def run():
     code, d = curl('POST', API + '/resend-link', {'email': 'nobody@example.com'})
     check('resend-link answers 200 for a stranger too', code == 200, (code, d))
 
+    # ---- the admin routes: the owner's, and each mutating one names its actor ----
+    for meth, path in [('GET', '/admin/regs'), ('GET', '/admin/reg/x'), ('POST', '/admin/reg/x'),
+                       ('GET', '/admin/settings'), ('PUT', '/admin/settings'),
+                       ('GET', '/admin/copy'), ('PUT', '/admin/copy')]:
+        code, _ = curl(meth, API + path, {} if meth in ('POST', 'PUT') else None)
+        check(f'{meth} {path} without the cookie is 403', code == 403, code)
+    for meth, path in [('POST', '/admin/reg/' + ana_rid), ('PUT', '/admin/settings'), ('PUT', '/admin/copy')]:
+        code, _ = curl(meth, API + path, {}, jar=JAR)
+        check(f'{meth} {path} with the cookie and no actor is 400', code == 400, code)
+
     # ---- bambino ----
     code, d = curl('POST', API + '/submit', party('bambino', 'matrix-bam@example.com', [person('Di', 'Bambino', days={'fri': False, 'sat': False, 'sun': True}), person('Ed', 'Bambino', days={'fri': False, 'sat': False, 'sun': True})]))
     check('a bambino party of two owes 5000', code == 200 and d['fees'] == 5000 and d['status'] == 'waiver', (code, d))
@@ -194,6 +204,24 @@ def run():
     code, d = admin('POST', '/reg/' + help_rid, {'op': 'assist', 'approve': True})
     check('approving twice is 409', code == 409, code)
 
+    # ---- financial assistance, declined ----
+    code, d = curl('POST', API + '/submit', party('full', 'matrix-help2@example.com', [person('Ria', 'Help')], assistance=True))
+    check('a second assistance request submits to waiver', code == 200 and d['status'] == 'waiver', (code, d))
+    h2_rid, h2_tok = d['rid'], d['token']
+    settle()
+    code, d = curl('POST', API + f'/reg/{h2_rid}/sign?t={h2_tok}', {})
+    check('after signing it waits for assistance too', code == 200 and d['next'] == 'assistance', (code, d))
+    settle()
+    code, d = admin('POST', '/reg/' + h2_rid, {'op': 'assist', 'approve': False})
+    check('the organizer declines', code == 200, (code, d))
+    settle()
+    code, d = admin('GET', '/reg/' + h2_rid)
+    check('declined: at the payment step, the last history line says declined',
+          code == 200 and d['status'] == 'payment' and 'declined' in d['history'][-1]['what'], (code, d))
+    code, d = curl('POST', API + f'/reg/{h2_rid}/pay?t={h2_tok}', {})
+    check('a declined party pays and completes', code == 200 and d['next'] == 'complete', (code, d))
+    settle()
+
     # ---- the cap and the wait list ----
     s3 = status()
     settings['caps']['full'] = s3['counts']['full'] + 1
@@ -202,6 +230,10 @@ def run():
     check('a party of two over the cap is wait listed at position 1', code == 200 and d['status'] == 'waitlist' and d['position'] == 1, (code, d))
     w1_rid, w1_tok = d['rid'], d['token']
     settle()
+    code, d = curl('GET', INSTANCE + '/tr/log?raw=1', jar=JAR)
+    check('the wait list email stub is in the ring for that rid',
+          code == 200 and isinstance(d, list) and any(e.get('op') == 'email.waitlist' and e.get('rid') == w1_rid for e in d),
+          (code, str(d)[-300:]))
     code, d = curl('POST', API + '/submit', party('full', 'matrix-wait2@example.com', [person('Jo', 'Wait'), person('Kim', 'Wait')]))
     check('the next party is position 2', code == 200 and d['status'] == 'waitlist' and d['position'] == 2, (code, d))
     w2_rid, w2_tok = d['rid'], d['token']
@@ -221,6 +253,28 @@ def run():
     check('promoted: at the waiver step, position 0', code == 200 and d['status'] == 'waiver' and d['position'] == 0, (code, d))
     code, d = admin('POST', '/reg/' + w1_rid, {'op': 'promote'})
     check('promoting twice is 409', code == 409, code)
+    code, d = reg(w2_rid, w2_tok)
+    check('with the first promoted the second is position 1', code == 200 and d['status'] == 'waitlist' and d['position'] == 1, (code, d))
+
+    # ---- a hold that lapsed cannot complete over the cap ----
+    settings['hold_hours'] = 0
+    settings['caps']['full'] = 325
+    admin('PUT', '/settings', settings); settle()
+    code, d = curl('POST', API + '/submit', party('full', 'matrix-lapse@example.com', [person('Pat', 'Lapse')]))
+    check('the party whose hold lapses at once submits to waiver', code == 200 and d['status'] == 'waiver', (code, d))
+    lap_rid, lap_tok = d['rid'], d['token']
+    settle()
+    s_lap = status()
+    settings['caps']['full'] = s_lap['counts']['full']
+    admin('PUT', '/settings', settings); settle()
+    code, d = curl('POST', API + f'/reg/{lap_rid}/sign?t={lap_tok}', {})
+    check('signing a lapsed hold on a filled track is 409 waitlist', code == 409 and d.get('code') == 'waitlist', (code, d))
+    settle()
+    code, d = reg(lap_rid, lap_tok)
+    check('the lapsed party is wait listed with a position', code == 200 and d['status'] == 'waitlist' and d['position'] >= 1, (code, d))
+    settings['hold_hours'] = 48
+    settings['caps']['full'] = 325
+    admin('PUT', '/settings', settings); settle()
 
     # ---- a sold-out social ----
     s5 = status()
@@ -270,6 +324,8 @@ def run():
     admin('PUT', '/settings', settings); settle()
     code, d = curl('POST', API + '/submit', party('full', 'matrix-late@example.com', [person('Ned', 'Late')]))
     check('a submit after close is 403', code == 403, (code, d))
+    code, d = curl('POST', API + '/draft', {'track': 'full', 'contact': {'email': 'matrix-late@example.com'}, 'people': []})
+    check('a draft after close is 403', code == 403, (code, d))
     s8 = status()
     check('status says closed', s8['open'] is False, s8['open'])
 
