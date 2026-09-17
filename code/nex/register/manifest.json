@@ -1,0 +1,17 @@
+{
+  "id": "/apps/register/checkin",
+  "name": "BSC Check-in",
+  "short_name": "Check-in",
+  "description": "Baby Steps Camino check-in for volunteers.",
+  "start_url": "/apps/register/checkin",
+  "scope": "/apps/register/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0b7fc2",
+  "background_color": "#ffffff",
+  "icons": [
+    {"src": "/apps/register/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/apps/register/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/apps/register/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

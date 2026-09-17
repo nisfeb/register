@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BSC Check-in</title>
+<meta name="theme-color" content="#0b7fc2">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="BSC Check-in">
+<link rel="manifest" href="/apps/register/manifest.json">
+<link rel="icon" href="/apps/register/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/apps/register/icon-192.png">
+<link rel="stylesheet" href="/apps/register/checkin.css">
+</head>
+<body>
+<header>
+  <div class="top">
+    <span class="brand">Check-in</span>
+    <span id="sync" class="sync">synced</span>
+  </div>
+  <div class="days" id="days">
+    <button type="button" data-day="fri">Fri</button>
+    <button type="button" data-day="sat">Sat</button>
+    <button type="button" data-day="sun">Sun</button>
+  </div>
+  <div class="tabs" id="tabs">
+    <button type="button" data-tab="roster">Roster</button>
+    <button type="button" data-tab="counts">Counts</button>
+    <button type="button" id="actor" class="actor">set your name</button>
+  </div>
+</header>
+<div id="prompt" class="prompt" hidden>
+  <label for="actor-name">Your name, so every check-in records who made it</label>
+  <input type="text" id="actor-name" autocomplete="name" maxlength="64">
+  <button type="button" id="actor-save" class="btn">Save</button>
+  <button type="button" id="actor-cancel" class="btn quiet">Cancel</button>
+</div>
+<div id="relogin" class="banner" hidden>
+  This ship wants the login again. <a href="/~/login?redirect=/apps/register/checkin">Log in again</a>
+</div>
+<div id="say" class="say" hidden></div>
+<div id="search" class="search">
+  <input type="search" id="q" placeholder="last name, first name, email or code" autocomplete="off">
+</div>
+<main id="view"><p class="muted">Loading the roster.</p></main>
+<script src="/apps/register/checkin.js"></script>
+</body>
+</html>

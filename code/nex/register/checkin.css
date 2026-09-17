@@ -1,0 +1,89 @@
+/* The volunteers' check-in app: one column, big type, big targets, made
+   for a phone held in the sun. The palette is the public page's. */
+:root {
+  --bg: #ffffff; --ink: #1a1a1a; --muted: #5c5c5c; --line: #d8d8d8; --soft: #f2f2f2;
+  --accent: #0b7fc2; --accent-ink: #ffffff; --accent-soft: #e6f4fc;
+  --bad: #b3261e; --bad-soft: #fdecea; --good: #1c6b20; --good-soft: #e7f4e7;
+  --warn: #8a6100; --warn-soft: #fff4d6;
+  --body: "Open Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --head: "Poppins", "Open Sans", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; font: 17px/1.5 var(--body); color: var(--ink); background: var(--bg);
+  -webkit-tap-highlight-color: transparent;
+}
+header {
+  position: sticky; top: 0; z-index: 5; background: var(--bg);
+  border-bottom: 1px solid var(--line); padding: .5rem 12px calc(.5rem + env(safe-area-inset-top, 0px));
+}
+header .top { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+header .brand { font-family: var(--head); font-weight: 600; font-size: 1.15rem; }
+.sync { font-size: .85rem; font-weight: 600; padding: .2rem .55rem; border-radius: 999px; background: var(--good-soft); color: var(--good); }
+.sync.waiting { background: var(--warn-soft); color: var(--warn); }
+.sync.offline { background: var(--soft); color: var(--muted); }
+.days, .tabs { display: flex; gap: .4rem; margin-top: .5rem; }
+.days button, .tabs button {
+  flex: 1; min-height: 48px; font: 600 1rem var(--body); color: var(--accent);
+  background: var(--bg); border: 2px solid var(--accent); border-radius: 8px; cursor: pointer;
+}
+.days button.on, .tabs button.on { background: var(--accent); color: var(--accent-ink); }
+.tabs .actor { flex: 2; border-color: var(--line); color: var(--ink); font-weight: 400; font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prompt { padding: .8rem 12px; background: var(--accent-soft); }
+.prompt label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: .3rem; }
+.prompt input { width: 100%; }
+.prompt .btn { margin-top: .5rem; margin-right: .5rem; }
+.banner { background: var(--warn-soft); color: var(--warn); padding: .7rem 12px; font-weight: 600; }
+.banner a { color: var(--warn); }
+.say { padding: .6rem 12px; background: var(--bad-soft); color: var(--bad); font-weight: 600; }
+.say.ok { background: var(--good-soft); color: var(--good); }
+.search { padding: .6rem 12px 0; }
+input[type=search], input[type=text], input[type=number] {
+  width: 100%; font: 1.05rem var(--body); min-height: 48px; padding: .5rem .7rem;
+  border: 2px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink);
+}
+input:focus { outline: 3px solid var(--accent-soft); border-color: var(--accent); }
+main { padding: .8rem 12px calc(2rem + env(safe-area-inset-bottom, 0px)); }
+h1, h2, h3 { font-family: var(--head); font-weight: 600; line-height: 1.25; margin: 0 0 .5rem; }
+h2 { font-size: 1.1rem; margin-top: 1.4rem; }
+h3 { font-size: 1rem; }
+p { margin: 0 0 .7rem; }
+.muted { color: var(--muted); }
+.btn {
+  display: inline-block; font: 600 1rem var(--body); min-height: 48px; padding: .6rem 1.1rem;
+  border-radius: 8px; border: 2px solid var(--accent); background: var(--accent);
+  color: var(--accent-ink); cursor: pointer;
+}
+.btn.quiet { background: var(--bg); color: var(--accent); }
+.party {
+  border: 1px solid var(--line); border-left: 10px solid var(--good); border-radius: 10px;
+  padding: .7rem .8rem; margin-bottom: .8rem;
+}
+.party.no { border-left-color: var(--bad); }
+.party .why { font-weight: 600; color: var(--bad); margin-bottom: .4rem; }
+.party .rid { font-size: .8rem; color: var(--muted); float: right; }
+.person { padding: .5rem 0; border-top: 1px solid var(--line); }
+.person:first-of-type { border-top: 0; }
+.person .name { font-weight: 600; font-size: 1.1rem; }
+.person .tags { margin: .2rem 0 .4rem; }
+.tag {
+  display: inline-block; font-size: .78rem; font-weight: 600; padding: .1rem .45rem;
+  margin: 0 .25rem .25rem 0; border-radius: 999px; background: var(--soft); color: var(--muted);
+}
+.tap {
+  display: block; width: 100%; min-height: 52px; font: 600 1.05rem var(--body); text-align: left;
+  padding: .6rem .8rem; border-radius: 8px; border: 2px solid var(--accent);
+  background: var(--bg); color: var(--accent); cursor: pointer;
+}
+.tap.on { background: var(--good); border-color: var(--good); color: #fff; }
+.tap.no { background: var(--bad); border-color: var(--bad); color: #fff; }
+.tap.undo { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); }
+.everyone { margin-top: .5rem; width: 100%; }
+.stuck { color: var(--bad); font-size: .85rem; font-weight: 600; margin-top: .3rem; }
+.tick { color: var(--good); font-weight: 700; }
+.counts .act { border: 1px solid var(--line); border-radius: 10px; padding: .7rem .8rem; margin-bottom: .8rem; }
+.counts .act h3 { margin-bottom: .3rem; }
+.counts label { display: block; font-weight: 600; font-size: .85rem; margin: .5rem 0 .2rem; }
+.counts .planned { font-size: .9rem; color: var(--muted); }
+.totals { background: var(--soft); border-radius: 10px; padding: .7rem .8rem; margin-bottom: .9rem; font-size: .95rem; }
