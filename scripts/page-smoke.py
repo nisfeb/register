@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """page-smoke.py HOST
 The public page and its assets answer without a cookie, with the right
-types, nosniff and no-cache; the backoffice and its assets refuse
-without one, and its page redirects to the login form."""
+types, nosniff and no-cache; the backoffice, the check-in app and their
+assets refuse without one, and their pages redirect to the login form;
+the PWA manifest, worker and icons answer without one on purpose."""
 import subprocess, sys
 
 HOST = sys.argv[1]
@@ -47,6 +48,29 @@ code, h, b = get('/apps/register/admin.css')
 check('the backoffice style refuses without a cookie', code == 403, code)
 code, h, b = get('/apps/register/admin.js')
 check('the backoffice script refuses without a cookie', code == 403, code)
+code, h, b = get('/apps/register/checkin')
+check('the check-in app without a cookie redirects to the login form',
+      code == 302 and '/~/login' in h.get('location', '') and 'checkin' in h.get('location', ''), (code, h.get('location')))
+code, h, b = get('/apps/register/checkin.js')
+check('the check-in script refuses without a cookie', code == 403, code)
+# the PWA assets answer without a cookie: a browser fetches a manifest,
+# an icon and a service worker uncredentialed, and behind the owner gate
+# the install would degrade to a bookmark
+code, h, b = get('/apps/register/manifest.json')
+check('the manifest answers 200 without a cookie as a manifest',
+      code == 200 and h.get('content-type', '').startswith('application/manifest+json'), (code, h))
+check('the manifest names the app, its scope and its icons',
+      '"BSC Check-in"' in b and '/apps/register/' in b and 'icon-512.png' in b, b[:200])
+code, h, b = get('/apps/register/sw.js')
+check('the service worker answers 200 without a cookie as javascript',
+      code == 200 and h.get('content-type', '').startswith('text/javascript'), (code, h))
+check('the worker may claim the whole app scope and is not cached',
+      h.get('service-worker-allowed') == '/apps/register/' and 'no-cache' in h.get('cache-control', ''), h)
+for icon in ('icon-192.png', 'icon-512.png'):
+    code, h, b = get('/apps/register/' + icon)
+    check(icon + ' answers 200 without a cookie as a png that may be cached',
+          code == 200 and h.get('content-type', '') == 'image/png'
+          and 'max-age' in h.get('cache-control', ''), (code, h))
 code, h, b = get('/apps/register/nothing')
 check('an unknown route is 404', code == 404, code)
 print()

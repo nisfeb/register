@@ -97,6 +97,21 @@ def reg(rid, tok):
     return curl('GET', API + f'/reg/{rid}?t={tok}')
 
 
+def roster(day, jar=JAR):
+    return curl('GET', API + f'/checkin/roster?day={day}', jar=jar)
+
+
+def tap(day, items):
+    return curl('POST', API + '/checkin', {'day': day, 'checkins': items}, jar=JAR, actor=ACTOR)
+
+
+def row_of(rows, rid):
+    for r in rows:
+        if r['rid'] == rid:
+            return r
+    return None
+
+
 def status():
     code, d = curl('GET', API + '/status')
     check('GET /status answers 200', code == 200, (code, d))
@@ -360,6 +375,7 @@ def run():
     code, d = curl('POST', API + f'/reg/{one_rid}/cancel?t={one_tok}', {})
     check('cancelling twice is 409', code == 409, code)
 
+    checkin(ana_rid, w2_rid)
     backoffice(ana_rid)
 
     # ---- the window ----
@@ -371,6 +387,119 @@ def run():
     check('a draft after close is 403', code == 403, (code, d))
     s8 = status()
     check('status says closed', s8['open'] is False, s8['open'])
+
+
+def checkin(done_rid, waiting_rid):
+    # ---- the volunteers' check-in app ----
+    code, _ = curl('GET', API + '/checkin/roster?day=fri')
+    check('GET /checkin/roster without the cookie is 403', code == 403, code)
+    code, _ = curl('POST', API + '/checkin', {'day': 'fri', 'checkins': []}, jar=JAR)
+    check('POST /checkin with the cookie and no actor is 400', code == 400, code)
+    code, d = roster('nonsense')
+    check('a day the event does not have is 400', code == 400, (code, d))
+    code, d = roster('fri')
+    check('GET /checkin/roster answers the day, the clock, the rows and the planned counts',
+          code == 200 and d.get('day') == 'fri' and d.get('now')
+          and isinstance(d.get('rows'), list) and isinstance(d.get('planned'), dict), (code, d))
+    rows = d['rows']
+    names = [(r['people'][0]['last'] or '').lower() for r in rows if r['people']]
+    check('the roster is sorted by the first person\'s last name', names == sorted(names), names[:12])
+    check('no draft is in the roster', all(r['status'] != 'draft' for r in rows), [r['status'] for r in rows])
+    mine = row_of(rows, done_rid)
+    check('a complete party wears the green band', mine and mine['wristband']['ok'] is True, mine)
+    late = row_of(rows, waiting_rid)
+    check('a wait listed party wears the red band with its reason',
+          late and late['wristband']['ok'] is False
+          and late['wristband']['why'] == 'on the wait list', late)
+    check('each person carries an index, a name and the day\'s tags',
+          mine and mine['people'][0]['i'] == 0 and mine['people'][0]['last']
+          and mine['people'][0]['walks'] is True
+          and mine['people'][0]['checked'] is False, mine)
+
+    # the planned walk figure is the counted walkers that day
+    code, all_regs = admin('GET', '/regs')
+    live = [r for r in all_regs['regs'] if r['status'] in ('complete', 'waiver', 'payment', 'assistance')]
+    want = sum(int(r['plan']['fri']) for r in live)
+    check('planned.walk is the walkers those parties planned for that day',
+          d['planned']['walk'] == want, (d['planned'], want))
+
+    # ---- two taps, then the same two again ----
+    code, before = admin('GET', '/reg/' + done_rid)
+    lines = len(before['history'])
+    code, d = tap('fri', [{'rid': done_rid, 'i': 0}, {'rid': done_rid, 'i': 1}])
+    check('two taps in one batch answer applied 2 with nothing rejected',
+          code == 200 and d.get('applied') == 2 and d.get('rejected') == [], (code, d))
+    settle()
+    code, d = roster('fri')
+    mine = row_of(d['rows'], done_rid)
+    check('the roster shows both checked in, with the time and the volunteer',
+          mine and mine['people'][0]['checked'] is True and mine['people'][1]['checked'] is True
+          and mine['people'][0]['at'] and mine['people'][0]['by'] == 'admin:' + ACTOR, mine)
+    check('the day\'s planned block counts them checked', d['planned']['checked'] >= 2, d['planned'])
+    code, after = admin('GET', '/reg/' + done_rid)
+    check('each check-in wrote one history line',
+          len(after['history']) == lines + 2
+          and after['history'][-1]['what'].startswith('checked in'), after['history'][-2:])
+    code, d = tap('fri', [{'rid': done_rid, 'i': 0}, {'rid': done_rid, 'i': 1}])
+    check('the same two taps again answer applied 2', code == 200 and d.get('applied') == 2, (code, d))
+    settle()
+    code, again = admin('GET', '/reg/' + done_rid)
+    check('a check-in that is already there writes no second history line',
+          len(again['history']) == lines + 2, len(again['history']))
+    check('and keeps the first time it was taken',
+          again['people'][0]['checkins']['fri']['at'] == after['people'][0]['checkins']['fri']['at'],
+          (again['people'][0]['checkins'], after['people'][0]['checkins']))
+
+    # ---- the undo ----
+    code, d = tap('fri', [{'rid': done_rid, 'i': 1, 'undo': True}])
+    check('an undo answers applied 1', code == 200 and d.get('applied') == 1, (code, d))
+    settle()
+    code, d = roster('fri')
+    mine = row_of(d['rows'], done_rid)
+    check('the undone person is no longer checked in, the other still is',
+          mine and mine['people'][0]['checked'] is True and mine['people'][1]['checked'] is False, mine)
+    code, undone = admin('GET', '/reg/' + done_rid)
+    check('the undo wrote its own history line',
+          undone['history'][-1]['what'].startswith('undid check-in'), undone['history'][-1])
+    code, d = tap('fri', [{'rid': done_rid, 'i': 1, 'undo': True}])
+    check('undoing again answers applied 1 and writes nothing', code == 200 and d.get('applied') == 1, (code, d))
+    settle()
+    code, twice = admin('GET', '/reg/' + done_rid)
+    check('no second undo line', len(twice['history']) == len(undone['history']), len(twice['history']))
+
+    # ---- what the ship refuses, by name ----
+    code, d = tap('fri', [{'rid': done_rid, 'i': 9}])
+    check('a person the party does not have is rejected by name',
+          code == 200 and d.get('applied') == 0 and d['rejected']
+          and d['rejected'][0]['i'] == 9 and d['rejected'][0]['why'] == 'no such person', (code, d))
+    code, d = tap('fri', [{'rid': '0123456789', 'i': 0}, {'rid': done_rid, 'i': 0}])
+    check('a rid that is gone is rejected and the good one still applies',
+          code == 200 and d.get('applied') == 1 and len(d['rejected']) == 1
+          and d['rejected'][0]['why'] == 'no such registration', (code, d))
+    code, d = tap('mon', [{'rid': done_rid, 'i': 0}])
+    check('a day the event does not have is 400 on the post', code == 400, (code, d))
+    code, d = tap('fri', [{'rid': done_rid, 'i': 0}] * 201)
+    check('a batch over 200 is refused', code == 400 and 'checkins' in str(d.get('error', '')), (code, d))
+    settle()
+
+    # ---- a red band is checked in all the same ----
+    code, d = tap('fri', [{'rid': waiting_rid, 'i': 0}])
+    check('a wait listed pilgrim is checked in anyway: the volunteer decided',
+          code == 200 and d.get('applied') == 1, (code, d))
+    settle()
+    code, d = roster('fri')
+    late = row_of(d['rows'], waiting_rid)
+    check('the record keeps the red reason beside the check-in',
+          late and late['people'][0]['checked'] is True
+          and late['wristband']['why'] == 'on the wait list', late)
+    code, d = admin('GET', '/regs')
+    row = row_of([{'rid': r['id'], **r} for r in d['regs']], done_rid)
+    check('the backoffice roster row carries the per-day check-in counts',
+          row and row['checked']['fri'] == 1 and row['checked']['sat'] == 0, row and row.get('checked'))
+
+    # ---- the check-ins the gate made are taken back ----
+    tap('fri', [{'rid': done_rid, 'i': 0, 'undo': True}, {'rid': waiting_rid, 'i': 0, 'undo': True}])
+    settle()
 
 
 def backoffice(live_rid):
