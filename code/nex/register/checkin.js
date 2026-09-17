@@ -124,12 +124,21 @@
   var counts = {};
   var countsDoc = null;
   var queue = [];
+  // a tap the ship took stays here for a moment: the writer applies
+  // after the answer leaves, so a roster fetched in that gap would
+  // paint the person unchecked again and the tick would flicker
+  var recent = [];
   var actor = '';
   var queued = null;
   var stopped = false;
   var lastRev = null;
   var asking = null;
 
+  function fresh() {
+    var now = Date.now();
+    recent = recent.filter(function (r) { return now - r.done < 20000; });
+    return recent;
+  }
   function store(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
   function recall(k, dflt) {
     try {
@@ -269,7 +278,13 @@
         day: day,
         checkins: batch.map(function (q) { return { rid: q.rid, i: q.i, undo: !!q.undo }; })
       }).then(function (d) {
-        queue = drained(batch, d).concat(queue.filter(function (q) { return batch.indexOf(q) < 0; }));
+        var kept = drained(batch, d);
+        var stuck = {};
+        kept.forEach(function (q) { stuck[q.rid + ':' + q.i] = true; });
+        recent = fresh().concat(batch.filter(function (q) {
+          return !stuck[q.rid + ':' + q.i];
+        }).map(function (q) { return Object.assign({}, q, { done: Date.now() }); }));
+        queue = kept.concat(queue.filter(function (q) { return batch.indexOf(q) < 0; }));
         store(QKEY, queue);
         drawSync();
         render();
@@ -308,7 +323,7 @@
     view.innerHTML = tab === 'counts' ? countsView() : rosterView();
   }
   function rosterView() {
-    var live = mergeRoster(rows, queue, day);
+    var live = mergeRoster(rows, queue.concat(fresh()), day);
     var q = qEl.value;
     var list = live.filter(function (r) { return matches(r, q); });
     var out = '<div class="totals">' + esc(plan.walk || 0) + ' walking, ' +
