@@ -11,7 +11,8 @@
 ::    /counts.json         actual counts per day per activity
 ::    /beacon/rev          the change beacon, nested so it streams
 ::    /tr/last  /tr/log    the last writer outcome, the audit ring of 2000
-::    the two pages and the manifests   laid fresh on every load, not %fall
+::    the three pages and the manifests laid fresh on every load, not %fall
+::    the PWA assets (sw.js, manifest.json, the two icons) the same way
 ::
 ::  ROADS ARE NEXUS-RELATIVE. A desk-installed app cannot learn its own
 ::  absolute path, so every road is [%| up lane], where up is the number
@@ -34,6 +35,13 @@
 /&  admin-html   admin.html
 /&  admin-css    admin.css
 /&  admin-js     admin.js
+/&  checkin-html  checkin.html
+/&  checkin-css   checkin.css
+/&  checkin-js    checkin.js
+/&  sw-js         sw.js
+/&  manifest-json  manifest.json
+/&  icon-192  icon-192.png
+/&  icon-512  icon-512.png
 =<  ^-  nexus:nexus
     |%
     ++  on-load
@@ -61,6 +69,13 @@
           [%over %& [/ %'admin.html'] [[/ %mime] admin-html]]
           [%over %& [/ %'admin.css'] [[/ %mime] admin-css]]
           [%over %& [/ %'admin.js'] [[/ %mime] admin-js]]
+          [%over %& [/ %'checkin.html'] [[/ %mime] checkin-html]]
+          [%over %& [/ %'checkin.css'] [[/ %mime] checkin-css]]
+          [%over %& [/ %'checkin.js'] [[/ %mime] checkin-js]]
+          [%over %& [/ %'sw.js'] [[/ %mime] sw-js]]
+          [%over %& [/ %'manifest.json'] [[/ %mime] manifest-json]]
+          [%over %& [/ %'icon-192.png'] [[/ %mime] icon-192]]
+          [%over %& [/ %'icon-512.png'] [[/ %mime] icon-512]]
           [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'web.sig'] [[/ %sig] ~]]
           [%fall %| /requests empty-dir:loader]
@@ -158,6 +173,7 @@
   ?:  =('reinstate' op)  (do-reinstate jon)
   ?:  =('set-notes' op)  (do-set-notes jon)
   ?:  =('add' op)  (do-add jon)
+  ?:  =('checkin' op)  (do-checkin jon)
   ?:  =('set-settings' op)  (do-set-doc %'settings.json' 'set-settings' jon)
   ?:  =('set-copy' op)  (do-set-doc %'copy.json' 'set-copy' jon)
   ?:  =('set-counts' op)  (do-set-doc %'counts.json' 'set-counts' jon)
@@ -552,6 +568,9 @@
       %'admin.html'   `'text/html; charset=utf-8'
       %'admin.css'    `'text/css; charset=utf-8'
       %'admin.js'     `'text/javascript; charset=utf-8'
+      %'checkin.html'  `'text/html; charset=utf-8'
+      %'checkin.css'   `'text/css; charset=utf-8'
+      %'checkin.js'    `'text/javascript; charset=utf-8'
     ==
   ?~  ct  (send-err eyre-id 404 'no such file')
   ;<  vw=view:nexus  bind:m  (peek:io (rf 1 / name) `[/ %mime])
@@ -564,6 +583,20 @@
         ['x-content-type-options' 'nosniff']
     ==
   (send-simple:srv eyre-id [[200 heads] `q.u.got])
+::  +serve-asset: a PWA asset, with its own type, its own cache rule and
+::  whatever extra header it needs. No nosniff: a service worker and a
+::  manifest are fetched by the browser itself, which reads the type.
+::
+++  serve-asset
+  |=  [eyre-id=@ta name=@ta ct=@t cc=@t extra=(list [@t @t])]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  vw=view:nexus  bind:m  (peek:io (rf 1 / name) `[/ %mime])
+  ?.  ?=([%file *] vw)  (send-err eyre-id 404 'no such file')
+  =/  got=(unit mime)  (mole |.(!<(mime (need-vase:tarball sang.vw))))
+  ?~  got  (send-err eyre-id 500 'unreadable file')
+  =/  base=(list [@t @t])  ~[['content-type' ct] ['cache-control' cc]]
+  (send-simple:srv eyre-id [[200 (weld base extra)] `q.u.got])
 ::  +handle-request: one HTTP request, on its own ephemeral fiber. The
 ::  public routes need no cookie and prove themselves with the
 ::  registration's token. Everything under /api/admin needs the owner:
@@ -620,10 +653,38 @@
   ?:  &(=('POST' meth) ?=([%api %reg @ %sign ~] suffix))         (serve-sign eyre-id s2 tok)
   ?:  &(=('POST' meth) ?=([%api %reg @ %pay ~] suffix))          (serve-pay eyre-id s2 tok)
   ?:  &(=('POST' meth) ?=([%api %resend-link ~] suffix))         (serve-resend eyre-id jon)
+  ::  the PWA assets, served WITHOUT the cookie on purpose. A browser
+  ::  fetches a manifest, an icon and a service worker uncredentialed:
+  ::  only Chrome honours crossorigin=use-credentials and iOS never
+  ::  sends a cookie for an icon. Behind the owner gate they answer 403
+  ::  and the install degrades silently to a bookmark with no standalone
+  ::  window. Nothing here is private: a name, two colours, a check mark
+  ::  and a caching worker. Lattice serves its own the same way.
+  ?:  &(=('GET' meth) ?=([%'manifest.json' ~] suffix))
+    (serve-asset eyre-id %'manifest.json' 'application/manifest+json' 'public, max-age=86400' ~)
+  ?:  &(=('GET' meth) ?=([%'sw.js' ~] suffix))
+    ::  service-worker-allowed widens the scope past the worker's own
+    ::  directory, and no-cache so a new worker reaches the phone
+    %^  serve-asset  eyre-id  %'sw.js'
+    ['text/javascript; charset=utf-8' 'no-cache' ~[['service-worker-allowed' '/apps/register/']]]
+  ?:  &(=('GET' meth) ?=([%'icon-192.png' ~] suffix))
+    (serve-asset eyre-id %'icon-192.png' 'image/png' 'public, max-age=86400' ~)
+  ?:  &(=('GET' meth) ?=([%'icon-512.png' ~] suffix))
+    (serve-asset eyre-id %'icon-512.png' 'image/png' 'public, max-age=86400' ~)
+  ::  the volunteers' check-in app. The page, its script and its style
+  ::  are the owner's, like the backoffice; a volunteer opens it with
+  ::  the ship's own login, and the page redirects there without one.
+  ?:  &(=('GET' meth) ?=([%checkin ~] suffix))
+    ?.(owner (send-login eyre-id '/apps/register/checkin') (serve-file eyre-id %'checkin.html'))
+  ?:  &(=('GET' meth) ?=([%'checkin.css' ~] suffix))             (own (serve-file eyre-id %'checkin.css'))
+  ?:  &(=('GET' meth) ?=([%'checkin.js' ~] suffix))              (own (serve-file eyre-id %'checkin.js'))
+  ?:  &(=('GET' meth) ?=([%api %checkin %roster ~] suffix))
+    (own (serve-checkin-roster eyre-id (fall (get-key:kv:html-utils 'day' args) '')))
+  ?:  &(=('POST' meth) ?=([%api %checkin ~] suffix))             (own (act (serve-checkin eyre-id jon admin-by)))
   ::  the backoffice itself. Without the cookie it is a redirect to
   ::  eyre's login form, not a refusal: an organizer opened a link.
   ?:  &(=('GET' meth) ?=([%admin ~] suffix))
-    ?.(owner (send-login eyre-id) (serve-file eyre-id %'admin.html'))
+    ?.(owner (send-login eyre-id '/apps/register/admin') (serve-file eyre-id %'admin.html'))
   ?:  &(=('GET' meth) ?=([%'admin.css' ~] suffix))               (own (serve-file eyre-id %'admin.css'))
   ?:  &(=('GET' meth) ?=([%'admin.js' ~] suffix))                (own (serve-file eyre-id %'admin.js'))
   ?:  &(=('GET' meth) ?=([%api %admin %regs ~] suffix))          (own (serve-regs eyre-id))
@@ -1299,10 +1360,10 @@
 ::  link gets asked for the code instead of a bare refusal
 ::
 ++  send-login
-  |=  eyre-id=@ta
+  |=  [eyre-id=@ta back=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  =/  heads  ~[['location' '/~/login?redirect=/apps/register/admin']]
+  =/  heads=(list [@t @t])  ~[['location' (cat 3 '/~/login?redirect=' back)]]
   (send-simple:srv eyre-id [[302 heads] ~])
 ::  +send-download: a file the browser saves
 ::
@@ -1458,6 +1519,122 @@
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   %^  send-json  eyre-id  200
   (pairs:enjs:format ~[['rid' s+rid] ['token' s+token] ['status' s+final]])
+::  ==  the check-in
+
+::  +by-last: the roster's order, the first person's last name, ties
+::  broken by rid. +aor and not +lth: a cord compares as a number, and
+::  'ab' is the larger number but the earlier name.
+::
+++  by-last
+  |=  [a=reg:reg b=reg:reg]
+  ^-  ?
+  =/  x=@t  ?~(people.a '' (lower last.i.people.a))
+  =/  y=@t  ?~(people.b '' (lower last.i.people.b))
+  ?.  =(x y)  (aor x y)
+  (aor id.a id.b)
+::  +find-by-id: one registration out of a list already loaded
+::
+++  find-by-id
+  |=  [regs=(list reg:reg) rid=@ta]
+  ^-  (unit reg:reg)
+  ?:  =(%$ rid)  ~
+  |-  ^-  (unit reg:reg)
+  ?~  regs  ~
+  ?:  =(rid id.i.regs)  `i.regs
+  $(regs t.regs)
+::  +serve-checkin-roster: every party a volunteer may meet that day,
+::  sorted by the first person's last name. A draft is not a
+::  registration yet and is left out; a cancelled one is carried, so a
+::  volunteer searching the name reads the red answer rather than
+::  nothing.
+::
+++  serve-checkin-roster
+  |=  [eyre-id=@ta day=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  want=(unit @tas)  (checkin-day:reg day)
+  ?~  want  (send-err eyre-id 400 'day: fri, sat or sun')
+  ;<  now=@da  bind:m  get-time:io
+  ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
+  ;<  cj=json  bind:m  (read-json (rf 1 / %'counts.json'))
+  =/  shown=(list reg:reg)  (skip regs |=(r=reg:reg =(%draft status.r)))
+  =/  rows=(list reg:reg)  (sort shown by-last)
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['day' s+u.want]
+      ['now' (en-time:reg now)]
+      ['rows' a+(turn rows |=(r=reg:reg (en-roster-row:reg r u.want)))]
+      ['planned' (planned:reg rows u.want)]
+      ['counts' (gj:reg cj u.want)]
+  ==
+::  +serve-checkin: a batch of taps from one phone. Each item is checked
+::  against the tree here, so a rid or an index that is gone comes back
+::  named instead of vanishing into the writer.
+::
+++  serve-checkin
+  |=  [eyre-id=@ta jon=json by=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  want=(unit @tas)  (checkin-day:reg (gs:reg jon 'day'))
+  ?~  want  (send-err eyre-id 400 'day: fri, sat or sun')
+  =/  items=(list json)  (ga:reg jon 'checkins')
+  ?:  (gth (lent items) 200)  (send-err eyre-id 400 'checkins: over 200 in one batch')
+  ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
+  ;<  out=[done=@ud bad=(list json)]  bind:m
+    (apply-checkins regs u.want by items 0 ~)
+  %^  send-json  eyre-id  200
+  (pairs:enjs:format ~[['applied' (en-num:reg done.out)] ['rejected' a+bad.out]])
+::  +apply-checkins: one writer op per good item, one named refusal per
+::  bad one. The count is of items the writer took, not of tree changes:
+::  a tap on someone already checked in is applied and changes nothing.
+::
+++  apply-checkins
+  |=  [regs=(list reg:reg) day=@tas by=@t items=(list json) done=@ud bad=(list json)]
+  =/  m  (fiber:fiber:nexus ,[@ud (list json)])
+  ^-  form:m
+  ?~  items  (pure:m [done (flop bad)])
+  =/  it=json  i.items
+  =/  rid=@t  (gs:reg it 'rid')
+  =/  i=@ud  (fall (gn:reg it 'i') 0)
+  =/  cur=(unit reg:reg)  (find-by-id regs ?:((ok-rid rid) `@ta`rid %$))
+  =/  why=@t
+    ?~  cur  'no such registration'
+    ?.  (lth i (lent people.u.cur))  'no such person'
+    ''
+  ?.  =('' why)
+    =/  row=json
+      (pairs:enjs:format ~[['rid' s+rid] ['i' (en-num:reg i)] ['why' s+why]])
+    (apply-checkins regs day by t.items done [row bad])
+  =/  pk=json
+    %-  pairs:enjs:format
+    :~  ['op' s+'checkin']  ['rid' s+rid]  ['i' (en-num:reg i)]
+        ['day' s+day]  ['undo' b+(gb:reg it 'undo')]  ['by' s+by]
+    ==
+  ;<  err=(unit tang)  bind:m  (poke-writer pk)
+  (apply-checkins regs day by t.items ?^(err done +(done)) bad)
+::  +do-checkin: one person checked in, or the check-in taken back. A
+::  tap that changes nothing writes nothing: no grub, no ring entry, no
+::  beacon, so two volunteers tapping the same name cost one write.
+::
+++  do-checkin
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  rid=@ta  (rid-of jon)
+  =/  by=@t  (by-of jon)
+  =/  i=@ud  (fall (gn:reg jon 'i') 0)
+  =/  undo=?  (gb:reg jon 'undo')
+  =/  want=(unit @tas)  (checkin-day:reg (gs:reg jon 'day'))
+  ?~  want  (refuse 'checkin' 'day: fri, sat or sun')
+  ;<  now=@da  bind:m  get-time:io
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
+  ?~  cur  (refuse 'checkin' 'no such registration')
+  =/  next=(unit reg:reg)  (with-checkin:reg u.cur i u.want by now undo)
+  ?~  next  (refuse 'checkin' 'no such person')
+  ?:  =(u.next u.cur)  (pure:m |)
+  ;<  ~  bind:m  (write-reg 0 u.next |)
+  ;<  ~  bind:m  (note-rid 'checkin' & u.want by rid)
+  (pure:m &)
 ::  +serve-resend-template: phase 2 sends the mail. Here the subject is
 ::  filled and noted in the ring, so a rehearsal reads what would go
 ::  out. Never a body: a body carries the manage link.
