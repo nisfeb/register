@@ -21,7 +21,7 @@
 - The writer never crashes on input: every refusal is a clean branch that writes `/tr/last`.
 - The library `code/lib/register.hoon` stays import-free (no `/<`, `/+`, `/-`): it must build both in the clay desk `/lib` for `-test` and in the app's code namespace.
 - Hoon under zuse 408: use the colon form for wing-of-expression (`a:(b c)`), never `a.(b c)`. Widen a `?~`-narrowed list before `levy`, `roll` or `turn` (`` (levy `tape`t f) ``). Bind every computed tape to a `=/  x=tape` face before interpolating or welding it. `%=` and dot wings work on a leg bound with `=/`, not on an arm.
-- Caps are the spec's and the lib's, copied verbatim: email 200 bytes, phone 40, street 200, city 100, state 40, zip 20, organization 120, why 2000, first and last name 80 each, notes 2000, 12 people per party, 200 history lines per registration, 2000 audit ring entries. Fees in cents: full 7500, Bambino 2500, non-walker 0. Caps: full 325, Bambino 25, Friday social 300, Saturday social 200, late adds 50. Holds age out at 48 hours.
+- Caps are the spec's and the lib's, copied verbatim: email 200 bytes, phone 40, street 200, city 100, state 40, zip 20, organization 120, why 2000, first and last name 80 each, notes 2000, 12 people per party, 200 history lines per registration, 2000 audit ring entries. Fees in cents: full 7500, Bambino 2500; every person in a party pays the track fee whether or not they walk. Caps: full 325, Bambino 25, Friday social 300, Saturday social 200, late adds 50. Holds age out at 48 hours.
 - Secrets (`resend_key`, `secret_key`, `secret`, anything ending in `_key`) never leave the ship unmasked and never appear in `/tr/log`.
 - No HTML is ever built from a pilgrim's text without `esc()` in the page, and the ship never renders pilgrim text into HTML at all.
 - Every mutating admin route reads the organizer's name from the `X-Actor` header and refuses with 400 `actor: required` when it is missing. The writer stamps `admin:<name>` as `by`. Reads need no name.
@@ -330,9 +330,10 @@ git commit -m "The desk skeleton: manifests, the vendored marcs, the registratio
   ;:  weld
     (expect-eq !>(7.500) !>((fee:reg st %full p)))
     (expect-eq !>(7.500) !>((fee:reg st %full sun-only)))
-    (expect-eq !>(0) !>((fee:reg st %full none)))
+    ::  a non-walker pays the track fee too
+    (expect-eq !>(7.500) !>((fee:reg st %full none)))
     (expect-eq !>(2.500) !>((fee:reg st %bambino sun-only)))
-    (expect-eq !>(0) !>((fee:reg st %bambino none)))
+    (expect-eq !>(2.500) !>((fee:reg st %bambino none)))
     ::  a child pays the same
     (expect-eq !>(7.500) !>((fee:reg st %full p(child &))))
     (expect-eq !>(22.500) !>((fees-total:reg st (some-reg %a %waiver %full 3 t0))))
@@ -562,7 +563,7 @@ git commit -m "The desk skeleton: manifests, the vendored marcs, the registratio
 ::  organizations, the provider credentials) stays JSON.
 ::
 +$  settings
-  $:  fees=[full=@ud bambino=@ud nonwalker=@ud]
+  $:  fees=[full=@ud bambino=@ud]
       caps=[full=@ud bambino=@ud social-fri=@ud social-sat=@ud late=@ud]
       hold=@dr
       open=(unit @da)
@@ -842,7 +843,6 @@ git commit -m "The desk skeleton: manifests, the vendored marcs, the registratio
   =/  mode=@t  (gs (gj jon 'providers') 'mode')
   :*  :*  (fall (gn fj 'full') 7.500)
           (fall (gn fj 'bambino') 2.500)
-          (fall (gn fj 'nonwalker') 0)
       ==
       :*  (fall (gn cj 'full') 325)
           (fall (gn cj 'bambino') 25)
@@ -879,10 +879,12 @@ git commit -m "The desk skeleton: manifests, the vendored marcs, the registratio
   |=  [track=@tas people=(list person)]
   ^-  @ud
   (lent (skim people |=(p=person (walks track p))))
+::  +fee: the track fee, walker or not. A non-walker registers, pays and
+::  attends the socials like anyone; only the cap ignores them.
+::
 ++  fee
   |=  [s=settings track=@tas p=person]
   ^-  @ud
-  ?.  (walks track p)  nonwalker.fees.s
   ?:(=(%bambino track) bambino.fees.s full.fees.s)
 ++  fees-total
   |=  [s=settings r=reg]
@@ -1166,7 +1168,7 @@ git commit -m "The desk skeleton: manifests, the vendored marcs, the registratio
       ==
       :-  'fees'
       %-  pairs:enjs:format
-      :~  ['full' (en-num full.fees.s)]  ['bambino' (en-num bambino.fees.s)]  ['nonwalker' (en-num nonwalker.fees.s)]
+      :~  ['full' (en-num full.fees.s)]  ['bambino' (en-num bambino.fees.s)]
       ==
       ['open' b+(window-open s now)]
       ['changes_open' b+(changes-open s now)]
@@ -1186,7 +1188,7 @@ git commit -m "The desk skeleton: manifests, the vendored marcs, the registratio
       :~  ['name' s+'Baby Steps Camino 2026']
           ['days' a+~[s+'2026-12-04' s+'2026-12-05' s+'2026-12-06']]
       ==
-      ['fees' (pairs:enjs:format ~[['full' (en-num 7.500)] ['bambino' (en-num 2.500)] ['nonwalker' (en-num 0)]])]
+      ['fees' (pairs:enjs:format ~[['full' (en-num 7.500)] ['bambino' (en-num 2.500)]])]
       :-  'caps'
       %-  pairs:enjs:format
       :~  ['full' (en-num 325)]  ['bambino' (en-num 25)]  ['social_fri' (en-num 300)]
@@ -1216,7 +1218,7 @@ git commit -m "The desk skeleton: manifests, the vendored marcs, the registratio
   %-  pairs:enjs:format
   :~  ['landing.title' s+'Register for the Baby Steps Camino']
       ['landing.intro' s+'Three days of beach walking, prayer and fellowship from Jacksonville Beach to the Shrine of Our Lady of La Leche in St. Augustine, December 4 to 6, 2026.']
-      ['landing.meter' s+'{{count}} of {{cap}} pilgrims registered']
+      ['landing.meter' s+'{{percent}}% full']
       ['landing.full.title' s+'The full Camino']
       ['landing.full.blurb' s+'Walk all three days, or any of them. $75 per person, adults and children alike.']
       ['landing.full.button' s+'Register for the full Camino']
@@ -1263,6 +1265,7 @@ git commit -m "The desk skeleton: manifests, the vendored marcs, the registratio
       ['form.fees.title' s+'Registration fees']
       ['form.fees.line' s+'{{n}} x {{each}}']
       ['form.fees.total' s+'Total']
+      ['form.fees.nonrefundable' s+'The registration fee is non-refundable.']
       ['form.submit' s+'Continue to the waiver']
       ['form.saving' s+'Saved']
       ['form.error.duplicate' s+'There is already a registration under this email. Use the link in your confirmation email to change it, or request the link again below.']
@@ -2548,11 +2551,7 @@ textarea { min-height: 5.5rem; resize: vertical; }
     return { track: r.track, contact: r.contact, org: r.org, why: r.why, assistance: r.assistance,
       together: r.together, people: r.people.map(function (p) { var q = {}; Object.keys(blankPerson()).forEach(function (k) { q[k] = p[k]; }); return q; }) };
   }
-  function walks(p, track) { return track === 'bambino' ? !!p.days.sun : !!(p.days.fri || p.days.sat || p.days.sun); }
-  function fee(p, track) {
-    var f = status.fees;
-    return walks(p, track) ? (track === 'bambino' ? f.bambino : f.full) : f.nonwalker;
-  }
+  function fee(p, track) { return track === 'bambino' ? status.fees.bambino : status.fees.full; }
   function feeLines(m) {
     var by = {};
     m.people.forEach(function (p) { var c = fee(p, m.track); by[c] = (by[c] || 0) + 1; });
@@ -2574,7 +2573,7 @@ textarea { min-height: 5.5rem; resize: vertical; }
     var pct = Math.min(100, Math.round(100 * status.counts.full / Math.max(1, status.caps.full)));
     var out = '<h1>' + esc(t('landing.title')) + '</h1><p>' + esc(t('landing.intro')) + '</p>';
     out += '<div class="meter"><div class="bar"><div class="fill" style="width:' + pct + '%"></div></div>' +
-      '<div class="label">' + esc(t('landing.meter', { count: status.counts.full, cap: status.caps.full })) + '</div></div>';
+      '<div class="label">' + esc(t('landing.meter', { count: status.counts.full, cap: status.caps.full, percent: pct })) + '</div></div>';
     if (!status.open) return out + '<div class="card soft"><p>' + esc(t('landing.closed')) + '</p></div>';
     function door(track) {
       var full = trackFull(track);
@@ -2618,7 +2617,8 @@ textarea { min-height: 5.5rem; resize: vertical; }
   function feesBox(m) {
     var out = '<div class="card soft fees"><h2>' + esc(t('form.fees.title')) + '</h2><table>';
     feeLines(m).forEach(function (l) { out += '<tr><td>' + esc(t('form.fees.line', { n: l.n, each: money(l.each) })) + '</td><td>' + esc(money(l.n * l.each)) + '</td></tr>'; });
-    return out + '<tr class="total"><td>' + esc(t('form.fees.total')) + '</td><td>' + esc(money(fees(m))) + '</td></tr></table></div>';
+    return out + '<tr class="total"><td>' + esc(t('form.fees.total')) + '</td><td>' + esc(money(fees(m))) + '</td></tr></table>' +
+      '<p class="help">' + esc(t('form.fees.nonrefundable')) + '</p></div>';
   }
   function form(m) {
     var c = m.contact;
@@ -2994,7 +2994,7 @@ check('the bambino count moved by two and the full count did not', s2['counts'][
 
 # ---- non-walkers owe nothing and take no spot ----
 code, d = curl('POST', API + '/submit', party('full', 'matrix-non@example.com', [person('Fay', 'Shrine', days={'fri': False, 'sat': False, 'sun': False})]))
-check('a non-walker owes 0', code == 200 and d['fees'] == 0 and d['status'] == 'waiver', (code, d))
+check('a non-walker pays the track fee and gets a spot without counting', code == 200 and d['fees'] == 7500 and d['status'] == 'waiver', (code, d))
 non_rid, non_tok = d['rid'], d['token']
 
 # ---- financial assistance ----
@@ -3254,7 +3254,7 @@ Phase 1 is done when: 20 unit tests green with the revision pinned, `api-matrix.
 ## Self-review against the spec
 
 - Section 3, the flow: Tasks 3 and 4 cover choose, form, drafts, submit, wait list, sign and pay in stub mode, done with the manage link. The 48 hour hold is in `counted` and tested in `test-tally`.
-- Section 4, the rules: fees (`fee`, `fees-total`), caps and non-walkers (`tally`, `decide-submit`), the wait list with a position, payment and waiver as stubs with the status machine ready for phase 2, changes and cancellations with the cutoff, duplicates (`dup-of`), history on every registration plus the ring, the window. Refunds and manual payments are phase 3's admin actions.
+- Section 4, the rules: fees (`fee`, `fees-total`; every person pays the track fee), caps and non-walkers (`tally`, `decide-submit`), the wait list with a position, payment and waiver as stubs with the status machine ready for phase 2, changes and cancellations with the cutoff, duplicates (`dup-of`), history on every registration plus the ring, the window. Refunds and manual payments are phase 3's admin actions.
 - Section 8, the tree and the writer: every path has an `on-load` row; the writer re-decides the cap; the ops list matches.
 - Section 9, surfaces: every public route of phase 1 is in `handle-request`; the admin routes present are the ones phase 3 builds on. Live updates through the beacon are consumed by the backoffice in phase 3; the writer already bumps it.
 - Section 11, the page: the palette, the fonts, the meter first, copy from `/api/status`, native inputs, 16px gutter.
