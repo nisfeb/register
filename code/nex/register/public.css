@@ -19,7 +19,8 @@ footer { max-width: 760px; margin: 0 auto; padding: 0 16px 2rem; font-size: .8re
 h1, h2, h3 { font-family: var(--head); font-weight: 600; line-height: 1.25; margin: 0 0 .5rem; }
 h1 { font-size: 1.7rem; }
 h2 { font-size: 1.15rem; margin-top: 1.6rem; }
-h3 { font-size: 1rem; }
+h3 { font-size: 1rem; margin-top: 1.1rem; }
+h4 { font-family: var(--head); font-weight: 600; font-size: .9rem; line-height: 1.25; margin: 1rem 0 .3rem; }
 p { margin: 0 0 .8rem; }
 .muted { color: var(--muted); }
 .bad { color: var(--bad); }
@@ -52,13 +53,34 @@ textarea { min-height: 5.5rem; resize: vertical; }
 .check .note { color: var(--muted); font-size: .85rem; }
 .check.off { color: var(--muted); }
 .help { color: var(--muted); font-size: .85rem; margin: .1rem 0 .6rem; }
-/* the box that makes one person follow the first sits above their
-   choices, set apart so it reads as a heading for what follows */
-.check.same { margin: .9rem 0 .2rem; font-weight: 600; }
+/* a door on the landing: what it is, who it is for, what it costs */
+.door .for { color: var(--muted); }
+.door .fee { font-weight: 600; }
+.doors + .choose { margin-top: 1rem; }
+.meter .hurry { color: var(--accent); font-weight: 600; }
+/* a person's card, and the two questions it answers about them */
 .person { position: relative; }
-.person .remove { position: absolute; top: .8rem; right: .9rem; }
+.person > h2 { padding-right: 9rem; }
+.person .remove { position: absolute; top: .8rem; right: .9rem; max-width: 8.5rem; }
+@media (max-width: 480px) {
+  .person > h2 { padding-right: 0; }
+  .person .remove { position: static; display: block; max-width: none; margin: 0 0 .6rem; }
+}
+.person .weekend, .person .about { border-top: 1px solid var(--line); margin-top: 1.1rem; padding-top: .3rem; }
+.group { margin: 0 0 .7rem; }
+.group .closed { color: var(--muted); font-size: .85rem; margin: .2rem 0 0; }
+/* the Sunday distance sits under the Sunday row it belongs to */
+.sub { margin-left: 1.75rem; }
+/* the two weekends a person can have, with the first person's written
+   out under the one that copies it */
+.sameas { margin: .3rem 0 .8rem; }
+.sameas .check { font-weight: 600; }
+.summary { margin: .1rem 0 .5rem 1.75rem; color: var(--muted); font-size: .88rem; }
+.help.room { margin-top: .5rem; }
+/* a long day row wraps rather than pushing the page sideways */
+.check span { min-width: 0; overflow-wrap: break-word; }
 .fees table { width: 100%; border-collapse: collapse; }
-.fees td { padding: .3rem 0; border-bottom: 1px solid var(--line); }
+.fees td { padding: .3rem 0; border-bottom: 1px solid var(--line); overflow-wrap: break-word; }
 .fees td:last-child { text-align: right; }
 .fees tr.total td { font-weight: 600; border-bottom: none; }
 .actions { display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; margin-top: 1.2rem; }
