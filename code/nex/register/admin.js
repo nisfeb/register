@@ -395,7 +395,9 @@
       '<dt>status</dt><dd>' + esc(w.status) + '</dd>' +
       '<dt>envelope</dt><dd>' + esc(w.envelope) + '</dd>' +
       '<dt>at</dt><dd>' + esc(when(w.at)) + '</dd></dl><div class="actions">';
-    out += '<button type="button" class="btn small" data-act="waiver-paper">Signed on paper</button>';
+    if (r.status !== 'draft' && r.status !== 'cancelled') {
+      out += '<button type="button" class="btn small" data-act="waiver-paper">Signed on paper</button>';
+    }
     out += '<button type="button" class="btn quiet small" data-act="recheck-waiver">Re-read envelope</button>';
     return out + '</div></div>';
   }
@@ -447,7 +449,7 @@
     var h = (r.history || []).slice().reverse();
     var out = '<div class="card"><h3>History</h3><ul class="hist">';
     h.forEach(function (s) {
-      out += '<li><span class="when">' + esc(when(s.at)) + '</span> ' + esc(s.by) + ' &mdash; ' + esc(s.what) + '</li>';
+      out += '<li><span class="when">' + esc(when(s.at)) + '</span> ' + esc(s.by) + ' &middot; ' + esc(s.what) + '</li>';
     });
     if (!h.length) out += '<li class="muted">nothing yet</li>';
     return out + '</ul></div>';
@@ -456,8 +458,10 @@
     var r = detail;
     var out = '<h1>' + esc((r.people || []).map(function (p) { return p.first + ' ' + p.last; }).join(', ') || r.id) + '</h1>';
     out += '<p><a href="#roster">back to the roster</a> &middot; <span class="muted">' + esc(r.id) + '</span></p>';
+    var live = r.status !== 'draft' && r.status !== 'cancelled';
     out += '<div class="two"><div>' + partyForm(model) +
-      '<div class="actions"><button type="button" class="btn" data-act="save">Save changes</button></div></div><div>';
+      (live ? '<div class="actions"><button type="button" class="btn" data-act="save">Save changes</button></div>'
+            : '<p class="help">A ' + esc(r.status) + ' registration is not edited here.</p>') + '</div><div>';
     out += '<div class="card"><h3>Status</h3><p><span class="badge ' + esc(r.status) + '">' + esc(r.status) + '</span>' +
       (r.position ? ' <span class="muted">wait list #' + esc(r.position) + '</span>' : '') + '</p>' +
       '<dl class="kv"><dt>track</dt><dd>' + esc(r.track) + '</dd>' +
@@ -473,18 +477,20 @@
   function addView() {
     var out = '<h1>Add a registration</h1><p class="muted">No window and no cap check. It draws on the late-add pool.</p>';
     out += '<div class="two"><div>' + partyForm(model) + '</div><div>';
+    var onPaper = !!model.waiver_paper;
     out += '<div class="card"><h3>What the organizer took</h3>' +
       box('waiver_paper', 'Waiver signed on paper', model.waiver_paper) +
-      '<label>Paid by<select data-k="pay_method"><option value="">none</option>' +
+      '<label>Paid by<select data-k="pay_method"' + (onPaper ? '' : ' disabled') + '><option value="">none</option>' +
       ['check', 'cash', 'other'].map(function (t) {
         return '<option value="' + t + '"' + (model.pay_method === t ? ' selected' : '') + '>' + t + '</option>';
       }).join('') + '</select></label>';
-    if (model.pay_method) {
+    if (onPaper && model.pay_method) {
       out += '<div class="row"><label>Amount<input type="number" step="0.01" min="0" data-k="pay_amount" value="' + esc(model.pay_amount) + '"></label>' +
         '<label>Gift<input type="number" step="0.01" min="0" data-k="pay_gift" value="' + esc(model.pay_gift) + '"></label></div>' +
         '<label>Reference<input type="text" data-k="pay_ref" value="' + esc(model.pay_ref) + '"></label>';
     }
-    out += '<p class="help">A payment is recorded only when the waiver is signed on paper too, since payment follows the waiver.</p>';
+    out += '<p class="help">Payment follows the waiver, so tick the paper waiver first. ' +
+      'The ship refuses a payment without it rather than dropping it.</p>';
     out += '<p><button type="button" class="btn" data-act="submit-add">Add</button></p></div>';
     return out + '</div></div>';
   }
@@ -569,6 +575,15 @@
     });
     if (!Object.keys(pay).length) out += '<tr><td class="muted" colspan="4">nothing recorded</td></tr>';
     out += '</tbody></table></div>';
+    var unpaid = live.filter(function (r) { return !r.paid || r.paid === 'none'; });
+    var owed = unpaid.reduce(function (n, r) { return n + (Number(r.fees) || 0); }, 0);
+    var unsigned = live.filter(function (r) { return r.waiver !== 'completed'; });
+    var heads = unpaid.reduce(function (n, r) { return n + (Number(r.people) || 0); }, 0);
+    out += '<div class="card"><h3>Still owing</h3><dl class="kv">' +
+      '<dt>unpaid</dt><dd>' + esc(unpaid.length) + ' registrations, ' + esc(heads) + ' people, ' +
+      esc(money(owed)) + ' in fees</dd>' +
+      '<dt>unsigned</dt><dd>' + esc(unsigned.length) + ' registrations without a completed waiver</dd>' +
+      '</dl><p class="help">Live registrations only, so a draft or a cancelled one is left out.</p></div>';
     out += '</div>';
 
     // planned per day per activity, against the actual counts when they exist
@@ -612,6 +627,19 @@
     var perDay = {};
     all.forEach(function (r) { var k = day(r.created); if (k) perDay[k] = (perDay[k] || 0) + 1; });
     var days = Object.keys(perDay).sort();
+    if (days.length) {
+      // a day nobody registered is a real zero, so the run has no gaps
+      var last = day(roster.now) > days[days.length - 1] ? day(roster.now) : days[days.length - 1];
+      var walk = Date.parse(days[0] + 'T00:00:00Z');
+      var stop = Date.parse(last + 'T00:00:00Z');
+      days = [];
+      while (walk <= stop && days.length < 400) {
+        var k2 = new Date(walk).toISOString().slice(0, 10);
+        if (perDay[k2] === undefined) perDay[k2] = 0;
+        days.push(k2);
+        walk += 86400000;
+      }
+    }
     var most = days.reduce(function (m, k) { return Math.max(m, perDay[k]); }, 0);
     out += '<div class="card"><h3>Registrations per day</h3>' +
       barlist(days.map(function (k) { return [k, perDay[k]]; }), most) + '</div>';
@@ -656,6 +684,11 @@
   }
   function settingsView() {
     var s = settingsDoc || {};
+    // the Shrine capacity is reported, not enforced, so the document
+    // often arrives without it. Seed it, or the first Save stores 0.
+    if (getPath(s, 'caps.sunday') === undefined || getPath(s, 'caps.sunday') === null) {
+      setPath(s, 'caps.sunday', SHRINE);
+    }
     var out = '<h1>Settings</h1>';
     out += '<div class="card"><h3>Event</h3>' +
       field('event.name', 'Name', getPath(s, 'event.name')) +
@@ -671,7 +704,7 @@
       field('caps.late_adds', 'Late adds', getPath(s, 'caps.late_adds'), 'number') + '</div><div class="row3">' +
       field('caps.social_fri', 'Friday social', getPath(s, 'caps.social_fri'), 'number') +
       field('caps.social_sat', 'Saturday social', getPath(s, 'caps.social_sat'), 'number') +
-      field('caps.sunday', 'Sunday at the Shrine', getPath(s, 'caps.sunday') === undefined ? SHRINE : getPath(s, 'caps.sunday'), 'number') +
+      field('caps.sunday', 'Sunday at the Shrine', getPath(s, 'caps.sunday'), 'number') +
       '</div><p class="help">The Shrine capacity is reported, not enforced.</p></div>';
     out += '<div class="card"><h3>Window</h3><div class="row3">' +
       field('window.open', 'Opens', toLocal(getPath(s, 'window.open')), 'datetime-local') +
@@ -719,7 +752,9 @@
         '<dt>earliest</dt><dd>' + esc(when(dry.earliest)) + '</dd>' +
         '<dt>latest</dt><dd>' + esc(when(dry.latest)) + '</dd>' +
         '<dt>event days</dt><dd>' + esc((dry.event_days || []).join(', ')) + '</dd>' +
-        '<dt>would overwrite</dt><dd>' + esc(dry.overwrite) + '</dd></dl>';
+        '<dt>would overwrite</dt><dd>' + esc(dry.overwrite) + '</dd></dl>' +
+        '<p class="help">A restore stamps every registration it writes as updated now, ' +
+        'so the 48 hour hold starts again for each one.</p>';
     } else if (fileBody) {
       out += '<p class="muted">' + esc(fileName) + ' is ready. Inspect it before applying.</p>';
     }
@@ -828,7 +863,7 @@
     if (!model) return;
     setPath(model, k, val);
     // a structural change re-renders; a keystroke does not
-    if (k === 'together' || k === 'track' || k === 'pay_method') {
+    if (k === 'together' || k === 'track' || k === 'pay_method' || k === 'waiver_paper') {
       render(r.name === 'add' ? addView() : detailView());
     }
   }
@@ -922,7 +957,7 @@
     if (a === 'submit-add') {
       return act(function () {
         var body = { input: partyInput(model), exempt: !!model.exempt, waiver_paper: !!model.waiver_paper };
-        if (model.pay_method) {
+        if (model.pay_method && model.waiver_paper) {
           body.paid = {
             method: model.pay_method, amount: cents(model.pay_amount),
             gift: cents(model.pay_gift), ref: model.pay_ref, note: 'taken by ' + actor
@@ -975,13 +1010,15 @@
       });
     }
     if (a === 'apply') {
-      if (!dry || !fileBody) return;
+      if (!dry || !fileBody || !dry.confirm) return;
       var wipe = document.getElementById('wipe');
       var on = wipe && wipe.checked;
       if (!window.confirm('Restore ' + dry.regs + ' registrations, overwriting ' + dry.overwrite +
-        (on ? ', and wipe every registration the file does not name' : '') + '?')) return;
+        (on ? ', and wipe every registration the file does not name' : '') + '. ' +
+        'Every restored registration is stamped as updated now, so a 48 hour hold starts again ' +
+        'for each one. Go ahead?')) return;
       return act(function () {
-        write('/import?wipe=' + (on ? '1' : '0'), fileBody).then(function (d) {
+        write('/import?wipe=' + (on ? '1' : '0') + '&confirm=' + encodeURIComponent(dry.confirm), fileBody).then(function (d) {
           dry = null; fileBody = null;
           say('restored ' + d.applied + ' registrations', true);
           later();
