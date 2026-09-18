@@ -127,6 +127,7 @@
 ++  max-party    12
 ++  max-history  200
 ++  max-log      2.000
+++  max-copy     4.000
 ::  ==  time
 ::
 ::  +de-iso: "2026-09-16T22:05:00Z" (a fraction is allowed and dropped,
@@ -1327,10 +1328,11 @@
   ?:  ?=([%s *] v)  ?:(=('****' p.v) was v)
   (unmask v was)
 ::  +status-json: what the public page reads: the copy, the counts, the
-::  caps, the fees, the window and the mode
+::  caps, the fees, the window and the mode. `owner` is true only for
+::  the ship's owner, so the page knows whether to offer edit mode.
 ::
 ++  status-json
-  |=  [s=settings sj=json cj=json c=counts now=@da]
+  |=  [s=settings sj=json cj=json c=counts now=@da owner=?]
   ^-  json
   %-  pairs:enjs:format
   :~  ['copy' cj]
@@ -1357,6 +1359,7 @@
       ['orgs' (gj sj 'orgs')]
       ['mode' s+mode.s]
       ['now' (en-time now)]
+      ['owner' b+owner]
   ==
 ::  ==  the starter documents
 ::

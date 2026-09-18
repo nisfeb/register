@@ -371,6 +371,18 @@
     (expect !>((changes-open:reg st ~2026.12.1)))
     (expect !>(!(changes-open:reg st ~2026.12.5)))
   ==
+::  +test-status-owner: the status document says who is asking, so the
+::  page offers edit mode to the owner and to nobody else
+++  test-status-owner
+  =/  st=settings:reg  (de-settings:reg starter-settings:reg)
+  =/  c=counts:reg  [0 0 0 0 0 0]
+  =/  yes=json  (status-json:reg st starter-settings:reg starter-copy:reg c t0 &)
+  =/  no=json  (status-json:reg st starter-settings:reg starter-copy:reg c t0 |)
+  ;:  weld
+    (expect !>((gb:reg yes 'owner')))
+    (expect !>(!(gb:reg no 'owner')))
+    (expect !>(!=('' (gs:reg (gj:reg yes 'copy') 'landing.title'))))
+  ==
 ++  test-copy
   =/  c=json  starter-copy:reg
   ;:  weld
