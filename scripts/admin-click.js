@@ -145,6 +145,11 @@ async function main() {
   const nav = await p.$$eval('#nav a', (ns) => ns.map((n) => n.textContent));
   check('the nav offers Emails and no longer Copy',
     nav.includes('Emails') && !nav.includes('Copy'), nav.join(','));
+  const toCheckin = await p.$$eval('#nav a[href="/apps/register/checkin"]',
+    (ns) => ns.map((n) => [n.textContent, n.getAttribute('target')]));
+  check('the nav offers the way to the check-in app, in the same tab',
+    toCheckin.length === 1 && toCheckin[0][0] === 'Check-in' && toCheckin[0][1] === null,
+    JSON.stringify(toCheckin));
   await p.goto(BASE + '/apps/register/admin#emails', { waitUntil: 'networkidle2' });
   await p.waitForSelector('.card.mail', { timeout: 20000 });
   const keys = await p.$$eval('[data-copy]', (ns) => ns.map((n) => n.getAttribute('data-copy')));

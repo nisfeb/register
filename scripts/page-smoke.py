@@ -4,9 +4,10 @@ The public page and its assets answer without a cookie, with the right
 types, nosniff and no-cache; the backoffice, the check-in app and their
 assets refuse without one, and their pages redirect to the login form;
 the PWA manifest, worker and icons answer without one on purpose."""
-import subprocess, sys
+import json, os, re, subprocess, sys
 
 HOST = sys.argv[1]
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 fails = []
 
 
@@ -80,6 +81,14 @@ check('the service worker answers 200 without a cookie as javascript',
       code == 200 and h.get('content-type', '').startswith('text/javascript'), (code, h))
 check('the worker may claim the whole app scope and is not cached',
       h.get('service-worker-allowed') == '/apps/register/' and 'no-cache' in h.get('cache-control', ''), h)
+# the shell cache key names the release. A worker whose number has fallen
+# behind code/version.json keeps serving the last release's files to every
+# phone that has the app installed.
+with open(os.path.join(REPO, 'code', 'version.json'), encoding='utf-8') as fh:
+    want = json.load(fh)['version']
+hit = re.search(r'VERSION\s*=\s*(\d+)', b)
+check('the worker cache key is the release in code/version.json',
+      bool(hit) and int(hit.group(1)) == want, (hit.group(1) if hit else 'no VERSION', want))
 for icon in ('icon-192.png', 'icon-512.png'):
     code, h = head('/apps/register/' + icon)
     check(icon + ' answers 200 without a cookie as a png that may be cached',

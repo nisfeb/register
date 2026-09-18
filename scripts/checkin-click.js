@@ -53,6 +53,10 @@ async function main() {
 
   await p.goto(BASE + '/apps/register/checkin', { waitUntil: 'networkidle2' });
   check('the page is the check-in app', (await p.title()) === 'BSC Check-in');
+  const back = await p.$$eval('header .back', (ns) => ns.map((n) => [n.getAttribute('href'), n.textContent, n.getAttribute('target')]));
+  check('the header links back to the backoffice, in the same tab',
+    back.length === 1 && back[0][0] === '/apps/register/admin' && back[0][1] === 'Backoffice' && back[0][2] === null,
+    JSON.stringify(back));
   await p.waitForSelector('.party', { timeout: 20000 });
   check('the roster painted parties', (await p.$$('.party')).length > 0);
 

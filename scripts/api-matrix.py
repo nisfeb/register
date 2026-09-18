@@ -706,6 +706,16 @@ def backoffice(live_rid):
     check('setting a copy key without the cookie is 403', code == 403, (code, d))
     code, d = admin('POST', '/copy/set', {'key': 'landing.title', 'value': 'x' * 4001})
     check('a copy value over four thousand bytes is 400', code == 400, (code, d))
+    code, d = admin('POST', '/copy/set', {'key': 'landing.title'})
+    check('setting a copy key with no value is 400 naming the value',
+          code == 400 and (d or {}).get('error') == 'value: a string is required', (code, d))
+    code, d = admin('POST', '/copy/set', {'key': 'landing.title', 'value': 7})
+    check('a copy value that is not a string is 400 naming the value',
+          code == 400 and (d or {}).get('error') == 'value: a string is required', (code, d))
+    settle()
+    s_kept = status()
+    check('a refused copy value leaves the string as it was',
+          s_kept['copy']['landing.title'] == was, s_kept['copy'].get('landing.title'))
     code, d = admin('POST', '/copy/set', {'key': 'landing.title', 'value': 'Matrix title'})
     check('the owner sets one copy key', code == 200 and (d or {}).get('value') == 'Matrix title', (code, d))
     settle()

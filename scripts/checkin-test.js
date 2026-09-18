@@ -216,6 +216,11 @@ ok('a path outside the shell is never cached',
   worker.keepable('/apps/register/api/status', answer('application/json')) === false);
 ok('the shell is the six files the worker knows the types of',
   worker.SHELL.length === 6 && worker.SHELL.every(function (u) { return !!worker.TYPES[u]; }));
+// the cache key must move with the release or an installed phone keeps
+// serving the last one's files
+const release = require(path.join(__dirname, '..', 'code', 'version.json')).version;
+ok('the cache key is built from one number', worker.V === 'register-checkin-' + worker.VERSION);
+ok('and that number is the release in code/version.json', worker.VERSION === release);
 
 // ---- what is written into a card ----
 ok('esc handles the five characters', page.esc('<&>"\'') === '&lt;&amp;&gt;&quot;&#39;');
@@ -327,5 +332,51 @@ ok('a dropped placeholder is refused in an email too',
 ok('the age of a kept roster reads in words',
   back.ageText(1000, 1000) === 'a moment old' && back.ageText(0, 60000) === '1 minute old' &&
   back.ageText(0, 300000) === '5 minutes old' && back.ageText(0, 7200000) === '2 hours old');
+
+// ---- the deadline on an action the ship has not taken ----
+// the writer answers in well under a second. A patch still unconfirmed
+// after the deadline was refused, and repainting it for ever would show
+// the organizer a change the ship never made.
+const T0 = 1_700_000_000_000;
+const waitPromote = { id: 'abc0000001', body: { op: 'promote' }, at: T0 };
+ok('a patch the ship already shows is settled at once',
+  back.verdict(waitPromote, { status: 'waiver' }, T0 + 100) === 'settled');
+ok('a patch the ship has not shown yet waits',
+  back.verdict(waitPromote, { status: 'waitlist' }, T0 + 100) === 'waiting');
+ok('it is still waiting a moment before the deadline',
+  back.verdict(waitPromote, { status: 'waitlist' }, T0 + back.HOLD - 1) === 'waiting');
+ok('and it is stale on the deadline itself',
+  back.verdict(waitPromote, { status: 'waitlist' }, T0 + back.HOLD) === 'stale');
+ok('a patch the ship shows is never stale, however long it took',
+  back.verdict(waitPromote, { status: 'waiver' }, T0 + back.HOLD * 10) === 'settled');
+ok('nothing painted is nothing to wait for',
+  back.verdict(null, { status: 'waitlist' }, T0 + back.HOLD * 10) === 'settled');
+ok('the deadline is fifteen seconds', back.HOLD === 15000);
+
+// ---- the pilgrim's form: what a person is called, and who copies whom ----
+ok('a first name alone names the person', pub.typedName({ first: 'Ana', last: '' }) === 'Ana');
+ok('a last name alone names them too', pub.typedName({ first: '', last: 'Silva' }) === 'Silva');
+ok('both make the whole name', pub.typedName({ first: 'Ana', last: 'Silva' }) === 'Ana Silva');
+ok('spaces alone are no name',
+  pub.typedName({ first: '  ', last: ' ' }) === '' && pub.typedName(null) === '' && pub.typedName({}) === '');
+const lead = { first: 'Ana', last: 'Silva', child: false, days: { fri: true, sat: false, sun: true },
+  sun_ten: true, social_fri: true, social_sat: false, mass_fri: true, holy_hour: false, bus: true,
+  first_bsc: true, knight_dame: false, volunteer: false };
+const second = { first: 'Bo', last: 'Silva', child: true, days: { fri: false, sat: false, sun: false },
+  sun_ten: false, social_fri: false, social_sat: false, mass_fri: false, holy_hour: false, bus: false,
+  first_bsc: false, knight_dame: true, volunteer: true };
+const copied = pub.copyChoices(lead, second);
+ok('a copy takes every choice from the first person',
+  pub.CHOICES.every((k) => JSON.stringify(copied[k]) === JSON.stringify(lead[k])));
+ok('and leaves the name and what is theirs alone',
+  copied.first === 'Bo' && copied.child === true && copied.knight_dame === true && copied.volunteer === true);
+ok('the days are copied, not shared',
+  (copied.days.fri = false) === false && lead.days.fri === true);
+ok('the person copied from is untouched', second.bus === false && second.days.sun === false);
+const party = pub.syncSame([lead, second, JSON.parse(JSON.stringify(second))], [false, true, false]);
+ok('only the people whose box is ticked follow the first',
+  party[1].bus === true && party[2].bus === false);
+ok('the first person is never a copy of anybody', party[0] === lead);
+ok('nothing ticked copies nothing', pub.syncSame([lead, second], [])[1] === second);
 
 console.log('ALL OK (' + n + ' checks)');
