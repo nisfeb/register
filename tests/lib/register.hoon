@@ -403,9 +403,25 @@
     (expect !>(!=('' (gs:reg c 'form.submit.waitlist'))))
     (expect !>(!=('' (gs:reg c 'next.draft.body'))))
     (expect !>(!=('' (gs:reg c 'manage.line'))))
+    ::  the short venue names the weekend summary reads
+    (expect !>(!=('' (gs:reg c 'form.social_fri.short'))))
+    (expect !>(!=('' (gs:reg c 'form.social_sat.short'))))
     ::  the two strings the old flat form read are gone
     (expect !>(=('' (gs:reg c 'form.together'))))
     (expect !>(=('' (gs:reg c 'form.sun_ten'))))
+  ==
+::  +test-copy-fee-line: the fee table prints the money in a column of
+::  its own, so the line beside it names the person and what they are
+::  paying for and stops there. A {{each}} in the line would print the
+::  same number twice on one row.
+::
+++  test-copy-fee-line
+  =/  c=json  starter-copy:reg
+  =/  line=@t  (gs:reg c 'form.fees.line')
+  ;:  weld
+    (expect !>(=(line (fill:reg line ~[['each' '$75']]))))
+    (expect !>(!=(line (fill:reg line ~[['name' 'Ana Silva']]))))
+    (expect !>(!=(line (fill:reg line ~[['what' 'under 18']]))))
   ==
 ::  +test-copy-links: a string may carry one [text](url) link, which the
 ::  page renders as an anchor. The default intro and the two socials
