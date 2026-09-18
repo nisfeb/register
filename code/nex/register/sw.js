@@ -8,7 +8,7 @@
   // this number and code/version.json together, so every release lands a
   // new cache instead of serving the last release's files, and
   // page-smoke.py refuses a worker whose number has fallen behind.
-  var VERSION = 10;
+  var VERSION = 11;
   var V = 'register-checkin-' + VERSION;
   // each shell path with the type its answer must carry. A ship that
   // wants the login again answers the page with the login form, and a
