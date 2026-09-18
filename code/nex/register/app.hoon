@@ -230,16 +230,7 @@
   |=  jon=json
   ^-  @ta
   =/  r=@t  (gs:reg jon 'rid')
-  ?:((ok-rid r) `@ta`r %$)
-::  +ok-rid: ten lowercase hex digits
-::
-++  ok-rid
-  |=  t=@t
-  ^-  ?
-  =/  tap=tape  (trip t)
-  ?.  =(10 (lent tap))  |
-  %+  levy  `tape`tap
-  |=(c=@ |(&((gte c '0') (lte c '9')) &((gte c 'a') (lte c 'f'))))
+  ?:((ok-rid:reg r) `@ta`r %$)
 ::  +do-save-draft: a fresh draft, or the fields of an existing one.
 ::  An autosave is not an audit event; only a fresh draft is noted.
 ::
@@ -707,7 +698,7 @@
   |=  [eyre-id=@ta rid=@t tok=@t]
   =/  m  (fiber:fiber:nexus ,(unit reg:reg))
   ^-  form:m
-  ?.  (ok-rid rid)  (pure:m ~)
+  ?.  (ok-rid:reg rid)  (pure:m ~)
   ;<  cur=(unit reg:reg)  bind:m  (find-reg 1 `@ta`rid)
   ?~  cur  (pure:m ~)
   ?.  &(!=('' tok) =(tok token.u.cur))  (pure:m ~)
@@ -851,7 +842,7 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  cur=(unit reg:reg)  bind:m
-    ?:  (is-admin by)  (find-reg 1 ?:((ok-rid rid) `@ta`rid %$))
+    ?:  (is-admin by)  (find-reg 1 ?:((ok-rid:reg rid) `@ta`rid %$))
     (with-reg eyre-id rid tok)
   ?~  cur  (send-err eyre-id 404 'no such registration')
   ?.  (active:reg u.cur)  (send-err eyre-id 409 'not active')
@@ -890,7 +881,7 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  cur=(unit reg:reg)  bind:m
-    ?:  (is-admin by)  (find-reg 1 ?:((ok-rid rid) `@ta`rid %$))
+    ?:  (is-admin by)  (find-reg 1 ?:((ok-rid:reg rid) `@ta`rid %$))
     (with-reg eyre-id rid tok)
   ?~  cur  (send-err eyre-id 404 'no such registration')
   ?.  (transition-ok:reg status.u.cur %cancelled)  (send-err eyre-id 409 'cannot cancel')
@@ -1031,7 +1022,7 @@
   |=  [eyre-id=@ta rid=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  cur=(unit reg:reg)  bind:m  (find-reg 1 ?:((ok-rid rid) `@ta`rid %$))
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 1 ?:((ok-rid:reg rid) `@ta`rid %$))
   ?~  cur  (send-err eyre-id 404 'no such registration')
   ;<  s=settings:reg  bind:m  (read-settings 1)
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
@@ -1049,7 +1040,7 @@
   ?:  =('edit' op)  (serve-edit eyre-id rid '' (gj:reg jon 'input') by)
   ?:  =('cancel' op)  (serve-cancel eyre-id rid '' jon by)
   ?:  =('recheck-waiver' op)  (send-err eyre-id 501 'waiver recheck is phase 2')
-  ;<  cur=(unit reg:reg)  bind:m  (find-reg 1 ?:((ok-rid rid) `@ta`rid %$))
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 1 ?:((ok-rid:reg rid) `@ta`rid %$))
   ?~  cur  (send-err eyre-id 404 'no such registration')
   ?:  =('resend' op)  (serve-resend-template eyre-id u.cur jon)
   =/  r=reg:reg  u.cur
@@ -1324,10 +1315,9 @@
   =/  marked=(list reg:reg)
     (turn regs.b |=(r=reg:reg (note-hist:reg r by 'restored from backup' now)))
   ;<  ~  bind:m  (restore-regs here marked)
-  ;<  sj=json  bind:m  (read-json (rf 0 / %'settings.json'))
-  ;<  ~  bind:m  (over:io (rf 0 / %'settings.json') [[/ %json] (unmask:reg settings.b sj)])
-  ;<  ~  bind:m  (over:io (rf 0 / %'copy.json') [[/ %json] copy.b])
-  ;<  ~  bind:m  (over:io (rf 0 / %'counts.json') [[/ %json] counts.b])
+  ;<  ~  bind:m  (put-doc %'settings.json' settings.b &)
+  ;<  ~  bind:m  (put-doc %'copy.json' copy.b |)
+  ;<  ~  bind:m  (put-doc %'counts.json' counts.b |)
   =/  doomed=(list @ta)  ?:(wipe dead ~)
   ;<  ~  bind:m  (cull-each 0 /regs doomed)
   =/  culled=@ud  (lent doomed)
@@ -1336,6 +1326,19 @@
   =/  why=@t  (rap 3 'restored ' wrote ' registrations, culled ' gone ~)
   ;<  ~  bind:m  (note-rid 'restore' & why by '')
   (pure:m &)
+::  +put-doc: a document a backup carries, written only when the bundle
+::  really holds an object. A bundle missing the document, or carrying a
+::  JSON null in its place, leaves the stored one alone. With mask, a
+::  masked secret coming back keeps the stored value.
+::
+++  put-doc
+  |=  [name=@tas new=json mask=?]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  ?=([%o *] new)  (pure:m ~)
+  ?.  mask  (over:io (rf 0 / name) [[/ %json] new])
+  ;<  old=json  bind:m  (read-json (rf 0 / name))
+  (over:io (rf 0 / name) [[/ %json] (unmask:reg new old)])
 ::  +restore-regs: one write per registration, fresh ones with retention
 ::
 ++  restore-regs
@@ -1440,6 +1443,10 @@
 ::  applied otherwise. A bundle that does not read answers 400 saying
 ::  what was wrong with it, and nothing is written.
 ::
+::  The dry run answers a confirm token over the decoded bundle and the
+::  ids the tree holds right now. The apply needs that token back, so a
+::  restore that was inspected against a different tree is refused.
+::
 ++  serve-import
   |=  [eyre-id=@ta jon=json args=quay:eyre by=@t]
   =/  m  (fiber:fiber:nexus ,~)
@@ -1460,8 +1467,9 @@
   ?:  ?=(%| -.got)  (send-err eyre-id 400 p.got)
   =/  b=bundle:reg  p.got
   ;<  have=(list reg:reg)  bind:m  (load-regs 1)
+  =/  here=(set @ta)  (sy (turn have |=(r=reg:reg id.r)))
+  =/  confirm=@t  (hex-of:reg (sham [b here]) 8)
   ?:  dry
-    =/  here=(set @ta)  (sy (turn have |=(r=reg:reg id.r)))
     =/  ids=(list @ta)  (turn regs.b |=(r=reg:reg id.r))
     =/  stamps=(list @da)  (turn regs.b |=(r=reg:reg created.r))
     =/  over=@ud  (lent (skim ids |=(i=@ta (~(has in here) i))))
@@ -1478,7 +1486,11 @@
         ['latest' (en-maybe-time:reg (max-date stamps))]
         ['event_days' (gj:reg (gj:reg settings.b 'event') 'days')]
         ['overwrite' (en-num:reg over)]
+        ['confirm' s+confirm]
     ==
+  =/  said=@t  (fall (get-key:kv:html-utils 'confirm' args) '')
+  ?.  =(said confirm)
+    (send-err eyre-id 400 'confirm: the dry run token is missing or stale')
   ;<  err=(unit tang)  bind:m
     (poke-soft:io (rf 1 / %'main.sig') [[/register %bundle] [wipe by b]])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
@@ -1505,6 +1517,8 @@
   =/  pj=json  (gj:reg jon 'paid')
   =/  meth=@t  (gs:reg pj 'method')
   =/  paid=?  &(?=([%o *] pj) ?=(?(%check %cash %other) meth))
+  ?:  &(paid !paper)
+    (send-err eyre-id 400 'paid: a payment needs the waiver on paper')
   =/  after=@tas  ?:(assistance.p.got %assistance %payment)
   =/  final=@tas  ?.(paper %waiver ?.(paid after %complete))
   =/  pk=json
@@ -1596,7 +1610,7 @@
   =/  it=json  i.items
   =/  rid=@t  (gs:reg it 'rid')
   =/  i=@ud  (fall (gn:reg it 'i') 0)
-  =/  cur=(unit reg:reg)  (find-by-id regs ?:((ok-rid rid) `@ta`rid %$))
+  =/  cur=(unit reg:reg)  (find-by-id regs ?:((ok-rid:reg rid) `@ta`rid %$))
   =/  why=@t
     ?~  cur  'no such registration'
     ?.  (lth i (lent people.u.cur))  'no such person'
