@@ -22,21 +22,7 @@
     ['malta', 'NE Florida Order of Malta and volunteers'], ['exempt', 'exempt'],
     ['admin', 'admin adds']];
 
-  var view = document.getElementById('view');
-  var sayEl = document.getElementById('say');
-  var liveEl = document.getElementById('live');
-  var actorEl = document.getElementById('actor');
-  var promptEl = document.getElementById('prompt');
-
-  var roster = null, pub = null, detail = null;
-  var model = null, before = null;
-  var settingsDoc = null, copyDoc = null, countsDoc = null;
-  var dry = null, fileBody = null, fileName = '';
-  var sortBy = { col: 'created', up: false };
-  var filters = { seg: 'all', q: '', track: 'all' };
-  var routeGen = 0, lastRev = null, refreshTimer = null;
-
-  // ---- helpers ----
+  // ---- pure helpers (node tests them) ----
   function esc(s) {
     return String(s === undefined || s === null ? '' : s).replace(/[<>&"']/g, function (c) {
       return { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c];
@@ -46,6 +32,184 @@
     var n = Number(cents) || 0;
     return '$' + (n % 100 ? (n / 100).toFixed(2) : String(n / 100));
   }
+  // the {{placeholders}} a template holds, each one once
+  function varsOf(s) {
+    var seen = {}, out = [];
+    (String(s === undefined || s === null ? '' : s).match(/\{\{[a-zA-Z0-9_]+\}\}/g) || []).forEach(function (v) {
+      if (seen[v]) return;
+      seen[v] = true;
+      out.push(v);
+    });
+    return out;
+  }
+  // the placeholders an edit dropped. The ship fills those by name, so
+  // a template that loses one sends an email with a hole in it.
+  function missingVars(orig, next) {
+    var have = varsOf(next);
+    return varsOf(orig).filter(function (v) { return have.indexOf(v) < 0; });
+  }
+  // the email templates a copy document holds, each with the keys of
+  // its subject and its body
+  function mailGroups(doc) {
+    var by = {};
+    Object.keys(doc || {}).forEach(function (k) {
+      var hit = /^email\.([a-z0-9_]+)\.(subject|body)$/.exec(k);
+      if (!hit) return;
+      by[hit[1]] = by[hit[1]] || {};
+      by[hit[1]][hit[2]] = k;
+    });
+    return by;
+  }
+  // how old the roster on screen is, in words
+  function ageText(then, now) {
+    var ms = Number(now) - Number(then);
+    if (!(ms >= 0)) return '';
+    var mins = Math.round(ms / 60000);
+    if (mins < 1) return 'a moment old';
+    if (mins < 60) return mins + (mins === 1 ? ' minute old' : ' minutes old');
+    var hrs = Math.round(mins / 60);
+    return hrs + (hrs === 1 ? ' hour old' : ' hours old');
+  }
+  // ---- what an action does before the ship has said so ----
+  // the registration an op leaves behind, as the ship would leave it.
+  // The page paints this at once and the read that follows confirms
+  // it. `pending` marks it as painted and not yet confirmed.
+  function patchReg(r, body, by, at) {
+    var op = (body || {}).op;
+    var out = JSON.parse(JSON.stringify(r || {}));
+    var what = '';
+    if (op === 'promote') {
+      out.status = 'waiver';
+      out.position = 0;
+      what = 'promoted from the wait list';
+    } else if (op === 'assist') {
+      out.status = body.approve ? 'complete' : 'payment';
+      if (body.approve) {
+        out.payment = Object.assign({}, out.payment, { method: 'assistance', amount: 0, gift: 0, at: at, refunded: false });
+      }
+      what = body.approve ? 'assistance approved' : 'assistance declined';
+    } else if (op === 'pay') {
+      out.payment = { method: body.method, amount: body.amount, gift: body.gift,
+        ref: body.ref, note: body.note, at: at, refunded: false };
+      out.status = 'complete';
+      what = 'payment recorded';
+    } else if (op === 'waiver-paper') {
+      out.waiver = Object.assign({}, out.waiver, { method: 'paper', status: 'completed', at: at });
+      what = 'waiver signed on paper';
+    } else if (op === 'refund') {
+      out.payment = Object.assign({}, out.payment, { refunded: true });
+      what = 'payment refunded';
+    } else if (op === 'exempt') {
+      out.exempt = !!body.on;
+      what = body.on ? 'exempted from the caps' : 'no longer exempt';
+    } else if (op === 'reinstate') {
+      out.status = out.prior || 'waiver';
+      out.prior = '';
+      what = 'reinstated';
+    } else if (op === 'cancel') {
+      out.prior = out.status;
+      out.status = 'cancelled';
+      out.position = 0;
+      what = 'cancelled';
+    } else if (op === 'note') {
+      out.notes = String(body.notes === undefined ? '' : body.notes);
+      what = 'notes changed';
+    } else if (op === 'edit') {
+      var inp = body.input || {};
+      out.track = inp.track;
+      out.contact = inp.contact;
+      out.org = inp.org;
+      out.why = inp.why;
+      out.assistance = !!inp.assistance;
+      out.together = !!inp.together;
+      // an edit replaces the people and keeps each position's check-ins,
+      // which is what the ship does with it
+      out.people = (inp.people || []).map(function (q, i) {
+        var had = ((r || {}).people || [])[i] || {};
+        return Object.assign({}, q, { checkins: had.checkins });
+      });
+      what = 'edited';
+    } else if (op === 'resend') {
+      what = 'resent ' + String(body.template || '');
+    } else {
+      return null;
+    }
+    out.history = ((r || {}).history || []).concat([{ at: at, by: by, what: what }]);
+    out.pending = true;
+    return out;
+  }
+  // has the copy the ship answered caught up with what was painted?
+  function settled(r, body) {
+    var op = (body || {}).op;
+    if (!r) return false;
+    if (op === 'promote') return r.status === 'waiver';
+    if (op === 'assist') return r.status === (body.approve ? 'complete' : 'payment');
+    if (op === 'pay') return (r.payment || {}).method === body.method;
+    if (op === 'waiver-paper') return (r.waiver || {}).status === 'completed';
+    if (op === 'refund') return !!(r.payment || {}).refunded;
+    if (op === 'exempt') return !!r.exempt === !!body.on;
+    if (op === 'reinstate') return r.status !== 'cancelled';
+    if (op === 'cancel') return r.status === 'cancelled';
+    if (op === 'note') return String(r.notes || '') === String(body.notes || '');
+    return true;
+  }
+  // the roster row a registration makes, keeping what the row holds and
+  // the registration does not
+  function patchRow(row, r) {
+    var out = Object.assign({}, row || {});
+    var pay = r.payment || {};
+    out.status = r.status;
+    if (r.status !== 'waitlist') out.position = 0;
+    out.paid = pay.method || 'none';
+    out.amount = Number(pay.amount) || 0;
+    out.gift = Number(pay.gift) || 0;
+    out.refunded = !!pay.refunded;
+    out.waiver = (r.waiver || {}).status || 'none';
+    out.exempt = !!r.exempt;
+    out.assistance = !!r.assistance;
+    out.track = r.track || out.track;
+    if (r.contact) {
+      out.email = r.contact.email;
+      out.phone = r.contact.phone;
+      out.state = r.contact.state;
+    }
+    if (r.org !== undefined) out.org = r.org;
+    if (r.people) {
+      out.people = r.people.length;
+      out.names = r.people.map(function (q) { return q.last + ', ' + q.first; });
+    }
+    out.pending = !!r.pending;
+    return out;
+  }
+
+  var pure = {
+    esc: esc, money: money, varsOf: varsOf, missingVars: missingVars, mailGroups: mailGroups,
+    ageText: ageText, patchReg: patchReg, settled: settled, patchRow: patchRow,
+  };
+  if (typeof module !== 'undefined' && module.exports) { module.exports = pure; }
+  if (typeof document === 'undefined') { return; }
+
+  var view = document.getElementById('view');
+  var sayEl = document.getElementById('say');
+  var liveEl = document.getElementById('live');
+  var actorEl = document.getElementById('actor');
+  var promptEl = document.getElementById('prompt');
+  var busyEl = document.getElementById('busy');
+
+  var roster = null, pub = null, detail = null;
+  var model = null, before = null;
+  var settingsDoc = null, copyDoc = null, countsDoc = null;
+  var dry = null, fileBody = null, fileName = '';
+  var sortBy = { col: 'created', up: false };
+  var filters = { seg: 'all', q: '', track: 'all' };
+  var routeGen = 0, lastRev = null, refreshTimer = null;
+  var copyWas = null;         // the email templates as the ship last gave them
+  var waitingOn = null;       // the op the page painted and the ship has not confirmed
+  var rosterAge = '';         // how old the roster on screen is, when it came from this browser
+  var busy = 0;               // how many fetches are in flight
+  var RKEY = 'register.admin.roster';
+
+  // ---- helpers ----
   function cents(dollars) { return Math.round((Number(dollars) || 0) * 100); }
   function day(t) { return t ? String(t).slice(0, 10) : ''; }
   function when(t) { return t ? String(t).replace('T', ' ').replace('Z', '') : ''; }
@@ -54,8 +218,31 @@
     sayEl.className = 'say' + (good ? ' ok' : '');
     sayEl.textContent = msg || '';
   }
+  // the bar at the top counts fetches, not one flag: two calls in
+  // flight must not have the first one to answer clear the bar
+  function track(p) {
+    busy += 1;
+    busyEl.hidden = false;
+    function done() { busy -= 1; if (busy < 1) { busy = 0; busyEl.hidden = true; } }
+    return p.then(function (d) { done(); return d; }, function (e) { done(); throw e; });
+  }
+  // a button that started a fetch: disabled with a spinner until the
+  // ship answers. A button a re-render replaces takes its spinner with
+  // it, which is what should happen.
+  function spin(el) {
+    if (!el || el.disabled) return function () { };
+    el.disabled = true;
+    var tag = document.createElement('span');
+    tag.className = 'spin';
+    el.appendChild(tag);
+    return function () {
+      el.disabled = false;
+      if (tag.parentNode) tag.parentNode.removeChild(tag);
+    };
+  }
+  function loading() { return '<div class="loading"><span class="spin"></span>Loading</div>'; }
   function api(url, opts) {
-    return fetch(url, opts || {}).then(function (r) {
+    return track(fetch(url, opts || {}).then(function (r) {
       return r.text().then(function (txt) {
         var d = {};
         try { d = txt ? JSON.parse(txt) : {}; } catch (e) { d = {}; }
@@ -66,7 +253,7 @@
         }
         return d;
       });
-    });
+    }));
   }
   function read(path) { return api(ADMIN + path); }
   // every mutating call names the organizer; the ship refuses one that
@@ -326,7 +513,8 @@
     out += '</div>';
     out += '<p class="muted">' + esc(roster.counts.full + ' of ' + roster.caps.full + ' pilgrims, ' +
       roster.counts.bambino + ' of ' + roster.caps.bambino + ' Bambino, ' +
-      roster.counts.waitlist + ' on the wait list, ' + drafts + ' drafts') + '</p>';
+      roster.counts.waitlist + ' on the wait list, ' + drafts + ' drafts') +
+      (rosterAge ? ' <span class="stale">kept in this browser, ' + esc(rosterAge) + '</span>' : '') + '</p>';
     var list = rows();
     out += '<table><thead><tr>' +
       head('name', 'Party') + head('state', 'State') + head('status', 'Status') + head('track', 'Track') +
@@ -343,7 +531,7 @@
       if (r.knight_dame) flags += '<span class="tag">K/D</span>';
       if (r.volunteer) flags += '<span class="tag">vol</span>';
       if (r.refunded) flags += '<span class="tag">refunded</span>';
-      out += '<tr><td><a href="#reg/' + esc(r.id) + '">' + esc(names || r.email || r.id) + '</a>' +
+      out += '<tr' + (r.pending ? ' class="pending"' : '') + '><td><a href="#reg/' + esc(r.id) + '">' + esc(names || r.email || r.id) + '</a>' +
         '<div class="muted">' + esc(r.email) + (r.org ? ' &middot; ' + esc(r.org) : '') + '</div></td>' +
         '<td>' + esc(r.state) + '</td>' +
         '<td><span class="badge ' + esc(r.status) + '">' + esc(r.status) + '</span>' +
@@ -463,8 +651,9 @@
     out += '<div class="two"><div>' + partyForm(model) +
       (live ? '<div class="actions"><button type="button" class="btn" data-act="save">Save changes</button></div>'
             : '<p class="help">A ' + esc(r.status) + ' registration is not edited here.</p>') + '</div><div>';
-    out += '<div class="card"><h3>Status</h3><p><span class="badge ' + esc(r.status) + '">' + esc(r.status) + '</span>' +
-      (r.position ? ' <span class="muted">wait list #' + esc(r.position) + '</span>' : '') + '</p>' +
+    out += '<div class="card' + (r.pending ? ' pending' : '') + '"><h3>Status</h3><p><span class="badge ' + esc(r.status) + '">' + esc(r.status) + '</span>' +
+      (r.position ? ' <span class="muted">wait list #' + esc(r.position) + '</span>' : '') +
+      (r.pending ? ' <span class="tag">saving</span>' : '') + '</p>' +
       '<dl class="kv"><dt>track</dt><dd>' + esc(r.track) + '</dd>' +
       '<dt>source</dt><dd>' + esc(r.source) + '</dd>' +
       '<dt>fees</dt><dd>' + esc(money(r.fees)) + '</dd>' +
@@ -673,24 +862,33 @@
     });
     return out + '<div class="actions"><button type="button" class="btn" data-act="save-counts">Save</button></div>';
   }
-  function groupOf(key) {
-    var pre = String(key).split('.')[0];
-    return ['landing', 'form', 'next', 'manage', 'email'].indexOf(pre) >= 0 ? pre : 'other';
-  }
-  function copyView() {
-    var keys = Object.keys(copyDoc || {}).sort();
-    var groups = {};
-    keys.forEach(function (k) { (groups[groupOf(k)] = groups[groupOf(k)] || []).push(k); });
-    var out = '<h1>Copy</h1><p class="muted">Every string a pilgrim reads. Placeholders in double braces are filled by the ship.</p>';
-    ['landing', 'form', 'next', 'manage', 'email', 'other'].forEach(function (g) {
-      if (!groups[g]) return;
-      out += '<h2>' + esc(g) + '</h2><div class="card copygroup">';
-      groups[g].forEach(function (k) {
-        out += '<label>' + esc(k) + '<textarea data-copy="' + esc(k) + '">' + esc(copyDoc[k]) + '</textarea></label>';
-      });
-      out += '</div>';
+  // the email templates, and only those. An email is on no page an
+  // organizer can open, so it cannot be edited in place; every other
+  // string is edited on the public page with Edit text.
+  function emailsView() {
+    var by = mailGroups(copyDoc);
+    var names = Object.keys(by).sort();
+    var out = '<h1>Emails</h1><p class="muted">The templates the ship sends. ' +
+      'Every other string a pilgrim reads is edited on the public page itself: ' +
+      'open it as the owner and press Edit text.</p>';
+    if (!names.length) return out + '<p class="muted">No email templates in the copy document.</p>';
+    names.forEach(function (n) {
+      var subj = by[n].subject, body = by[n].body;
+      out += '<div class="card mail"><h3>' + esc(String(n).replace(/_/g, ' ')) + '</h3><div class="two">';
+      out += '<div>' + (subj ? '<label>Subject<input type="text" data-copy="' + esc(subj) + '" value="' +
+        esc(copyDoc[subj]) + '"></label>' : '<p class="help">no subject in the document</p>') + '</div>';
+      out += '<div>';
+      if (body) {
+        out += '<label>Body<textarea data-copy="' + esc(body) + '">' + esc(copyDoc[body]) + '</textarea></label>' +
+          '<p class="help">Placeholders: ' + esc(varsOf(copyWas ? copyWas[body] : copyDoc[body]).join(' ') || 'none') +
+          '. The ship fills them by name, so keep every one.</p>';
+      } else {
+        out += '<p class="help">no body in the document</p>';
+      }
+      out += '</div></div><div class="actions"><button type="button" class="btn small" data-act="save-mail" data-mail="' +
+        esc(n) + '">Save</button></div></div>';
     });
-    return out + '<div class="actions"><button type="button" class="btn" data-act="save-copy">Save</button></div>';
+    return out;
   }
   function settingsView() {
     var s = settingsDoc || {};
@@ -778,7 +976,8 @@
   function route() {
     var h = location.hash.replace(/^#\/?/, '') || 'roster';
     var parts = h.split('/');
-    return { name: parts[0], id: parts[1] || '' };
+    // the copy page became the emails page; an old link still lands
+    return { name: parts[0] === 'copy' ? 'emails' : parts[0], id: parts[1] || '' };
   }
   function markNav() {
     var r = route();
@@ -790,46 +989,107 @@
     if (settingsDoc) return Promise.resolve(settingsDoc);
     return read('/settings').then(function (d) { settingsDoc = d; return d; });
   }
+  // the whole roster is one big read, so a view that already has it in
+  // memory works from that. The beacon and the minute timer drop it.
+  function haveRoster() { return roster ? Promise.resolve(roster) : needRoster(); }
+  function needCounts() {
+    if (countsDoc) return Promise.resolve(countsDoc);
+    return read('/counts').then(function (d) { countsDoc = d; return d; });
+  }
   function needRoster() {
-    return read('/regs').then(function (d) { roster = d; return d; });
+    return read('/regs').then(function (d) {
+      roster = d;
+      rosterAge = '';
+      keepPainted();
+      try { localStorage.setItem(RKEY, JSON.stringify({ at: Date.now(), doc: d })); } catch (e) { }
+      return d;
+    });
+  }
+  // the roster this browser saw last time, so the table is on screen
+  // before the ship answers. Its age is in the line above it.
+  function paintKept() {
+    if (roster) return true;
+    var kept = null;
+    try { kept = JSON.parse(localStorage.getItem(RKEY) || 'null'); } catch (e) { kept = null; }
+    if (!kept || !kept.doc || !kept.doc.regs) return false;
+    roster = kept.doc;
+    rosterAge = ageText(kept.at, Date.now());
+    return true;
+  }
+  // a fetched roster does not know about the action this page painted a
+  // moment ago, so that row is patched back on top of it
+  function keepPainted() {
+    if (!waitingOn || !detail || detail.id !== waitingOn.id || !detail.pending) return;
+    var row = rowOf(waitingOn.id);
+    if (row) putRow(patchRow(row, detail));
+  }
+  function rowOf(id) {
+    return ((roster || {}).regs || []).filter(function (r) { return String(r.id) === String(id); })[0] || null;
+  }
+  function putRow(row) {
+    if (!roster || !roster.regs || !row) return;
+    roster.regs = roster.regs.map(function (r) { return String(r.id) === String(row.id) ? row : r; });
   }
   function render(html) { view.innerHTML = html; markNav(); }
   function refresh() {
     var r = route();
     var mine = ++routeGen;
+    // a read that answers after the organizer has moved on paints
+    // nothing: its view is not the one on screen any more
+    function paint(html) { if (mine === routeGen) render(html); }
     var p;
     if (r.name === 'reg' && r.id) {
-      p = Promise.all([needRoster(), read('/reg/' + encodeURIComponent(r.id))]).then(function (d) {
-        detail = d[1];
+      if (!detail || detail.id !== r.id) paint(loading());
+      p = Promise.all([haveRoster(), read('/reg/' + encodeURIComponent(r.id))]).then(function (d) {
+        var got = d[1];
+        // an action this page painted outranks a copy the ship answered
+        // before its writer had applied it
+        if (waitingOn && waitingOn.id === got.id && !settled(got, waitingOn.body)) {
+          keepPainted();
+          return paint(detailView());
+        }
+        if (waitingOn && waitingOn.id === got.id) waitingOn = null;
+        detail = got;
         model = fromReg(detail);
         before = JSON.parse(JSON.stringify(model));
-        render(detailView());
+        paint(detailView());
       });
     } else if (r.name === 'add') {
-      p = needRoster().then(function () {
+      p = haveRoster().then(function () {
         if (!model || !model.isAdd) {
           model = blankParty('full');
           model.isAdd = true;
           model.waiver_paper = false;
           model.pay_method = ''; model.pay_amount = ''; model.pay_gift = '0.00'; model.pay_ref = '';
         }
-        render(addView());
+        paint(addView());
       });
     } else if (r.name === 'reports') {
-      p = Promise.all([needRoster(), needSettings(), read('/counts')]).then(function (d) {
-        countsDoc = d[2];
-        render(reportsView());
+      // the reports are arithmetic over the roster this page already
+      // holds, so opening the tab reads nothing it does not need
+      if (!roster) paint(loading());
+      p = Promise.all([haveRoster(), needSettings(), needCounts()]).then(function () {
+        paint(reportsView());
       });
     } else if (r.name === 'counts') {
-      p = read('/counts').then(function (d) { countsDoc = d; render(countsView()); });
-    } else if (r.name === 'copy') {
-      p = read('/copy').then(function (d) { copyDoc = d; render(copyView()); });
+      if (!countsDoc) paint(loading());
+      p = read('/counts').then(function (d) { countsDoc = d; paint(countsView()); });
+    } else if (r.name === 'emails') {
+      if (!copyDoc) paint(loading());
+      p = read('/copy').then(function (d) {
+        copyDoc = d;
+        copyWas = JSON.parse(JSON.stringify(d));
+        paint(emailsView());
+      });
     } else if (r.name === 'settings') {
-      p = read('/settings').then(function (d) { settingsDoc = d; render(settingsView()); });
+      if (!settingsDoc) paint(loading());
+      p = read('/settings').then(function (d) { settingsDoc = d; paint(settingsView()); });
     } else if (r.name === 'backup') {
-      p = Promise.resolve().then(function () { render(backupView()); });
+      p = Promise.resolve().then(function () { paint(backupView()); });
     } else {
-      p = needRoster().then(function () { model = null; render(rosterView()); });
+      // the rows this browser saw last time go up first, then the ship's
+      if (paintKept()) { model = null; paint(rosterView()); } else paint(loading());
+      p = needRoster().then(function () { model = null; paint(rosterView()); });
     }
     return p.then(function () {
       if (mine !== routeGen) return;
@@ -837,13 +1097,79 @@
     }).catch(function (e) {
       if (mine !== routeGen) return;
       if (e.status === 403) {
-        render('<p class="bad">This ship refused the request. Log in as the owner and reload.</p>');
+        paint('<p class="bad">This ship refused the request. Log in as the owner and reload.</p>');
       } else {
-        render('<p class="bad">' + esc(e.message) + '</p>');
+        paint('<p class="bad">' + esc(e.message) + '</p>');
       }
     });
   }
   function later() { setTimeout(refresh, 400); }
+  // ---- an action, painted before the ship has taken it ----
+  // the registration and its roster row take the change at once, the
+  // page renders, and the read that follows says whether it stuck
+  function runAll(bodies, el) {
+    if (!detail) return;
+    var id = detail.id;
+    var wasReg = JSON.parse(JSON.stringify(detail));
+    var row = rowOf(id);
+    var wasRow = row ? JSON.parse(JSON.stringify(row)) : null;
+    var at = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+    var by = 'admin:' + actor;
+    var painted = detail;
+    bodies.forEach(function (b) {
+      var next = patchReg(painted, b, by, at);
+      if (next) painted = next;
+    });
+    var free = spin(el);
+    if (painted !== detail) {
+      detail = painted;
+      model = fromReg(detail);
+      before = JSON.parse(JSON.stringify(model));
+      if (row) putRow(patchRow(row, detail));
+      waitingOn = { id: id, body: bodies[bodies.length - 1] };
+      render(route().name === 'reg' ? detailView() : rosterView());
+    }
+    var chain = Promise.resolve();
+    bodies.forEach(function (b) {
+      chain = chain.then(function () { return write('/reg/' + encodeURIComponent(id), b); });
+    });
+    return chain.then(function () {
+      free();
+      say('done', true);
+      setTimeout(reconcile, 1200);
+    }).catch(function (e) {
+      free();
+      waitingOn = null;
+      detail = wasReg;
+      model = fromReg(detail);
+      before = JSON.parse(JSON.stringify(model));
+      if (wasRow) putRow(wasRow);
+      render(route().name === 'reg' ? detailView() : rosterView());
+      say(e.message);
+    });
+  }
+  function run(body, el) { return runAll([body], el); }
+  // read that one registration again and drop the pending mark once the
+  // ship's copy shows the change
+  function reconcile() {
+    if (!waitingOn) return Promise.resolve();
+    var mine = waitingOn;
+    return read('/reg/' + encodeURIComponent(mine.id)).then(function (d) {
+      if (waitingOn !== mine) return;
+      if (!settled(d, mine.body)) return;
+      waitingOn = null;
+      if (detail && detail.id === d.id) {
+        detail = d;
+        model = fromReg(detail);
+        before = JSON.parse(JSON.stringify(model));
+      }
+      var row = rowOf(mine.id);
+      if (row) putRow(patchRow(row, d));
+      var name = route().name;
+      if (name === 'reg') render(detailView());
+      else if (name === 'roster') render(rosterView());
+    }).catch(function () { });
+  }
 
   // ---- input ----
   view.addEventListener('input', onChange);
@@ -911,22 +1237,15 @@
     var a = el.getAttribute('data-act');
     var rid = detail ? detail.id : '';
     function pick(id) { var n = document.getElementById(id); return n ? n.value : ''; }
-    function post(body) {
-      return write('/reg/' + encodeURIComponent(rid), body).then(function () { say('done', true); later(); })
-        .catch(function (e) { say(e.message); });
-    }
+    function post(body) { return run(body, el); }
     if (a === 'add-person') { model.people.push(blankPerson()); return render(route().name === 'add' ? addView() : detailView()); }
     if (a === 'remove-person') { model.people.splice(+el.getAttribute('data-i'), 1); return render(route().name === 'add' ? addView() : detailView()); }
     if (a === 'save') {
       return act(function () {
-        var chain = write('/reg/' + encodeURIComponent(rid), { op: 'edit', input: partyInput(model) });
-        if (!!model.exempt !== !!before.exempt) {
-          chain = chain.then(function () { return write('/reg/' + encodeURIComponent(rid), { op: 'exempt', on: !!model.exempt }); });
-        }
-        if (String(model.notes) !== String(before.notes)) {
-          chain = chain.then(function () { return write('/reg/' + encodeURIComponent(rid), { op: 'note', notes: model.notes }); });
-        }
-        chain.then(function () { say('saved', true); later(); }).catch(function (e) { say(e.message); });
+        var bodies = [{ op: 'edit', input: partyInput(model) }];
+        if (!!model.exempt !== !!before.exempt) bodies.push({ op: 'exempt', on: !!model.exempt });
+        if (String(model.notes) !== String(before.notes)) bodies.push({ op: 'note', notes: model.notes });
+        runAll(bodies, el);
       });
     }
     if (a === 'pay') {
@@ -945,9 +1264,10 @@
       var undoDay = el.getAttribute('data-day');
       var undoI = Number(el.getAttribute('data-i'));
       return act(function () {
+        var freeUndo = spin(el);
         writeApi('/checkin', { day: undoDay, checkins: [{ rid: rid, i: undoI, undo: true }] })
-          .then(function () { say('check-in undone', true); later(); })
-          .catch(function (e) { say(e.message); });
+          .then(function () { freeUndo(); say('check-in undone', true); later(); })
+          .catch(function (e) { freeUndo(); say(e.message); });
       });
     }
     if (a === 'waiver-paper') return act(function () { post({ op: 'waiver-paper' }); });
@@ -973,23 +1293,52 @@
             gift: cents(model.pay_gift), ref: model.pay_ref, note: 'taken by ' + actor
           };
         }
+        var freeAdd = spin(el);
         write('/add', body).then(function (d) {
+          freeAdd();
           model = null;
           say('added as ' + d.status, true);
           location.hash = '#reg/' + d.rid;
-        }).catch(function (e) { say(e.message); });
+        }).catch(function (e) { freeAdd(); say(e.message); });
       });
     }
     if (a === 'save-counts') {
       return act(function () {
-        write('/counts', countsDoc, 'PUT').then(function () { say('counts saved', true); })
-          .catch(function (e) { say(e.message); });
+        var freeCounts = spin(el);
+        say('counts saved', true);
+        write('/counts', countsDoc, 'PUT').then(function () { freeCounts(); })
+          .catch(function (e) { freeCounts(); say(e.message); });
       });
     }
-    if (a === 'save-copy') {
+    if (a === 'save-mail') {
+      var name = el.getAttribute('data-mail');
+      var group = mailGroups(copyDoc)[name] || {};
+      var keys = Object.keys(group).map(function (k) { return group[k]; });
       return act(function () {
-        write('/copy', copyDoc, 'PUT').then(function () { say('copy saved', true); })
-          .catch(function (e) { say(e.message); });
+        var changed = keys.filter(function (k) { return String(copyDoc[k]) !== String((copyWas || {})[k]); });
+        if (!changed.length) return say('nothing changed here', true);
+        var gone = [];
+        changed.forEach(function (k) {
+          missingVars((copyWas || {})[k], copyDoc[k]).forEach(function (v) { if (gone.indexOf(v) < 0) gone.push(v); });
+        });
+        if (gone.length) {
+          changed.forEach(function (k) { copyDoc[k] = (copyWas || {})[k]; });
+          render(emailsView());
+          return say('keep ' + gone.join(' '));
+        }
+        var freeMail = spin(el);
+        say('saved', true);
+        Promise.all(changed.map(function (k) { return write('/copy/set', { key: k, value: String(copyDoc[k]) }); }))
+          .then(function () {
+            freeMail();
+            changed.forEach(function (k) { copyWas[k] = copyDoc[k]; });
+          })
+          .catch(function (e) {
+            freeMail();
+            changed.forEach(function (k) { copyDoc[k] = (copyWas || {})[k]; });
+            render(emailsView());
+            say(e.message);
+          });
       });
     }
     if (a === 'save-settings') {
@@ -1005,11 +1354,13 @@
           .map(function (s) { return String(s).trim(); }).filter(Boolean));
         doc.orgs = (typeof settingsDoc.orgs === 'string' ? settingsDoc.orgs.split('\n') : settingsDoc.orgs || [])
           .map(function (s) { return String(s).trim(); }).filter(Boolean);
+        var freeSet = spin(el);
+        say('settings saved', true);
         write('/settings', doc, 'PUT').then(function () {
+          freeSet();
           settingsDoc = null;
-          say('settings saved', true);
           later();
-        }).catch(function (e) { say(e.message); });
+        }).catch(function (e) { freeSet(); say(e.message); });
       });
     }
     if (a === 'inspect') {
@@ -1055,9 +1406,14 @@
       (view.contains(el) || promptEl.contains(el));
   }
   function bumped() {
+    reconcile();
     if (editing()) return;
     clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(function () { if (!editing()) refresh(); }, 300);
+    refreshTimer = setTimeout(function () {
+      if (editing()) return;
+      roster = null; countsDoc = null;
+      refresh();
+    }, 300);
   }
   async function stream() {
     for (;;) {
@@ -1100,7 +1456,11 @@
 
   window.addEventListener('hashchange', function () { model = null; dry = null; refresh(); });
   document.addEventListener('visibilitychange', function () { if (!document.hidden && !editing()) refresh(); });
-  setInterval(function () { if (!document.hidden && !editing()) refresh(); }, 60000);
+  setInterval(function () {
+    if (document.hidden || editing()) return;
+    roster = null; countsDoc = null;
+    refresh();
+  }, 60000);
   drawActor();
   refresh();
   stream();

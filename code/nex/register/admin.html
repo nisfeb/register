@@ -9,13 +9,14 @@
 <link rel="stylesheet" href="/apps/register/admin.css">
 </head>
 <body>
+<div id="busy" class="busy" hidden></div>
 <header>
   <a class="brand" href="#roster">Register</a>
   <nav id="nav">
     <a href="#roster">Roster</a>
     <a href="#reports">Reports</a>
     <a href="#counts">Counts</a>
-    <a href="#copy">Copy</a>
+    <a href="#emails">Emails</a>
     <a href="#settings">Settings</a>
     <a href="#backup">Backup</a>
   </nav>
@@ -31,7 +32,7 @@
   <button type="button" id="actor-cancel" class="btn quiet small">Cancel</button>
 </div>
 <div id="say" class="say" hidden></div>
-<main id="view"><p class="muted">Loading.</p></main>
+<main id="view"><div class="loading"><span class="spin"></span>Loading</div></main>
 <script src="/apps/register/admin.js"></script>
 </body>
 </html>

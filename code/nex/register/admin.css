@@ -8,6 +8,9 @@
   --head: "Poppins", "Open Sans", system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
+/* a class that sets display beats the browser's own rule for the
+   hidden attribute, and this page hides things by that attribute */
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; font: 14px/1.5 var(--body); color: var(--ink); background: var(--bg); }
 header {
@@ -95,4 +98,17 @@ td.num, th.num { text-align: right; }
 .barlist { font-size: .8rem; }
 .barlist div { display: grid; grid-template-columns: 7rem 1fr 3rem; gap: .4rem; align-items: center; }
 .barlist span.b { background: var(--accent-soft); height: 10px; }
-.copygroup textarea { min-height: 3rem; }
+/* the wait a person can see, and the rows the ship has not confirmed */
+.busy { position: fixed; top: 0; left: 0; right: 0; height: 3px; background: var(--accent-soft); overflow: hidden; z-index: 20; }
+.busy::after { content: ""; display: block; height: 100%; width: 40%; background: var(--accent); animation: busy-slide 1.1s linear infinite; }
+@keyframes busy-slide { from { transform: translateX(-100%); } to { transform: translateX(350%); } }
+.spin {
+  display: inline-block; width: .8em; height: .8em; margin-left: .4rem; vertical-align: -.05em;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin-turn .6s linear infinite;
+}
+@keyframes spin-turn { to { transform: rotate(360deg); } }
+.loading { text-align: center; color: var(--muted); padding: 2.5rem 0; }
+.loading .spin { display: block; width: 1.5rem; height: 1.5rem; border-width: 3px; margin: 0 auto .6rem; color: var(--accent); }
+tr.pending td, .card.pending { opacity: .55; }
+.stale { color: var(--warn); }
+.mail textarea { min-height: 7rem; }
