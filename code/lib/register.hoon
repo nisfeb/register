@@ -182,6 +182,23 @@
   (crip ((x-co:co len) (end [0 (mul 4 len)] n)))
 ++  rid-from    |=(eny=@ ^-(@ta `@ta`(hex-of eny 10)))
 ++  token-from  |=(eny=@ ^-(@t (hex-of (rsh [0 64] eny) 32)))
+::  +ok-rid: ten lowercase hex digits
+::
+++  ok-rid
+  |=  t=@t
+  ^-  ?
+  =/  tap=tape  (trip t)
+  ?.  =(10 (lent tap))  |
+  %+  levy  `tape`tap
+  |=(c=@ |(&((gte c '0') (lte c '9')) &((gte c 'a') (lte c 'f'))))
+::  +one-of: is this string one of the ones we allow
+::
+++  one-of  |=([t=@t opts=(list @t)] ^-(? (lien opts |=(o=@t =(o t)))))
+::  +statuses: every status a registration may hold
+::
+++  statuses
+  ^-  (list @t)
+  ~['draft' 'waitlist' 'waiver' 'payment' 'assistance' 'complete' 'cancelled']
 ::  ==  json, read without crashing
 ::
 ++  gj                                          ::  a key's value, or null
@@ -916,19 +933,27 @@
 ::
 ++  de-checkins
   |=  jon=json
-  ^-  (map @tas checkin)
-  ?.  ?=([%o *] jon)  ~
-  %-  malt
-  %+  murn  ~(tap by p.jon)
-  |=  [k=@t v=json]
-  ^-  (unit [@tas checkin])
-  =/  at=(unit @da)  (gt v 'at')
-  ?~  at  ~
-  `[`@tas`k [u.at (gs v 'by')]]
+  ^-  (each (map @tas checkin) @t)
+  ?.  ?=([%o *] jon)  [%& ~]
+  (de-checkin-list ~(tap by p.jon) ~)
+::  +de-checkin-list: one pair at a time. A stamp that will not read
+::  refuses the registration instead of being dropped.
+::
+++  de-checkin-list
+  |=  [raw=(list [k=@t v=json]) acc=(list [@tas checkin])]
+  ^-  (each (map @tas checkin) @t)
+  ?~  raw  [%& (malt acc)]
+  =/  at=(unit @da)  (gt v.i.raw 'at')
+  ?~  at  [%| (rap 3 'check-in ' k.i.raw ' has a stamp that will not read' ~)]
+  =/  one=[@tas checkin]  [`@tas`k.i.raw [u.at (gs v.i.raw 'by')]]
+  (de-checkin-list t.raw [one acc])
 ++  de-person-full
   |=  jon=json
-  ^-  person
+  ^-  (each person @t)
+  =/  ck=(each (map @tas checkin) @t)  (de-checkins (gj jon 'checkins'))
+  ?:  ?=(%| -.ck)  [%| p.ck]
   =/  dj=json  (gj jon 'days')
+  :-  %&
   :*  (gs jon 'first')
       (gs jon 'last')
       (gb jon 'child')
@@ -942,12 +967,23 @@
       (gb jon 'first_bsc')
       (gb jon 'knight_dame')
       (gb jon 'volunteer')
-      (de-checkins (gj jon 'checkins'))
+      p.ck
   ==
+++  de-people-full
+  |=  [raw=(list json) acc=(list person)]
+  ^-  (each (list person) @t)
+  ?~  raw  [%& (flop acc)]
+  =/  got=(each person @t)  (de-person-full i.raw)
+  ?:  ?=(%| -.got)  [%| p.got]
+  (de-people-full t.raw [p.got acc])
 ++  de-payment
   |=  jon=json
-  ^-  payment
-  :*  `@tas`(gs jon 'method')
+  ^-  (each payment @t)
+  =/  meth=@t  (gs jon 'method')
+  ?.  (one-of meth ~['none' 'stripe' 'check' 'cash' 'assistance' 'stub' 'other'])
+    [%| (rap 3 'payment method ' meth ' is not one the ship writes' ~)]
+  :-  %&
+  :*  `@tas`meth
       (fall (gn jon 'amount') 0)
       (fall (gn jon 'gift') 0)
       (gt jon 'at')
@@ -957,40 +993,63 @@
   ==
 ++  de-waiver
   |=  jon=json
-  ^-  waiver
-  :*  `@tas`(gs jon 'method')
-      (gs jon 'envelope')
-      `@tas`(gs jon 'status')
-      (gt jon 'at')
-  ==
+  ^-  (each waiver @t)
+  =/  meth=@t  (gs jon 'method')
+  ?.  (one-of meth ~['none' 'docusign' 'paper' 'stub'])
+    [%| (rap 3 'waiver method ' meth ' is not one the ship writes' ~)]
+  =/  st=@t  (gs jon 'status')
+  ?.  (one-of st ~['none' 'sent' 'completed' 'declined'])
+    [%| (rap 3 'waiver status ' st ' is not one the ship writes' ~)]
+  [%& [`@tas`meth (gs jon 'envelope') `@tas`st (gt jon 'at')]]
 ++  de-history
-  |=  raw=(list json)
-  ^-  (list step)
-  %+  murn  raw
-  |=  jon=json
-  ^-  (unit step)
-  =/  at=(unit @da)  (gt jon 'at')
-  ?~  at  ~
-  `[u.at (gs jon 'by') (gs jon 'what')]
-::  +de-reg-full: a registration out of a JSON bundle. ~ when it has no
-::  id or its stamps do not read, so a broken row is never half applied.
+  |=  [raw=(list json) acc=(list step)]
+  ^-  (each (list step) @t)
+  ?~  raw  [%& (flop acc)]
+  =/  at=(unit @da)  (gt i.raw 'at')
+  ?~  at  [%| 'a history stamp will not read']
+  =/  one=step  [u.at (gs i.raw 'by') (gs i.raw 'what')]
+  (de-history t.raw [one acc])
+::  +de-reg-full: a registration out of a JSON bundle. It names the id
+::  and the field when a value is not one the ship writes, so a broken
+::  row refuses the import instead of landing half read.
 ::
 ++  de-reg-full
   |=  jon=json
-  ^-  (unit reg)
-  ?.  ?=([%o *] jon)  ~
+  ^-  (each reg @t)
+  ?.  ?=([%o *] jon)  [%| 'a registration must be a JSON object']
   =/  id=@t  (gs jon 'id')
-  ?:  =('' id)  ~
+  ?.  (ok-rid id)
+    [%| (rap 3 id ': id is not ten lowercase hex digits' ~)]
+  =/  st=@t  (gs jon 'status')
+  ?.  (one-of st statuses)
+    [%| (rap 3 id ': status ' st ' is not a status' ~)]
+  =/  tr=@t  (gs jon 'track')
+  ?.  (one-of tr ~['full' 'bambino'])
+    [%| (rap 3 id ': track ' tr ' is not a track' ~)]
+  =/  sr=@t  (gs jon 'source')
+  ?.  (one-of sr ~['web' 'admin'])
+    [%| (rap 3 id ': source ' sr ' is not a source' ~)]
+  =/  pr=@t  (gs jon 'prior')
+  ?.  |(=('' pr) (one-of pr statuses))
+    [%| (rap 3 id ': prior ' pr ' is not a status' ~)]
   =/  cr=(unit @da)  (gt jon 'created')
-  ?~  cr  ~
+  ?~  cr  [%| (rap 3 id ': created will not read' ~)]
   =/  up=(unit @da)  (gt jon 'updated')
-  ?~  up  ~
+  ?~  up  [%| (rap 3 id ': updated will not read' ~)]
+  =/  ppl=(each (list person) @t)  (de-people-full (ga jon 'people') ~)
+  ?:  ?=(%| -.ppl)  [%| (rap 3 id ': ' p.ppl ~)]
+  =/  pay=(each payment @t)  (de-payment (gj jon 'payment'))
+  ?:  ?=(%| -.pay)  [%| (rap 3 id ': ' p.pay ~)]
+  =/  wv=(each waiver @t)  (de-waiver (gj jon 'waiver'))
+  ?:  ?=(%| -.wv)  [%| (rap 3 id ': ' p.wv ~)]
+  =/  hist=(each (list step) @t)  (de-history (ga jon 'history') ~)
+  ?:  ?=(%| -.hist)  [%| (rap 3 id ': ' p.hist ~)]
   =/  cj=json  (gj jon 'contact')
-  :-  ~
+  :-  %&
   :*  `@ta`id
-      `@tas`(gs jon 'status')
-      `@tas`(gs jon 'track')
-      `@tas`(gs jon 'source')
+      `@tas`st
+      `@tas`tr
+      `@tas`sr
       u.cr
       u.up
       :*  (gs cj 'email')  (gs cj 'phone')  (gs cj 'street')
@@ -1000,15 +1059,15 @@
       (gs jon 'why')
       (gb jon 'assistance')
       (gb jon 'together')
-      (turn (ga jon 'people') de-person-full)
-      (de-payment (gj jon 'payment'))
-      (de-waiver (gj jon 'waiver'))
+      p.ppl
+      p.pay
+      p.wv
       (gs jon 'token')
       (fall (gn jon 'position') 0)
       (gs jon 'notes')
-      (de-history (ga jon 'history'))
+      p.hist
       (gb jon 'exempt')
-      `@tas`(gs jon 'prior')
+      `@tas`pr
   ==
 ::  ==  csv, for the spreadsheet exports
 ::
@@ -1156,9 +1215,19 @@
   |=  [raw=(list json) acc=(list reg)]
   ^-  (each (list reg) @t)
   ?~  raw  [%& (flop acc)]
-  =/  got=(unit reg)  (de-reg-full i.raw)
-  ?~  got  [%| (rap 3 'regs: cannot read ' (gs i.raw 'id') ~)]
-  (de-regs-full t.raw [u.got acc])
+  =/  got=(each reg @t)  (de-reg-full i.raw)
+  ?:  ?=(%| -.got)  [%| (rap 3 'regs: ' p.got ~)]
+  (de-regs-full t.raw [p.got acc])
+::  +doc-ok: a bundle's document is either absent or an object. A
+::  present one of any other shape is refused, because writing it
+::  would put a JSON null where a document belongs.
+::
+++  doc-ok
+  |=  [jon=json k=@t]
+  ^-  ?
+  ?.  (has-key jon k)  &
+  =/  v=json  (gj jon k)
+  ?=([%o *] v)
 ::  +de-bundle-why: a bundle out of JSON, or what was wrong with it
 ::
 ++  de-bundle-why
@@ -1166,6 +1235,9 @@
   ^-  (each bundle @t)
   ?.  ?=([%o *] jon)  [%| 'bundle: a JSON object is required']
   ?.  (has-key jon 'regs')  [%| 'bundle: regs is missing']
+  ?.  (doc-ok jon 'settings')  [%| 'bundle: settings is not an object']
+  ?.  (doc-ok jon 'copy')  [%| 'bundle: copy is not an object']
+  ?.  (doc-ok jon 'counts')  [%| 'bundle: counts is not an object']
   =/  got  (de-regs-full (ga jon 'regs') ~)
   ?:  ?=(%| -.got)  [%| p.got]
   [%& [%1 p.got (gj jon 'settings') (gj jon 'copy') (gj jon 'counts')]]
@@ -1213,6 +1285,10 @@
   =/  key=tape  (weld (trip '{{') (weld (trip k.i.vars) (trip '}}')))
   $(vars t.vars, out (replace out key (trip v.i.vars)))
 ::  +secret-key: a settings key whose value is a secret
+::
+::  phase 2 note: the DocuSign tokens are stored as access_token and
+::  refresh_token, and neither name ends in _key, so this arm must
+::  name them too before those tokens are ever written.
 ::
 ++  secret-key
   |=  k=@t

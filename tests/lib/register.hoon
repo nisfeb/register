@@ -68,6 +68,27 @@
   ?~  tap  (flop ?~(cur out [(crip (flop cur)) out]))
   ?:  =(10 i.tap)  $(tap t.tap, cur ~, out [(crip (flop cur)) out])
   $(tap t.tap, cur [i.tap cur])
+::  +put-key: one key of a JSON object replaced, for the broken fixtures
+++  put-key
+  |=  [jon=json k=@t v=json]
+  ^-  json
+  ?.  ?=([%o *] jon)  jon
+  [%o (~(put by p.jon) k v)]
+::  +why-of: the message a refusal carries, or '' when it read
+++  why-of
+  |=  got=(each bundle:reg @t)
+  ^-  @t
+  ?:(?=(%| -.got) p.got '')
+::  +reads: did a bundle decode
+++  reads
+  |=  got=(each bundle:reg @t)
+  ^-  ?
+  ?=(%& -.got)
+::  +one-bundle: a bundle holding this one registration's JSON
+++  one-bundle
+  |=  j=json
+  ^-  json
+  (pairs:enjs:format ~[['regs' a+~[j]]])
 ++  some-person
   ^-  person:reg
   =/  got  (de-person:reg pj & 0)
@@ -88,6 +109,13 @@
     (expect-eq !>(10) !>((met 3 (rid-from:reg eny))))
     (expect-eq !>(32) !>((met 3 (token-from:reg eny))))
     (expect !>(!=((rid-from:reg eny) (rid-from:reg (add eny 1)))))
+    ::  +ok-rid moved out of the nexus, so the lib owns the shape
+    (expect !>((ok-rid:reg (rid-from:reg eny))))
+    (expect !>((ok-rid:reg '0123456789')))
+    (expect !>(!(ok-rid:reg 'abc123')))
+    (expect !>(!(ok-rid:reg '0123456789a')))
+    (expect !>(!(ok-rid:reg 'ABCDEF0123')))
+    (expect !>(!(ok-rid:reg '')))
   ==
 ++  test-iso
   ;:  weld
@@ -461,7 +489,7 @@
   =/  cks=(list [@tas checkin:reg])
     ~[[%fri [t0 'admin:sue']] [%sun [(add t0 ~d2) 'admin:lee']]]
   =/  pc=person:reg  p(checkins (malt cks))
-  =/  r0=reg:reg  (some-reg %abc123 %complete %full 1 t0)
+  =/  r0=reg:reg  (some-reg %abc123def0 %complete %full 1 t0)
   =/  r=reg:reg
     %=  r0
       people   ~[pc]
@@ -477,14 +505,98 @@
   =/  broke=json
     (pairs:enjs:format ~[['regs' a+~[(pairs:enjs:format ~[['id' s+'oops']])]]])
   =/  back  (de-bundle-why:reg j)
+  ::  a stamp under a second: the documented round trip drops the
+  ::  fraction, so what comes back is the whole second
+  =/  sub=@da  (add t0 ~s0..8000)
+  =/  fine=reg:reg  r(created sub, history ~[[sub 'pilgrim' 'submitted']])
+  =/  whole=reg:reg  r(history ~[[t0 'pilgrim' 'submitted']])
+  =/  bf=bundle:reg  b(regs ~[fine])
+  =/  bw=bundle:reg  b(regs ~[whole])
   ;:  weld
     ::  the JSON round trip is identity, history and check-ins included
     (expect-eq !>(`(unit bundle:reg)`[~ b]) !>((de-bundle:reg j)))
     (expect !>(?=(%& -.back)))
-    ::  a registration that will not read names itself
-    (expect-eq !>(`(each bundle:reg @t)`[%| 'regs: cannot read oops']) !>((de-bundle-why:reg broke)))
+    ::  a sub-second stamp is not the same noun, and it rounds to the second
+    (expect !>(?!(=(fine whole))))
+    (expect-eq !>('2026-10-01T12:00:00Z') !>((en-iso:reg sub)))
+    (expect-eq !>(`(unit bundle:reg)`[~ bw]) !>((de-bundle:reg (en-bundle:reg bf))))
+    ::  a registration that will not read names itself and its field
+    (expect-eq !>('regs: oops: id is not ten lowercase hex digits') !>((why-of (de-bundle-why:reg broke))))
     (expect-eq !>(`(each bundle:reg @t)`[%| 'bundle: regs is missing']) !>((de-bundle-why:reg `json`[%o ~])))
     (expect-eq !>(`(each bundle:reg @t)`[%| 'bundle: a JSON object is required']) !>((de-bundle-why:reg `json`~)))
+  ==
+::  +test-bundle-docs: a bundle whose settings, copy or counts is not an
+::  object must refuse, or the restore writes a JSON null over a document
+::
+++  test-bundle-docs
+  =/  bare=json  (pairs:enjs:format ~[['regs' a+~]])
+  =/  got  (de-bundle-why:reg bare)
+  =/  want=bundle:reg  [%1 ~ ~ ~ ~]
+  =/  nulls=json
+    %-  pairs:enjs:format
+    :~  ['regs' a+~]  ['settings' ~]  ['copy' ~]  ['counts' ~]
+    ==
+  ;:  weld
+    ::  a regs-only bundle reads, with no document of its own
+    (expect !>(?=(%& -.got)))
+    (expect-eq !>(`(unit bundle:reg)`[~ want]) !>((de-bundle:reg bare)))
+    ::  an explicit JSON null in a document slot is refused, not written
+    (expect-eq !>('bundle: settings is not an object') !>((why-of (de-bundle-why:reg nulls))))
+    %+  expect-eq  !>('bundle: settings is not an object')
+    !>((why-of (de-bundle-why:reg (put-key bare 'settings' n+'7'))))
+    %+  expect-eq  !>('bundle: copy is not an object')
+    !>((why-of (de-bundle-why:reg (put-key bare 'copy' a+~))))
+    %+  expect-eq  !>('bundle: counts is not an object')
+    !>((why-of (de-bundle-why:reg (put-key bare 'counts' s+'nope'))))
+    ::  a real document still reads
+    (expect !>((reads (de-bundle-why:reg (put-key bare 'settings' starter-settings:reg)))))
+  ==
+::  +test-de-reg-full: every field a backup carries is checked, and the
+::  refusal names the registration and the field it choked on
+::
+++  test-de-reg-full
+  =/  r0=reg:reg  (some-reg %abc123def0 %complete %full 1 t0)
+  =/  good=json  (en-reg-full:reg r0)
+  =/  bad
+    |=  [k=@t v=json]
+    ^-  @t
+    (why-of (de-bundle-why:reg (one-bundle (put-key good k v))))
+  =/  stamped=json
+    %-  put-key
+    :+  good  'history'
+    a+~[(pairs:enjs:format ~[['at' s+'yesterday'] ['by' s+'sue'] ['what' s+'edited']])]
+  =/  tapped=json
+    %-  put-key
+    :+  good  'people'
+    :-  %a
+    :~  %^  put-key  (en-person:reg some-person)  'checkins'
+        (pairs:enjs:format ~[['fri' (pairs:enjs:format ~[['at' s+'never'] ['by' s+'sue']])]])
+    ==
+  ;:  weld
+    ::  the good one reads
+    (expect !>((reads (de-bundle-why:reg (one-bundle good)))))
+    ::  every named field, with the id and the field in the message
+    (expect-eq !>('regs: abc123def0: status nope is not a status') !>((bad 'status' s+'nope')))
+    (expect-eq !>('regs: abc123def0: track walking is not a track') !>((bad 'track' s+'walking')))
+    (expect-eq !>('regs: abc123def0: source phone is not a source') !>((bad 'source' s+'phone')))
+    (expect-eq !>('regs: abc123def0: prior nope is not a status') !>((bad 'prior' s+'nope')))
+    (expect-eq !>('regs: abc123def0: created will not read') !>((bad 'created' s+'soon')))
+    (expect-eq !>('regs: abc123def0: updated will not read') !>((bad 'updated' s+'soon')))
+    ::  a blank prior is the registration that was never cancelled
+    (expect !>((reads (de-bundle-why:reg (one-bundle (put-key good 'prior' s+''))))))
+    (expect !>((reads (de-bundle-why:reg (one-bundle (put-key good 'prior' s+'payment'))))))
+    ::  the payment and the waiver name their own field
+    %+  expect-eq  !>('regs: abc123def0: payment method venmo is not one the ship writes')
+    !>((bad 'payment' (put-key (en-payment:reg payment.r0) 'method' s+'venmo')))
+    %+  expect-eq  !>('regs: abc123def0: waiver method fax is not one the ship writes')
+    !>((bad 'waiver' (put-key (en-waiver:reg waiver.r0) 'method' s+'fax')))
+    %+  expect-eq  !>('regs: abc123def0: waiver status torn is not one the ship writes')
+    !>((bad 'waiver' (put-key (en-waiver:reg waiver.r0) 'status' s+'torn')))
+    ::  a stamp that will not parse refuses the registration
+    %+  expect-eq  !>('regs: abc123def0: a history stamp will not read')
+    !>((why-of (de-bundle-why:reg (one-bundle stamped))))
+    %+  expect-eq  !>('regs: abc123def0: check-in fri has a stamp that will not read')
+    !>((why-of (de-bundle-why:reg (one-bundle tapped))))
   ==
 ::  ==  the roster row
 ::
