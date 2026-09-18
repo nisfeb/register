@@ -153,6 +153,20 @@
     if (op === 'note') return String(r.notes || '') === String(body.notes || '');
     return true;
   }
+  // how long a painted action may wait for the ship to show it. The
+  // writer answers in well under a second, so a patch still unconfirmed
+  // after this was refused and is never coming back.
+  var HOLD = 15000;
+  // what to do with the action this page painted, given the copy the
+  // ship just answered: it shows the change ('settled'), it has not
+  // shown it yet ('waiting'), or the deadline passed and the local
+  // patch must go ('stale').
+  function verdict(waiting, got, now) {
+    if (!waiting) return 'settled';
+    if (settled(got, waiting.body)) return 'settled';
+    if (Number(now) - Number(waiting.at) >= HOLD) return 'stale';
+    return 'waiting';
+  }
   // the roster row a registration makes, keeping what the row holds and
   // the registration does not
   function patchRow(row, r) {
@@ -185,6 +199,7 @@
   var pure = {
     esc: esc, money: money, varsOf: varsOf, missingVars: missingVars, mailGroups: mailGroups,
     ageText: ageText, patchReg: patchReg, settled: settled, patchRow: patchRow,
+    verdict: verdict, HOLD: HOLD,
   };
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; }
   if (typeof document === 'undefined') { return; }
@@ -217,6 +232,16 @@
     sayEl.hidden = !msg;
     sayEl.className = 'say' + (good ? ' ok' : '');
     sayEl.textContent = msg || '';
+  }
+  // the writer would not take what the page painted. The ship's own copy
+  // goes back on screen and this line says why, for a few seconds, which
+  // is why the read that follows leaves the line alone.
+  var noticeUntil = 0, noticeTimer = null;
+  function refused() {
+    noticeUntil = Date.now() + 5000;
+    say('the ship did not take that change');
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(function () { noticeUntil = 0; say(''); }, 5000);
   }
   // the bar at the top counts fetches, not one flag: two calls in
   // flight must not have the first one to answer clear the bar
@@ -1000,8 +1025,10 @@
     return read('/regs').then(function (d) {
       roster = d;
       rosterAge = '';
-      keepPainted();
+      // the ship's own rows are kept, never the patched ones: a pending
+      // row cached here would come back as fact on the next visit
       try { localStorage.setItem(RKEY, JSON.stringify({ at: Date.now(), doc: d })); } catch (e) { }
+      keepPainted();
       return d;
     });
   }
@@ -1043,16 +1070,25 @@
       p = Promise.all([haveRoster(), read('/reg/' + encodeURIComponent(r.id))]).then(function (d) {
         var got = d[1];
         // an action this page painted outranks a copy the ship answered
-        // before its writer had applied it
-        if (waitingOn && waitingOn.id === got.id && !settled(got, waitingOn.body)) {
+        // before its writer had applied it, but only until the deadline:
+        // a patch the writer refused would otherwise repaint for ever
+        var mineToo = waitingOn && waitingOn.id === got.id;
+        var verd = mineToo ? verdict(waitingOn, got, Date.now()) : 'settled';
+        if (verd === 'waiting') {
           keepPainted();
           return paint(detailView());
         }
-        if (waitingOn && waitingOn.id === got.id) waitingOn = null;
+        if (mineToo) waitingOn = null;
+        if (verd === 'stale') {
+          // the writer refused it, so the ship's copy wins, row and all
+          var row = rowOf(got.id);
+          if (row) putRow(patchRow(row, got));
+        }
         detail = got;
         model = fromReg(detail);
         before = JSON.parse(JSON.stringify(model));
         paint(detailView());
+        if (verd === 'stale') refused();
       });
     } else if (r.name === 'add') {
       p = haveRoster().then(function () {
@@ -1093,7 +1129,8 @@
     }
     return p.then(function () {
       if (mine !== routeGen) return;
-      say('');
+      // a refusal notice holds the line for its few seconds
+      if (Date.now() >= noticeUntil) say('');
     }).catch(function (e) {
       if (mine !== routeGen) return;
       if (e.status === 403) {
@@ -1121,12 +1158,15 @@
       if (next) painted = next;
     });
     var free = spin(el);
-    if (painted !== detail) {
+    // an op the page cannot paint, recheck-waiver among them, leaves
+    // nothing local behind, so there is nothing to reconcile afterwards
+    var local = painted !== detail;
+    if (local) {
       detail = painted;
       model = fromReg(detail);
       before = JSON.parse(JSON.stringify(model));
       if (row) putRow(patchRow(row, detail));
-      waitingOn = { id: id, body: bodies[bodies.length - 1] };
+      waitingOn = { id: id, body: bodies[bodies.length - 1], at: Date.now() };
       render(route().name === 'reg' ? detailView() : rosterView());
     }
     var chain = Promise.resolve();
@@ -1136,7 +1176,8 @@
     return chain.then(function () {
       free();
       say('done', true);
-      setTimeout(reconcile, 1200);
+      if (local) setTimeout(reconcile, 1200);
+      else later();
     }).catch(function (e) {
       free();
       waitingOn = null;
@@ -1150,13 +1191,23 @@
   }
   function run(body, el) { return runAll([body], el); }
   // read that one registration again and drop the pending mark once the
-  // ship's copy shows the change
+  // ship's copy shows the change. One timer, so the beacon and the
+  // minute timer asking at once make one chain of reads, not two.
+  var reTimer = null;
   function reconcile() {
     if (!waitingOn) return Promise.resolve();
     var mine = waitingOn;
     return read('/reg/' + encodeURIComponent(mine.id)).then(function (d) {
       if (waitingOn !== mine) return;
-      if (!settled(d, mine.body)) return;
+      // past the deadline an unsettled patch is one the writer refused:
+      // the local copy goes and the ship's takes its place
+      var verd = verdict(mine, d, Date.now());
+      if (verd === 'waiting') {
+        clearTimeout(reTimer);
+        reTimer = setTimeout(reconcile, 1200);
+        return;
+      }
+      clearTimeout(reTimer);
       waitingOn = null;
       if (detail && detail.id === d.id) {
         detail = d;
@@ -1168,6 +1219,7 @@
       var name = route().name;
       if (name === 'reg') render(detailView());
       else if (name === 'roster') render(rosterView());
+      if (verd === 'stale') refused();
     }).catch(function () { });
   }
 
@@ -1328,17 +1380,23 @@
         }
         var freeMail = spin(el);
         say('saved', true);
-        Promise.all(changed.map(function (k) { return write('/copy/set', { key: k, value: String(copyDoc[k]) }); }))
-          .then(function () {
-            freeMail();
-            changed.forEach(function (k) { copyWas[k] = copyDoc[k]; });
-          })
-          .catch(function (e) {
-            freeMail();
-            changed.forEach(function (k) { copyDoc[k] = (copyWas || {})[k]; });
-            render(emailsView());
-            say(e.message);
+        // each key is written on its own and settles on its own. One
+        // refusal rolls back that key alone; the keys the ship took keep
+        // their new string and the line names the ones it would not.
+        var bad = [];
+        Promise.all(changed.map(function (k) {
+          return write('/copy/set', { key: k, value: String(copyDoc[k]) }).then(function () {
+            copyWas[k] = copyDoc[k];
+          }, function (e) {
+            bad.push(k + ': ' + e.message);
+            copyDoc[k] = (copyWas || {})[k];
           });
+        })).then(function () {
+          freeMail();
+          if (!bad.length) return;
+          render(emailsView());
+          say(bad.join('; '));
+        });
       });
     }
     if (a === 'save-settings') {
@@ -1366,24 +1424,29 @@
     if (a === 'inspect') {
       if (!fileBody) return;
       return act(function () {
-        write('/import?dry=1', fileBody).then(function (d) { dry = d; say(''); render(backupView()); })
-          .catch(function (e) { dry = null; say(e.message); render(backupView()); });
+        var freeDry = spin(el);
+        write('/import?dry=1', fileBody).then(function (d) { freeDry(); dry = d; say(''); render(backupView()); })
+          .catch(function (e) { freeDry(); dry = null; say(e.message); render(backupView()); });
       });
     }
     if (a === 'apply') {
       if (!dry || !fileBody || !dry.confirm) return;
       var wipe = document.getElementById('wipe');
       var on = wipe && wipe.checked;
-      if (!window.confirm('Restore ' + dry.regs + ' registrations, overwriting ' + dry.overwrite +
-        (on ? ', and wipe every registration the file does not name' : '') + '. ' +
-        'Every restored registration is stamped as updated now, so a 48 hour hold starts again ' +
-        'for each one. Go ahead?')) return;
       return act(function () {
+        // the button is disabled before the dialog opens, so the second
+        // half of a double click never starts a second restore
+        var freeApply = spin(el);
+        if (!window.confirm('Restore ' + dry.regs + ' registrations, overwriting ' + dry.overwrite +
+          (on ? ', and wipe every registration the file does not name' : '') + '. ' +
+          'Every restored registration is stamped as updated now, so a 48 hour hold starts again ' +
+          'for each one. Go ahead?')) return freeApply();
         write('/import?wipe=' + (on ? '1' : '0') + '&confirm=' + encodeURIComponent(dry.confirm), fileBody).then(function (d) {
+          freeApply();
           dry = null; fileBody = null;
           say('restored ' + d.applied + ' registrations', true);
           later();
-        }).catch(function (e) { say(e.message); });
+        }).catch(function (e) { freeApply(); say(e.message); });
       });
     }
   });
