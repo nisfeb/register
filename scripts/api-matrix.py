@@ -693,6 +693,41 @@ def backoffice(live_rid):
     check('GET /admin/counts reads it back',
           code == 200 and d.get('fri', {}).get('mass', {}).get('count') == 120, (code, d))
 
+    # ---- copy, one key at a time, the way the public page edits it ----
+    code, copy_before = admin('GET', '/copy')
+    check('GET /admin/copy answers the document', code == 200 and 'landing.title' in (copy_before or {}), code)
+    was = copy_before['landing.title']
+    code, d = admin('POST', '/copy/set', {'key': 'nothing.here', 'value': 'x'})
+    check('setting a key the copy document does not hold is 400 naming the key',
+          code == 400 and (d or {}).get('error') == 'key: not in copy', (code, d))
+    code, d = curl('POST', API + '/admin/copy/set', {'key': 'landing.title', 'value': 'x'}, jar=JAR)
+    check('setting a copy key without x-actor is 400', code == 400, (code, d))
+    code, d = curl('POST', API + '/admin/copy/set', {'key': 'landing.title', 'value': 'x'}, actor=ACTOR)
+    check('setting a copy key without the cookie is 403', code == 403, (code, d))
+    code, d = admin('POST', '/copy/set', {'key': 'landing.title', 'value': 'x' * 4001})
+    check('a copy value over four thousand bytes is 400', code == 400, (code, d))
+    code, d = admin('POST', '/copy/set', {'key': 'landing.title', 'value': 'Matrix title'})
+    check('the owner sets one copy key', code == 200 and (d or {}).get('value') == 'Matrix title', (code, d))
+    settle()
+    s_copy = status()
+    check('the public status carries the new string', s_copy['copy']['landing.title'] == 'Matrix title', s_copy['copy'].get('landing.title'))
+    code, d = admin('GET', '/copy')
+    check('the rest of the copy document is untouched',
+          code == 200 and len(d) == len(copy_before) and d['landing.intro'] == copy_before['landing.intro'],
+          (len(d or {}), len(copy_before)))
+    code, d = admin('POST', '/copy/set', {'key': 'landing.title', 'value': was})
+    check('and the original string goes back', code == 200, (code, d))
+    settle()
+    code, d = curl('GET', INSTANCE + '/tr/last?raw=1', jar=JAR)
+    check('the ring names the key that changed',
+          code == 200 and (d or {}).get('op') == 'set-copy-key' and (d or {}).get('why') == 'landing.title', (code, d))
+
+    # ---- the status says who is asking ----
+    code, d = curl('GET', API + '/status', jar=JAR)
+    check('status says owner with the cookie', code == 200 and (d or {}).get('owner') is True, (code, (d or {}).get('owner')))
+    code, d = curl('GET', API + '/status')
+    check('status says owner is false without one', code == 200 and (d or {}).get('owner') is False, (code, (d or {}).get('owner')))
+
     # ---- the exports ----
     code, roster = admin('GET', '/regs')
     check('the roster answers rows with the caps and the clock',

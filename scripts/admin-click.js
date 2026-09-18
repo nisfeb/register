@@ -1,6 +1,8 @@
-// A headless click-through of the backoffice's check-in touches: the
-// roster's check-ins column, the reports' checked-in figure, the
-// Sunday counts grid, and the detail card that takes a check-in back.
+// A headless click-through of the backoffice: the roster's check-ins
+// column, the reports' checked-in figure, the Sunday counts grid, the
+// detail card that takes a check-in back, the emails page that
+// replaced the copy page, and an action painted before the ship has
+// taken it.
 //
 // Run: node scripts/admin-click.js <rid>
 //
@@ -25,6 +27,16 @@ const check = (m, c, d) => {
   if (!c) fails++;
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// the pending mark clears on a read the page makes a second later, so
+// it is polled for rather than read after a fixed wait
+const gone = async (page, sel, ms) => {
+  const end = Date.now() + ms;
+  for (;;) {
+    if (!(await page.$(sel))) return true;
+    if (Date.now() > end) return false;
+    await sleep(150);
+  }
+};
 
 async function main() {
   if (!RID) {
@@ -85,6 +97,81 @@ async function main() {
   check('the backoffice undo took the second check-in back',
     row && row.people[0].checked === true && row.people[1].checked === false,
     row && JSON.stringify(row.people.map((x) => x.checked)));
+
+  // ---- an action is on screen before the ship has taken it ----
+  await p.goto(BASE + '/apps/register/admin#reg/' + RID, { waitUntil: 'networkidle2' });
+  await p.waitForSelector('[data-act="save"]', { timeout: 20000 });
+  const wasNote = await p.$eval('[data-k="notes"]', (n) => n.value);
+  const mark = 'clicked at ' + Date.now();
+  await p.evaluate((t) => {
+    const el = document.querySelector('[data-k="notes"]');
+    el.value = t;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, mark);
+  await p.click('[data-act="save"]');
+  const painted = await p.evaluate(() => ({
+    pending: !!document.querySelector('.card.pending'),
+    saying: !!document.querySelector('.card.pending .tag'),
+    note: (document.querySelector('[data-k="notes"]') || {}).value,
+  }));
+  check('the change is on screen the moment the request goes up',
+    painted.pending && painted.saying && painted.note === mark, JSON.stringify(painted));
+  check('and the faint mark goes once the ship has confirmed it', await gone(p, '.card.pending', 20000));
+  const settled = await p.$eval('[data-k="notes"]', (n) => n.value);
+  check('the note the ship answers is the note that was typed', settled === mark, settled);
+  const hist = await p.$$eval('.hist li', (ns) => ns.map((n) => n.textContent));
+  check('the history names the organizer who made the change',
+    hist.some((h) => h.includes('Organizer')), hist.slice(0, 3).join(' | '));
+  // put the note back
+  await p.evaluate((t) => {
+    const el = document.querySelector('[data-k="notes"]');
+    el.value = t;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, wasNote);
+  await p.click('[data-act="save"]');
+  await gone(p, '.card.pending', 20000);
+  check('the note it started with is back', (await p.$eval('[data-k="notes"]', (n) => n.value)) === wasNote);
+
+  // ---- the roster keeps its rows rather than reading them again ----
+  await p.goto(BASE + '/apps/register/admin#roster', { waitUntil: 'networkidle2' });
+  await p.waitForSelector('table tbody tr', { timeout: 20000 });
+  const kept = await p.evaluate(() => {
+    try { return JSON.parse(localStorage.getItem('register.admin.roster') || 'null'); } catch (e) { return null; }
+  });
+  check('the roster is kept in this browser for the next visit',
+    kept && kept.doc && Array.isArray(kept.doc.regs) && kept.doc.regs.length > 0, kept && Object.keys(kept));
+
+  // ---- the copy page is the emails page now ----
+  const nav = await p.$$eval('#nav a', (ns) => ns.map((n) => n.textContent));
+  check('the nav offers Emails and no longer Copy',
+    nav.includes('Emails') && !nav.includes('Copy'), nav.join(','));
+  await p.goto(BASE + '/apps/register/admin#emails', { waitUntil: 'networkidle2' });
+  await p.waitForSelector('.card.mail', { timeout: 20000 });
+  const keys = await p.$$eval('[data-copy]', (ns) => ns.map((n) => n.getAttribute('data-copy')));
+  check('the emails page edits the email templates and nothing else',
+    keys.length > 4 && keys.every((k) => k.indexOf('email.') === 0), keys.join(','));
+  check('every template has a Save of its own',
+    (await p.$$('[data-act="save-mail"]')).length === (await p.$$('.card.mail')).length);
+  const help = await p.$$eval('.card.mail .help', (ns) => ns.map((n) => n.textContent));
+  check('the body lists the placeholders the ship fills',
+    help.some((h) => h.includes('{{link}}')), help.slice(0, 2).join(' | '));
+  const top = await p.$eval('#view > p', (n) => n.textContent);
+  check('a line says where every other string is edited',
+    top.includes('Edit text'), top);
+  // a change that drops a placeholder never leaves the browser
+  const bodyKey = keys.filter((k) => /\.body$/.test(k))[0];
+  const wasBody = await p.$eval('[data-copy="' + bodyKey + '"]', (n) => n.value);
+  await p.evaluate((k) => {
+    const el = document.querySelector('[data-copy="' + k + '"]');
+    el.value = 'no placeholders here';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, bodyKey);
+  await p.click('.card.mail [data-act="save-mail"]');
+  await sleep(600);
+  const said = await p.$eval('#say', (n) => n.textContent);
+  check('an email that loses a placeholder is refused in the page', said.indexOf('keep {{') === 0, said);
+  check('and the template it was typed over comes straight back',
+    (await p.$eval('[data-copy="' + bodyKey + '"]', (n) => n.value)) === wasBody);
 
   await browser.close();
   console.log(fails ? fails + ' FAILED' : 'ALL OK');

@@ -21,6 +21,11 @@ global.fetch = () => Promise.reject(new Error('the node test makes no requests')
 
 const page = require(path.join(__dirname, '..', 'code', 'nex', 'register', 'checkin.js'));
 const worker = require(path.join(__dirname, '..', 'code', 'nex', 'register', 'sw.js'));
+// the other two pages export their pure halves the same way: the
+// public page's rule about placeholders, and the backoffice's
+// optimistic patch
+const pub = require(path.join(__dirname, '..', 'code', 'nex', 'register', 'public.js'));
+const back = require(path.join(__dirname, '..', 'code', 'nex', 'register', 'admin.js'));
 
 let n = 0;
 function ok(label, cond) { n += 1; assert.ok(cond, label); console.log('  ok   ' + label); }
@@ -220,5 +225,107 @@ ok('a time reads as a clock on this phone',
 ok('midnight reads as twelve', page.clock(new Date(2026, 11, 4, 0, 7).toISOString()) === '12:07am');
 ok('noon reads as twelve too', page.clock(new Date(2026, 11, 4, 12, 30).toISOString()) === '12:30pm');
 ok('no time at all reads as nothing', page.clock('') === '');
+
+// ---- the public page: a string keeps the placeholders it had ----
+ok('a placeholder the original had and the edit dropped is named',
+  JSON.stringify(pub.missingVars('{{n}} x {{each}}', '5 x {{each}}')) === '["{{n}}"]');
+ok('an edit that keeps every placeholder is allowed',
+  pub.missingVars('{{percent}}% full', 'we are {{percent}} per cent full').length === 0);
+ok('a placeholder written twice is named once',
+  JSON.stringify(pub.missingVars('{{first}}, hello {{first}}', 'hello')) === '["{{first}}"]');
+ok('a string that never had one is free to change',
+  pub.missingVars('The full Camino', 'Il Cammino').length === 0);
+ok('an edit may add a placeholder the original did not have',
+  pub.missingVars('Pay now', 'Pay {{total}}').length === 0);
+ok('a template lists each of its placeholders once',
+  JSON.stringify(pub.varsOf('{{a}} {{b}} {{a}}')) === '["{{a}}","{{b}}"]');
+ok('nothing at all holds no placeholders',
+  pub.varsOf(undefined).length === 0 && pub.varsOf(null).length === 0);
+ok('Enter makes a new line in prose and ends the edit anywhere else',
+  pub.multiline('next.waiver.body') === true && pub.multiline('landing.intro') === true &&
+  pub.multiline('manage.closed') === true && pub.multiline('stub.banner') === true &&
+  pub.multiline('landing.title') === false && pub.multiline('manage.save') === false);
+ok('the public page escapes the five characters too',
+  pub.esc('<&>"\'') === '&lt;&amp;&gt;&quot;&#39;');
+
+// ---- the backoffice: an action painted before the ship takes it ----
+const AT = '2026-09-18T12:00:00Z';
+const waitlisted = {
+  id: 'abc0000001', status: 'waitlist', track: 'full', position: 4, exempt: false,
+  contact: { email: 'ana@example.com', phone: '904', state: 'FL' }, org: 'Malta',
+  people: [{ first: 'Ana', last: 'Silva', checkins: { fri: { at: AT, by: 'admin:Sarah' } } }],
+  payment: { method: 'none', amount: 0, gift: 0, refunded: false },
+  waiver: { method: 'none', status: 'none' }, history: [{ at: AT, by: 'pilgrim', what: 'registered' }],
+};
+const promoted = back.patchReg(waitlisted, { op: 'promote' }, 'admin:Sarah', AT);
+ok('a promotion paints the waiver step and drops the wait list number',
+  promoted.status === 'waiver' && promoted.position === 0);
+ok('it stamps a history line with the organizer and the time',
+  promoted.history.length === 2 && promoted.history[1].by === 'admin:Sarah' &&
+  promoted.history[1].at === AT && /promoted/.test(promoted.history[1].what));
+ok('what was painted is marked as not yet confirmed', promoted.pending === true);
+ok('the registration it was made from is untouched, so a refusal rolls back',
+  waitlisted.status === 'waitlist' && waitlisted.position === 4 && waitlisted.history.length === 1);
+const paid = back.patchReg(promoted, { op: 'pay', method: 'check', amount: 7500, gift: 500, ref: '19', note: '' }, 'admin:Sarah', AT);
+ok('a payment paints complete with the method, the amount and the gift',
+  paid.status === 'complete' && paid.payment.method === 'check' &&
+  paid.payment.amount === 7500 && paid.payment.gift === 500);
+const papered = back.patchReg(paid, { op: 'waiver-paper' }, 'admin:Sarah', AT);
+ok('a paper waiver is completed and leaves the status alone',
+  papered.waiver.status === 'completed' && papered.waiver.method === 'paper' && papered.status === 'complete');
+const refunded = back.patchReg(papered, { op: 'refund', note: 'x' }, 'admin:Sarah', AT);
+ok('a refund marks the payment and keeps its method', refunded.payment.refunded === true && refunded.payment.method === 'check');
+const cancelled = back.patchReg(refunded, { op: 'cancel', note: '' }, 'admin:Sarah', AT);
+ok('a cancellation remembers what it was', cancelled.status === 'cancelled' && cancelled.prior === 'complete');
+ok('a reinstatement puts it back', back.patchReg(cancelled, { op: 'reinstate' }, 'admin:Sarah', AT).status === 'complete');
+ok('an exemption is taken and given back',
+  back.patchReg(waitlisted, { op: 'exempt', on: true }, 'a', AT).exempt === true &&
+  back.patchReg(waitlisted, { op: 'exempt', on: false }, 'a', AT).exempt === false);
+ok('assistance approved completes and declined asks for payment',
+  back.patchReg(waitlisted, { op: 'assist', approve: true }, 'a', AT).status === 'complete' &&
+  back.patchReg(waitlisted, { op: 'assist', approve: false }, 'a', AT).status === 'payment');
+ok('a note is painted as typed', back.patchReg(waitlisted, { op: 'note', notes: 'called her' }, 'a', AT).notes === 'called her');
+const edited = back.patchReg(waitlisted, {
+  op: 'edit',
+  input: { track: 'bambino', contact: { email: 'bo@example.com', phone: '1', state: 'GA' }, org: 'None', why: '', people: [{ first: 'Bo', last: 'Silva' }] },
+}, 'a', AT);
+ok('an edit paints the new party and keeps the check-ins that position had',
+  edited.people[0].first === 'Bo' && edited.people[0].checkins.fri.by === 'admin:Sarah' && edited.track === 'bambino');
+ok('an op the page does not know paints nothing', back.patchReg(waitlisted, { op: 'nonsense' }, 'a', AT) === null);
+
+const row = { id: 'abc0000001', status: 'waitlist', position: 4, paid: 'none', amount: 0, gift: 0,
+  refunded: false, waiver: 'none', exempt: false, assistance: false, track: 'full',
+  email: 'ana@example.com', org: 'Malta', state: 'FL', people: 1, names: ['Silva, Ana'], walkers: 1 };
+const patched = back.patchRow(row, paid);
+ok('the roster row takes the new status, payment and waiver',
+  patched.status === 'complete' && patched.paid === 'check' && patched.amount === 7500 && patched.position === 0);
+ok('the row keeps what only the row holds', patched.walkers === 1);
+ok('the row is marked as not yet confirmed too', patched.pending === true);
+ok('the row it was made from is untouched, so a refusal rolls back',
+  row.status === 'waitlist' && row.paid === 'none' && row.position === 4);
+ok('a wait listed row keeps its number', back.patchRow(row, back.patchReg(waitlisted, { op: 'note', notes: 'x' }, 'a', AT)).position === 4);
+
+ok('the pending mark stays while the ship still shows the old copy',
+  back.settled(waitlisted, { op: 'promote' }) === false);
+ok('and clears once the ship shows the change',
+  back.settled({ status: 'waiver' }, { op: 'promote' }) === true);
+ok('a payment is settled by its method',
+  back.settled({ payment: { method: 'check' } }, { op: 'pay', method: 'check' }) === true &&
+  back.settled({ payment: { method: 'none' } }, { op: 'pay', method: 'check' }) === false);
+ok('an exemption is settled by the flag it set',
+  back.settled({ exempt: true }, { op: 'exempt', on: true }) === true &&
+  back.settled({ exempt: false }, { op: 'exempt', on: true }) === false);
+ok('a resend has nothing to wait for', back.settled({}, { op: 'resend', template: 'reminder' }) === true);
+ok('nothing at all is never settled', back.settled(null, { op: 'cancel' }) === false);
+
+ok('the email templates are found by their subject and body keys',
+  JSON.stringify(back.mailGroups({ 'email.reminder.subject': 'a', 'email.reminder.body': 'b', 'landing.title': 'c' })) ===
+  '{"reminder":{"subject":"email.reminder.subject","body":"email.reminder.body"}}');
+ok('a copy document with no emails makes no groups', Object.keys(back.mailGroups({ 'landing.title': 'a' })).length === 0);
+ok('a dropped placeholder is refused in an email too',
+  back.missingVars('Hello {{first}}, see {{link}}', 'Hello {{first}}').length === 1);
+ok('the age of a kept roster reads in words',
+  back.ageText(1000, 1000) === 'a moment old' && back.ageText(0, 60000) === '1 minute old' &&
+  back.ageText(0, 300000) === '5 minutes old' && back.ageText(0, 7200000) === '2 hours old');
 
 console.log('ALL OK (' + n + ' checks)');
