@@ -22,6 +22,22 @@
     var i = (days || []).indexOf(String(today || ''));
     return i >= 0 && i < DAYS.length ? DAYS[i][0] : 'fri';
   }
+  // the date here, not in London. toISOString is UTC, so at eight on a
+  // Friday evening in Florida it already reads Saturday and the app
+  // would open on the wrong day.
+  function localDay(d) {
+    var t = d || new Date();
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return t.getFullYear() + '-' + p(t.getMonth() + 1) + '-' + p(t.getDate());
+  }
+  // the day the app opens on. A day the volunteer picked by hand wins,
+  // but only for the rest of the day they picked it: on the next
+  // morning the event's own day takes over again.
+  function openDay(days, today, picked) {
+    var pick = picked || {};
+    if (pick.day && pick.on === today) return pick.day;
+    return dayFor(days, today);
+  }
   function bandText(band) {
     if (band && band.ok) return 'Wristband';
     return 'No wristband: ' + ((band && band.why) || 'not registered');
@@ -44,22 +60,30 @@
   function waiting(queue) {
     return (queue || []).filter(function (q) { return !q.why; }).length;
   }
-  // what the ship answered: the applied items leave the queue, a
-  // rejected one stays with its reason so the card can show it
+  // the ship answers this when its writer would not take the tap. The
+  // volunteer can do nothing about that, so the tap waits and goes up
+  // again instead of parking with a reason nobody can act on.
+  var RETRY = 'the ship did not take this tap';
+  // what the ship answered: the applied items leave the queue. A
+  // refusal that names the registration or the index parks with its
+  // reason; the retry reason keeps the item waiting for the next drain.
   function drained(queue, answer) {
     var bad = (answer && answer.rejected) || [];
     return (queue || []).map(function (q) {
       var hit = bad.filter(function (b) { return String(b.rid) === String(q.rid) && Number(b.i) === Number(q.i); })[0];
-      return hit ? Object.assign({}, q, { why: hit.why || 'rejected' }) : null;
+      if (!hit) return null;
+      var why = hit.why || 'rejected';
+      return Object.assign({}, q, { why: why === RETRY ? '' : why });
     }).filter(Boolean);
   }
-  // the fetched rows are the ship's truth; the queue is what this phone
-  // did since. Apply the rows, then the queue on top, so a refresh
-  // never wipes the tap a volunteer just made.
-  function mergeRoster(rows, queue, day) {
+  // the fetched rows are the ship's truth; the recent taps and the
+  // queue are what this phone did since. Apply the rows, then the taps
+  // the ship has already taken, then the queue on top, so an undo made
+  // a moment ago outranks the tap it takes back.
+  function mergeRoster(rows, recent, queue, day) {
     var by = {};
     (rows || []).forEach(function (r) { by[r.rid] = r; });
-    (queue || []).forEach(function (q) {
+    (recent || []).concat(queue || []).forEach(function (q) {
       if (q.day !== day) return;
       var row = by[q.rid];
       if (!row) return;
@@ -88,21 +112,47 @@
     if (p.child) out.push('child');
     return out;
   }
-  // the day's activity grid: Sunday trades the social for the two walk
-  // starts, which are the only per-day difference the counts screen has
+  // the day's activity grid. Every day counts the walk, Mass, the Holy
+  // Hour, the social and the bus, because a Sunday Mass is still a Mass
+  // to count. Sunday adds the two walk starts.
   function actsFor(day) {
     var out = [['walk', 'Walk'], ['mass', 'Mass'], ['holy_hour', 'Holy Hour'],
       ['social', 'Social'], ['bus', 'Bus']];
     if (day === 'sun') {
-      out = [['walk', 'Walk'], ['sun_ten', '10 mile start'], ['sun_short', '2.5 mile start'], ['bus', 'Bus']];
+      out = out.concat([['sun_ten', '10 mile start'], ['sun_short', '2.5 mile start']]);
     }
     return out;
+  }
+  // the counts this phone has typed, laid over the day the ship holds.
+  // An activity nobody touched keeps the ship's figures, so a keystroke
+  // in one box never blanks the others.
+  function mergeCounts(day, pending) {
+    var out = Object.assign({}, day || {});
+    Object.keys(pending || {}).forEach(function (k) {
+      out[k] = Object.assign({}, out[k] || {}, pending[k]);
+    });
+    return out;
+  }
+  // a typed day goes up only once Save has armed it. Typing alone sends
+  // nothing, so the fifteen second drain cannot write a half typed day
+  // over what the ship already has.
+  function countsToSend(pending, armed) {
+    if (!armed || !pending) return null;
+    return Object.keys(pending).length ? pending : null;
+  }
+  // what the badge reads: how many taps are waiting, and why the last
+  // drain failed when it failed for a reason other than the login
+  function syncText(online, n, why) {
+    if (!online) return n ? n + ' waiting' : 'offline';
+    if (why) return n ? n + ' waiting: ' + why : why;
+    return n ? n + ' waiting' : 'synced';
   }
 
   var pure = {
     esc: esc, dayFor: dayFor, bandText: bandText, queueAdd: queueAdd, drained: drained,
     mergeRoster: mergeRoster, matches: matches, tags: tags, actsFor: actsFor, waiting: waiting,
-    clock: clock,
+    clock: clock, localDay: localDay, openDay: openDay, mergeCounts: mergeCounts,
+    countsToSend: countsToSend, syncText: syncText, RETRY: RETRY,
   };
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; }
   if (typeof document === 'undefined') { return; }
@@ -133,6 +183,11 @@
   var stopped = false;
   var lastRev = null;
   var asking = null;
+  // one drain at a time: the fifteen second timer, the beacon and a tap
+  // can all ask at once, and two batches in flight would send the same
+  // taps twice
+  var draining = false;
+  var syncFail = '';
 
   function fresh() {
     var now = Date.now();
@@ -223,23 +278,28 @@
     var n = waiting(queue);
     if (!navigator.onLine) {
       syncEl.className = 'sync offline';
-      syncEl.textContent = n ? n + ' waiting' : 'offline';
+      syncEl.textContent = syncText(false, n, '');
       return;
     }
-    syncEl.className = 'sync' + (n ? ' waiting' : '');
-    syncEl.textContent = n ? n + ' waiting' : 'synced';
+    syncEl.className = 'sync' + (n || syncFail ? ' waiting' : '');
+    syncEl.textContent = syncText(true, n, syncFail);
   }
 
   // ---- the roster ----
   function rosterKey() { return 'register.roster.' + day; }
   function countsKey() { return 'register.counts.' + day; }
+  function armKey() { return 'register.counts.' + day + '.save'; }
+  // the day's counts as the screen shows them: what the ship holds for
+  // the day, under what this phone has typed and not sent yet
+  function shownCounts() {
+    return mergeCounts((countsDoc || {})[day] || counts || {}, recall(countsKey(), null) || {});
+  }
   function paintStored() {
     var kept = recall(rosterKey(), null);
     if (!kept) return;
     rows = kept.rows || [];
     plan = kept.planned || {};
     counts = kept.counts || {};
-    render();
   }
   function fetchRoster() {
     if (!navigator.onLine) return Promise.resolve();
@@ -248,7 +308,7 @@
       plan = d.planned || {};
       counts = d.counts || {};
       store(rosterKey(), { rows: rows, planned: plan, counts: counts, at: new Date().toISOString() });
-      render();
+      refreshed();
     }).catch(function (e) {
       if (e.status === 403) return locked();
       say(e.message);
@@ -260,8 +320,14 @@
   }
 
   // ---- the queue ----
+  // a new intent for a person replaces both the item waiting and the
+  // tap the ship took a moment ago, so an undo is not repainted away
+  function enqueue(item) {
+    recent = fresh().filter(function (r) { return !sameTap(r, item); });
+    queue = queueAdd(queue, item);
+  }
   function tap(rid, i, undo) {
-    queue = queueAdd(queue, {
+    enqueue({
       rid: rid, i: i, day: day, undo: !!undo, at: new Date().toISOString(), by: 'admin:' + actor
     });
     store(QKEY, queue);
@@ -270,6 +336,12 @@
   }
   function drain() {
     if (stopped || !navigator.onLine) { drawSync(); return Promise.resolve(); }
+    if (draining) return Promise.resolve();
+    draining = true;
+    var done = function () { draining = false; };
+    return drainBatch().then(done, done);
+  }
+  function drainBatch() {
     return drainCounts().then(function () {
       var live = queue.filter(function (q) { return !q.why; });
       if (!live.length) { drawSync(); return; }
@@ -286,22 +358,27 @@
         }).map(function (q) { return Object.assign({}, q, { done: Date.now() }); }));
         queue = kept.concat(queue.filter(function (q) { return batch.indexOf(q) < 0; }));
         store(QKEY, queue);
+        syncFail = '';
         drawSync();
-        render();
+        refreshed();
       }).catch(function (e) {
         if (e.status === 403) return locked();
+        syncFail = e.message || 'the taps did not go up';
         drawSync();
       });
     });
   }
+  // the typed day goes up on Save, and after a Save made offline on the
+  // first drain with a signal. A bare keystroke sends nothing.
   function drainCounts() {
-    var pending = recall(countsKey(), null);
+    var pending = countsToSend(recall(countsKey(), null), recall(armKey(), false));
     if (!pending) return Promise.resolve();
     return api(API + '/admin/counts').then(function (doc) {
       var merged = Object.assign({}, doc || {});
-      merged[day] = pending;
+      merged[day] = mergeCounts(merged[day], pending);
       return put('/admin/counts', merged).then(function () {
         try { localStorage.removeItem(countsKey()); } catch (e) { }
+        try { localStorage.removeItem(armKey()); } catch (e) { }
         countsDoc = merged;
         say('counts saved', true);
       });
@@ -322,8 +399,15 @@
     drawSync();
     view.innerHTML = tab === 'counts' ? countsView() : rosterView();
   }
+  // a refresh is data arriving, not the volunteer asking for anything.
+  // Repainting the counts screen under a typing thumb would eat the
+  // keystroke, so the data is kept and the screen is left alone.
+  function refreshed() {
+    if (tab !== 'roster') { drawSync(); return; }
+    render();
+  }
   function rosterView() {
-    var live = mergeRoster(rows, queue.concat(fresh()), day);
+    var live = mergeRoster(rows, fresh(), queue, day);
     var q = qEl.value;
     var list = live.filter(function (r) { return matches(r, q); });
     var out = '<div class="totals">' + esc(plan.walk || 0) + ' walking, ' +
@@ -371,7 +455,7 @@
     return out + '</div>';
   }
   function countsView() {
-    var doc = recall(countsKey(), null) || (countsDoc || {})[day] || counts || {};
+    var doc = shownCounts();
     var out = '<h2>' + esc(labelOf(day)) + ' counts</h2>' +
       '<p class="muted">Planned comes from the registrations. Type what actually happened.</p><div class="counts">';
     actsFor(day).forEach(function (a) {
@@ -396,6 +480,9 @@
     var b = ev.target.closest('button[data-day]');
     if (!b) return;
     day = b.getAttribute('data-day');
+    // the pick carries the date it was made, so it rules today and no
+    // longer than today
+    store('register.day', { day: day, on: localDay(new Date()) });
     asking = null;
     paintStored();
     render();
@@ -440,7 +527,7 @@
         asking = null;
         (row.people || []).forEach(function (p) {
           if (!p.checked) {
-            queue = queueAdd(queue, {
+            enqueue({
               rid: all, i: p.i, day: day, undo: false,
               at: new Date().toISOString(), by: 'admin:' + actor
             });
@@ -458,15 +545,18 @@
   view.addEventListener('input', function (ev) {
     var k = ev.target.getAttribute('data-count');
     if (!k) return;
-    var pending = recall(countsKey(), null) || {};
+    // the draft starts as the day on screen, so the figures the
+    // volunteer did not retype are still there when it goes up
+    var pending = recall(countsKey(), null) || mergeCounts({}, shownCounts());
     var parts = k.split('.');
-    pending[parts[0]] = pending[parts[0]] || {};
+    pending[parts[0]] = Object.assign({}, pending[parts[0]]);
     pending[parts[0]][parts[1]] = parts[1] === 'count' ? Number(ev.target.value) : ev.target.value;
     store(countsKey(), pending);
     drawSync();
   });
   function saveCounts() {
     if (!recall(countsKey(), null)) return say('nothing to save');
+    store(armKey(), true);
     if (!navigator.onLine) return say('saved on the phone, it will go up when there is signal', true);
     drainCounts().then(function () { drawSync(); });
   }
@@ -514,19 +604,17 @@
 
   // ---- boot ----
   queue = recall(QKEY, []) || [];
-  day = recall('register.day', 'fri') || 'fri';
+  day = openDay(null, localDay(new Date()), recall('register.day', null));
   drawActor();
   paintStored();
   render();
   fetch(API + '/status').then(function (r) { return r.json(); }).then(function (d) {
-    var today = new Date().toISOString().slice(0, 10);
-    var want = dayFor(((d || {}).event || {}).days, today);
-    if (!recall('register.day', null)) { day = want; store('register.day', day); }
+    var want = openDay(((d || {}).event || {}).days, localDay(new Date()), recall('register.day', null));
+    if (want !== day) { day = want; }
     paintStored();
     render();
     fetchRoster();
   }).catch(function () { fetchRoster(); });
-  document.getElementById('days').addEventListener('click', function () { store('register.day', day); });
   window.addEventListener('online', function () { stopped = false; drain(); fetchRoster(); });
   window.addEventListener('offline', drawSync);
   document.addEventListener('visibilitychange', function () {
