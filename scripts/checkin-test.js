@@ -53,7 +53,8 @@ ok('the pick the old page stored as a bare string is ignored',
   page.openDay(days, '2026-12-05', 'sun') === 'sat');
 
 // ---- the wristband answer ----
-ok('a green band says wristband', page.bandText({ ok: true, why: '' }) === 'Wristband');
+ok('a green band tells the volunteer what to do',
+  page.bandText({ ok: true, why: '' }) === 'Wristband: give one');
 [['unpaid', 'No wristband: unpaid'],
 ['awaiting assistance decision', 'No wristband: awaiting assistance decision'],
 ['waiver not signed', 'No wristband: waiver not signed'],
@@ -183,13 +184,13 @@ ok('Save with nothing typed queues nothing',
   page.countsToSend(null, true) === null && page.countsToSend({}, true) === null);
 
 // ---- the sync badge ----
-ok('nothing waiting reads synced', page.syncText(true, 0, '') === 'synced');
-ok('taps waiting are counted', page.syncText(true, 3, '') === '3 waiting');
-ok('offline with nothing waiting says so', page.syncText(false, 0, '') === 'offline');
+ok('nothing waiting reads synced', page.syncText(true, 0, '') === 'Synced');
+ok('taps waiting are counted', page.syncText(true, 3, '') === '3 to send');
+ok('offline with nothing waiting says so', page.syncText(false, 0, '') === 'Offline');
 ok('a failed drain shows why', page.syncText(true, 0, 'http 500') === 'http 500');
 ok('a failed drain with taps waiting shows both',
-  page.syncText(true, 2, 'http 500') === '2 waiting: http 500');
-ok('offline never shows a drain error', page.syncText(false, 2, 'http 500') === '2 waiting');
+  page.syncText(true, 2, 'http 500') === '2 to send: http 500');
+ok('offline never shows a drain error', page.syncText(false, 2, 'http 500') === '2 to send, offline');
 
 // ---- what the service worker will keep ----
 function answer(type, extra) {
@@ -378,5 +379,69 @@ ok('only the people whose box is ticked follow the first',
   party[1].bus === true && party[2].bus === false);
 ok('the first person is never a copy of anybody', party[0] === lead);
 ok('nothing ticked copies nothing', pub.syncSame([lead, second], [])[1] === second);
+
+// ---- one person's weekend, in words ----
+const walker = (over) => Object.assign({ first: 'Ana', last: 'Silva', child: false,
+  days: { fri: false, sat: false, sun: false }, sun_ten: false, social_fri: false,
+  social_sat: false, mass_fri: false, holy_hour: false, bus: false }, over || {});
+ok('the whole weekend reads as one sentence each',
+  pub.weekendWords(walker({ days: { fri: true, sat: true, sun: true }, sun_ten: true,
+    mass_fri: true, holy_hour: true, social_fri: true, social_sat: true, bus: true }), 'full') ===
+  'Walking Friday, Saturday and Sunday (10 miles). Friday Mass and Holy Hour. ' +
+  'Socials at Ajua and Pusser\'s. Needs the bus.');
+ok('one day alone is one clause',
+  pub.weekendWords(walker({ days: { fri: false, sat: true, sun: false } }), 'full') ===
+  'Walking Saturday.');
+ok('the short Sunday says which Sunday it is',
+  pub.weekendWords(walker({ days: { fri: false, sat: false, sun: true } }), 'full') ===
+  'Walking Sunday (the last 2.5 miles).');
+ok('no socials means no social sentence',
+  pub.weekendWords(walker({ days: { fri: true, sat: false, sun: false }, mass_fri: true }), 'full') ===
+  'Walking Friday. Friday Mass.');
+ok('one social is a social, not socials',
+  pub.weekendWords(walker({ days: { fri: true, sat: false, sun: false }, social_fri: true }), 'full') ===
+  'Walking Friday. Social at Ajua.');
+ok('the bus is said last',
+  pub.weekendWords(walker({ days: { fri: true, sat: false, sun: false }, bus: true }), 'full') ===
+  'Walking Friday. Needs the bus.');
+ok('a person walking no day says so rather than saying nothing',
+  pub.weekendWords(walker({}), 'full') === 'Not walking.');
+ok('the Bambino weekend is the last 2.5 miles',
+  pub.weekendWords(walker({ days: { fri: false, sat: false, sun: true }, social_sat: true }), 'bambino') ===
+  'Walking the last 2.5 miles on Sunday. Social at Pusser\'s.');
+ok('nothing at all still reads', pub.weekendWords(null, 'full') === 'Not walking.');
+ok('one name is no list, two are joined by and',
+  pub.joinWords(['Ana']) === 'Ana' && pub.joinWords(['Ana', 'Bo']) === 'Ana and Bo' &&
+  pub.joinWords(['Ana', 'Bo', 'Cy']) === 'Ana, Bo and Cy');
+
+// ---- the one markup a copy string carries ----
+ok('a link in a string becomes an anchor that opens a new tab',
+  pub.links(pub.esc('social at [Ajua](https://ajuajax.com/), 3pm')) ===
+  'social at <a href="https://ajuajax.com/" target="_blank" rel="noopener noreferrer">Ajua</a>, 3pm');
+ok('an http link is a link too',
+  pub.links(pub.esc('[here](http://x.test/y)')).indexOf('<a href="http://x.test/y"') === 0);
+ok('a javascript url is left as the brackets it was typed as',
+  pub.links(pub.esc('[click](javascript:alert(1))')) === '[click](javascript:alert(1))');
+ok('brackets with no url stay text',
+  pub.links(pub.esc('[just brackets] and (parens)')) === '[just brackets] and (parens)');
+ok('the text is escaped before it becomes a link',
+  pub.links(pub.esc('[<b>x</b>](https://x.test/)')) ===
+  '<a href="https://x.test/" target="_blank" rel="noopener noreferrer">&lt;b&gt;x&lt;/b&gt;</a>');
+
+// ---- one fee line per person ----
+const feeFolk = [{ first: 'Ana', last: 'Silva', child: false },
+  { first: 'Bo', last: 'Silva', child: true }, { first: '', last: '', child: false }];
+const full = pub.feeLines(feeFolk, 'full', { full: 7500, bambino: 2500 });
+ok('every person has their own line', full.length === 3);
+ok('a line names the person and the price they pay',
+  full[0].name === 'Ana Silva' && full[0].kind === 'full' && full[0].each === 7500);
+ok('a child pays the same and is named as one',
+  full[1].name === 'Bo Silva' && full[1].kind === 'child' && full[1].each === 7500);
+ok('a person with no name yet still has a line, for the page to name',
+  full[2].name === '' && full[2].each === 7500);
+ok('the total is every line added up', pub.feesTotal(full) === 22500);
+const bam = pub.feeLines([feeFolk[0]], 'bambino', { full: 7500, bambino: 2500 });
+ok('the Bambino line is the Bambino fee', bam[0].kind === 'bambino' && bam[0].each === 2500);
+ok('no people is no fee', pub.feesTotal(pub.feeLines([], 'full', { full: 7500 })) === 0);
 
 console.log('ALL OK (' + n + ' checks)');

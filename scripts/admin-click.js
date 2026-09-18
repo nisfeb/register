@@ -174,7 +174,8 @@ async function main() {
   await p.click('.card.mail [data-act="save-mail"]');
   await sleep(600);
   const said = await p.$eval('#say', (n) => n.textContent);
-  check('an email that loses a placeholder is refused in the page', said.indexOf('keep {{') === 0, said);
+  check('an email that loses a placeholder is refused in the page',
+    said.startsWith('Put these back before saving: {{'), said);
   check('and the template it was typed over comes straight back',
     (await p.$eval('[data-copy="' + bodyKey + '"]', (n) => n.value)) === wasBody);
 

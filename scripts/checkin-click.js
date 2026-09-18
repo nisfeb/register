@@ -38,6 +38,18 @@ const badgeIs = async (page, want, ms) => {
   }
 };
 
+// a number box the ship filled is emptied before it is typed into: a
+// triple click does not select the contents of a number input on every
+// chromium build, and the typing would then land beside the old figure
+const clear = async (page, sel) => {
+  await page.click(sel);
+  await page.evaluate((q) => {
+    const el = document.querySelector(q);
+    el.value = '';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, sel);
+};
+
 async function main() {
   if (!RID || !LAST) {
     console.log('usage: node scripts/checkin-click.js <rid> <lastname>');
@@ -83,11 +95,11 @@ async function main() {
   const taps = await p.$$('.party [data-tap]');
   check('every person has a tap button', taps.length === 2, taps.length);
   await taps[0].click();
-  const synced = await badgeIs(p, 'synced', 30000);
+  const synced = await badgeIs(p, 'Synced', 30000);
   const first = await p.$eval('.party .person:nth-of-type(1) .tap', (n) => [n.className, n.textContent]);
   check('the button turned green and says when and who',
     first[0].includes('on') && /Checked in .* by Sarah/.test(first[1]), first.join(' | '));
-  check('the badge says synced once the ship has the tap', synced === 'synced', synced);
+  check('the badge says synced once the ship has the tap', synced === 'Synced', synced);
 
   // the second tap, offline
   await p.setOfflineMode(true);
@@ -95,15 +107,16 @@ async function main() {
   const off = await p.$$('.party [data-tap]');
   check('the second person is still untapped', off.length === 1, off.length);
   await off[0].click();
-  const badge = await badgeIs(p, '1 waiting', 5000);
-  check('offline, the badge counts the tap waiting', badge === '1 waiting', badge);
+  const badge = await badgeIs(p, '1 to send, offline', 5000);
+  check('offline, the badge counts the tap waiting and says there is no signal',
+    badge === '1 to send, offline', badge);
   const second = await p.$eval('.party .person:nth-of-type(2) .tap', (n) => n.className);
   check('the offline tap still paints the person checked in', second.includes('on'), second);
 
   // back online
   await p.setOfflineMode(false);
-  const after = await badgeIs(p, 'synced', 30000);
-  check('back online the queue drained and the badge says synced', after === 'synced', after);
+  const after = await badgeIs(p, 'Synced', 30000);
+  check('back online the queue drained and the badge says synced', after === 'Synced', after);
 
   // the ship agrees
   const res = await fetch(BASE + '/apps/register/api/checkin/roster?day=fri', { headers: { cookie } });
@@ -121,15 +134,15 @@ async function main() {
   check('the counts tab shows the day\'s activities',
     acts.join(',') === 'Walk,Mass,Holy Hour,Social,Bus', acts.join(','));
   const planned = await p.$eval('.counts .act .planned', (n) => n.textContent);
-  check('each activity shows its planned figure', /planned: \d+/.test(planned), planned);
-  await p.click('[data-count="mass.count"]', { clickCount: 3 });
+  check('each activity shows its planned figure', /Planned: \d+/.test(planned), planned);
+  await clear(p, '[data-count="mass.count"]');
   await p.type('[data-count="mass.count"]', '137');
   await sleep(600);
   const typed = await p.evaluate(() => document.querySelector('[data-count="mass.count"]').value);
   check('the keystroke stayed in the box', typed === '137', typed);
   const armed = await p.evaluate(() => localStorage.getItem('register.counts.fri.save'));
   check('nothing is queued to go up until Save is pressed', armed === null, armed);
-  await p.click('[data-count="walk.count"]', { clickCount: 3 });
+  await clear(p, '[data-count="walk.count"]');
   await p.type('[data-count="walk.count"]', '88');
   await sleep(600);
   const draft = await p.evaluate(() => JSON.parse(localStorage.getItem('register.counts.fri') || '{}'));

@@ -97,7 +97,8 @@ async function main() {
   }, sel);
   await s.goto(PAGE + '#form/full', { waitUntil: 'networkidle2' });
   await s.waitForSelector('.card.person', { timeout: 20000 });
-  check('a card with no name yet is headed by the copy', (await head(0)) === 'Person 1', await head(0));
+  check('the first card speaks to the registrant until they are named',
+    (await head(0)) === String(before.copy['form.you']), await head(0));
   await s.click('[data-k="people.0.first"]');
   await s.type('[data-k="people.0.first"]', 'Ana');
   await sleep(300);
@@ -114,20 +115,16 @@ async function main() {
   await s.waitForSelector('[data-k="same.1"]', { timeout: 10000 });
   check('a second person joins the party', (await s.$$('.card.person')).length === 2);
   check('and is headed by the copy until they are named', (await head(1)) === 'Person 2', await head(1));
-  // the page fills {{name}} from the ship's own string, so the check is
+  // the page fills {{first}} from the ship's own string, so the check is
   // against that string, and against the ship holding one to fill
-  check('the ship\'s party switch string carries the name placeholder',
-    String(before.copy['form.together']).includes('{{name}}'), before.copy['form.together']);
-  check('the party switch names the first person by name',
-    (await labelOf('[data-k="together"]')) ===
-      String(before.copy['form.together']).split('{{name}}').join('Ana Silva'),
-    await labelOf('[data-k="together"]'));
-  check('the new person starts out copying the first',
-    (await s.$eval('[data-k="same.1"]', (n) => n.checked)) === true);
-  check('and the box names who they are copying',
-    (await labelOf('[data-k="same.1"]')) ===
-      String(before.copy['form.same_as']).split('{{name}}').join('Ana Silva'),
-    await labelOf('[data-k="same.1"]'));
+  check('the ship\'s weekend radio carries the name placeholder',
+    String(before.copy['form.same_weekend']).includes('{{first}}'), before.copy['form.same_weekend']);
+  check('the new person starts out following the first',
+    (await s.$eval('[data-k="same.1"][value="same"]', (n) => n.checked)) === true);
+  check('and the radio names who they are following',
+    (await labelOf('[data-k="same.1"][value="same"]')) ===
+      String(before.copy['form.same_weekend']).split('{{first}}').join('Ana Silva'),
+    await labelOf('[data-k="same.1"][value="same"]'));
   const own = await s.evaluate(() =>
     document.querySelectorAll('.card.person')[1].querySelectorAll('[data-k^="people.1.days"]').length);
   check('while they copy, they show no choices of their own', own === 0, own);
@@ -139,11 +136,11 @@ async function main() {
   // person one changes their Friday; person two is copying, so it follows
   await s.click('[data-k="people.0.days.fri"]');
   await sleep(300);
-  await s.click('[data-k="same.1"]');
+  await s.click('[data-k="same.1"][value="own"]');
   await s.waitForSelector('[data-k="people.1.days.fri"]', { timeout: 10000 });
-  check('unticked, the second person shows their choices again',
+  check('on a different weekend, the second person shows their choices again',
     (await s.$$('[data-k^="people.1.days"]')).length > 0);
-  check('and they hold what was copied while the box was ticked',
+  check('and they hold what was copied while they were following',
     (await s.$eval('[data-k="people.1.days.fri"]', (n) => n.checked)) === true);
   await s.click('[data-k="people.0.days.sat"]');
   await sleep(300);
@@ -231,9 +228,9 @@ async function main() {
   check('the Form fixture shows a party of two',
     (await p.$$('#view .card.person')).length === 2, (await p.$$('#view .card.person')).length);
   const partyKeys = await p.$$eval('#view .copy', (ns) => ns.map((n) => n.getAttribute('data-copy')));
-  check('the party switch and the "Same as" box are both editable there',
-    partyKeys.includes('form.together') && partyKeys.includes('form.same_as'),
-    partyKeys.filter((k) => /together|same_as|person/.test(k)).join(','));
+  check('both halves of the weekend radio are editable there',
+    partyKeys.includes('form.same_weekend') && partyKeys.includes('form.own_weekend'),
+    partyKeys.filter((k) => /weekend|person/.test(k)).join(','));
 
   // ---- the pilgrim flow is frozen: nothing moves and nothing is sent ----
   await p.evaluate(() => {
