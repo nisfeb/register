@@ -176,6 +176,7 @@
   ?:  =('checkin' op)  (do-checkin jon)
   ?:  =('set-settings' op)  (do-set-doc %'settings.json' 'set-settings' jon)
   ?:  =('set-copy' op)  (do-set-doc %'copy.json' 'set-copy' jon)
+  ?:  =('set-copy-key' op)  (do-set-copy-key jon)
   ?:  =('set-counts' op)  (do-set-doc %'counts.json' 'set-counts' jon)
   (refuse op 'unknown op')
 ::  +refuse: a refusal that leaves the writer standing
@@ -441,6 +442,29 @@
   ;<  ~  bind:m  (over:io (rf 0 / name) [[/ %json] doc])
   ;<  ~  bind:m  (note-rid op & '' (by-of jon) '')
   (pure:m &)
+::  +do-set-copy-key: one copy string, named by its key. The route read
+::  the document and refused an unknown key; the writer reads it again,
+::  because the document may have moved under the answer. The ring
+::  entry carries the key as its why, so the log names what changed.
+::
+++  do-set-copy-key
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  key=@t  (gs:reg jon 'key')
+  =/  val=@t  (gs:reg jon 'value')
+  ?:  =('' key)  (refuse 'set-copy-key' 'key: required')
+  ?:  (over-cap:reg val max-copy:reg)  (refuse 'set-copy-key' 'value: too long')
+  ;<  cur=json  bind:m  (read-json (rf 0 / %'copy.json'))
+  ?.  ?=([%o *] cur)  (refuse 'set-copy-key' 'copy: an object is required')
+  ?.  (~(has by p.cur) key)  (refuse 'set-copy-key' 'key: not in copy')
+  ?:  =(`json`s+val (fall (~(get by p.cur) key) ~))
+    ;<  ~  bind:m  (note-rid 'set-copy-key' & key (by-of jon) '')
+    (pure:m |)
+  =/  doc=json  [%o (~(put by p.cur) key s+val)]
+  ;<  ~  bind:m  (over:io (rf 0 / %'copy.json') [[/ %json] doc])
+  ;<  ~  bind:m  (note-rid 'set-copy-key' & key (by-of jon) '')
+  (pure:m &)
 ::  ==  reads and writes on the tree
 ::
 ++  read-json
@@ -635,7 +659,7 @@
   ?:  &(=('GET' meth) ?=(~ suffix))                              (serve-file eyre-id %'public.html')
   ?:  &(=('GET' meth) ?=([%'public.css' ~] suffix))               (serve-file eyre-id %'public.css')
   ?:  &(=('GET' meth) ?=([%'public.js' ~] suffix))                (serve-file eyre-id %'public.js')
-  ?:  &(=('GET' meth) ?=([%api %status ~] suffix))               (serve-status eyre-id)
+  ?:  &(=('GET' meth) ?=([%api %status ~] suffix))               (serve-status eyre-id owner)
   ?:  &(=('POST' meth) ?=([%api %draft ~] suffix))               (serve-draft eyre-id jon)
   ?:  &(=('POST' meth) ?=([%api %submit ~] suffix))              (serve-submit eyre-id jon)
   ?:  &(=('GET' meth) ?=([%api %reg @ ~] suffix))                (serve-reg eyre-id s2 tok)
@@ -685,6 +709,7 @@
   ?:  &(=('PUT' meth) ?=([%api %admin %settings ~] suffix))      (own (act (serve-set-settings eyre-id jon admin-by)))
   ?:  &(=('GET' meth) ?=([%api %admin %copy ~] suffix))          (own (serve-doc eyre-id %'copy.json'))
   ?:  &(=('PUT' meth) ?=([%api %admin %copy ~] suffix))          (own (act (serve-set-doc eyre-id 'set-copy' jon admin-by)))
+  ?:  &(=('POST' meth) ?=([%api %admin %copy %set ~] suffix))     (own (act (serve-set-copy-key eyre-id jon admin-by)))
   ?:  &(=('GET' meth) ?=([%api %admin %counts ~] suffix))        (own (serve-doc eyre-id %'counts.json'))
   ?:  &(=('PUT' meth) ?=([%api %admin %counts ~] suffix))        (own (act (serve-set-doc eyre-id 'set-counts' jon admin-by)))
   ?:  &(=('POST' meth) ?=([%api %admin %add ~] suffix))          (own (act (serve-add eyre-id jon admin-by)))
@@ -703,10 +728,11 @@
   ?~  cur  (pure:m ~)
   ?.  &(!=('' tok) =(tok token.u.cur))  (pure:m ~)
   (pure:m cur)
-::  +serve-status: the meter, the caps, the window and the copy
+::  +serve-status: the meter, the caps, the window and the copy. It
+::  says `owner` so the page knows whether to offer edit mode.
 ::
 ++  serve-status
-  |=  eyre-id=@ta
+  |=  [eyre-id=@ta owner=?]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
@@ -714,7 +740,7 @@
   ;<  cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
   =/  s=settings:reg  (de-settings:reg sj)
-  (send-json eyre-id 200 (status-json:reg s sj cj (tally:reg s regs now) now))
+  (send-json eyre-id 200 (status-json:reg s sj cj (tally:reg s regs now) now owner))
 ::  +serve-draft: a draft the moment there is an email or a phone. The
 ::  rid and token come back so the page can resume and submit.
 ::
@@ -1116,6 +1142,27 @@
   ;<  err=(unit tang)  bind:m  (poke-writer pk)
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-ok eyre-id)
+::  +serve-set-copy-key: one copy string, by its key. The page edits a
+::  string in place and sends only that one, so an organizer editing
+::  the landing never writes over an email somebody else just changed.
+::
+++  serve-set-copy-key
+  |=  [eyre-id=@ta jon=json by=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  key=@t  (gs:reg jon 'key')
+  =/  val=@t  (gs:reg jon 'value')
+  ?:  =('' key)  (send-err eyre-id 400 'key: required')
+  ?:  (over-cap:reg val max-copy:reg)  (send-err eyre-id 400 'value: too long')
+  ;<  cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
+  ?.  (has-key:reg cj key)  (send-err eyre-id 400 'key: not in copy')
+  =/  pk=json
+    %-  pairs:enjs:format
+    :~  ['op' s+'set-copy-key']  ['key' s+key]  ['value' s+val]  ['by' s+by]
+    ==
+  ;<  err=(unit tang)  bind:m  (poke-writer pk)
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  (send-json eyre-id 200 (pairs:enjs:format ~[['key' s+key] ['value' s+val]]))
 ::  ==  the organizer's writer ops
 ::
 ::  +do-pay: an organizer records a check, cash or another payment. The
