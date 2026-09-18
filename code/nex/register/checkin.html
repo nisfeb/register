@@ -19,7 +19,7 @@
   <div class="top">
     <span class="brand">Check-in</span>
     <a class="back" href="/apps/register/admin">Backoffice</a>
-    <span id="sync" class="sync">synced</span>
+    <span id="sync" class="sync">Synced</span>
   </div>
   <div class="days" id="days">
     <button type="button" data-day="fri">Fri</button>
@@ -29,11 +29,11 @@
   <div class="tabs" id="tabs">
     <button type="button" data-tab="roster">Roster</button>
     <button type="button" data-tab="counts">Counts</button>
-    <button type="button" id="actor" class="actor">set your name</button>
+    <button type="button" id="actor" class="actor">Set your name</button>
   </div>
 </header>
 <div id="prompt" class="prompt" hidden>
-  <label for="actor-name">Your name, so every check-in records who made it</label>
+  <label for="actor-name">Who is checking people in? Your name goes in the history.</label>
   <input type="text" id="actor-name" autocomplete="name" maxlength="64">
   <button type="button" id="actor-save" class="btn">Save</button>
   <button type="button" id="actor-cancel" class="btn quiet">Cancel</button>
@@ -43,7 +43,7 @@
 </div>
 <div id="say" class="say" hidden></div>
 <div id="search" class="search">
-  <input type="search" id="q" placeholder="last name, first name, email or code" autocomplete="off">
+  <input type="search" id="q" placeholder="Last name, first name or code" autocomplete="off">
 </div>
 <main id="view"><div class="loading"><span class="spin"></span>Loading</div></main>
 <script src="/apps/register/checkin.js"></script>

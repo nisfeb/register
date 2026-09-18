@@ -38,8 +38,9 @@
     if (pick.day && pick.on === today) return pick.day;
     return dayFor(days, today);
   }
+  // what a volunteer says out loud while the pilgrim is standing there
   function bandText(band) {
-    if (band && band.ok) return 'Wristband';
+    if (band && band.ok) return 'Wristband: give one';
     return 'No wristband: ' + ((band && band.why) || 'not registered');
   }
   function clock(iso) {
@@ -143,9 +144,9 @@
   // what the badge reads: how many taps are waiting, and why the last
   // drain failed when it failed for a reason other than the login
   function syncText(online, n, why) {
-    if (!online) return n ? n + ' waiting' : 'offline';
-    if (why) return n ? n + ' waiting: ' + why : why;
-    return n ? n + ' waiting' : 'synced';
+    if (!online) return n ? n + ' to send, offline' : 'Offline';
+    if (why) return n ? n + ' to send: ' + why : why;
+    return n ? n + ' to send' : 'Synced';
   }
 
   var pure = {
@@ -270,7 +271,7 @@
   function recallActor() {
     try { return localStorage.getItem('register.actor') || ''; } catch (e) { return ''; }
   }
-  function drawActor() { actorEl.textContent = actor ? 'acting as ' + actor : 'set your name'; }
+  function drawActor() { actorEl.textContent = actor ? 'Checking in as ' + actor : 'Set your name'; }
   function askActor() {
     promptEl.hidden = false;
     var f = document.getElementById('actor-name');
@@ -423,7 +424,7 @@
         try { localStorage.removeItem(countsKey()); } catch (e) { }
         try { localStorage.removeItem(armKey()); } catch (e) { }
         countsDoc = merged;
-        say('counts saved', true);
+        say('Counts saved.', true);
       });
     }).catch(function (e) {
       if (e.status === 403) locked();
@@ -451,15 +452,18 @@
   }
   function rosterView() {
     if (firstLoad && !rows.length) return loadingView();
-    if (!rows.length && !navigator.onLine) return '<p class="muted">Offline, no roster yet</p>';
+    if (!rows.length && !navigator.onLine) return '<p class="muted">No roster on this phone yet, and no signal to fetch one.</p>';
     var live = mergeRoster(rows, fresh(), queue, day);
     var q = qEl.value;
     var list = live.filter(function (r) { return matches(r, q); });
-    var out = '<div class="totals">' + esc(plan.walk || 0) + ' walking, ' +
+    var out = '<div class="totals">' + esc(plan.walk || 0) + ' walking today, ' +
       esc(plan.checked || 0) + ' checked in';
     if (day === 'fri') out += ', ' + esc(plan.mass || 0) + ' at Mass';
     out += '</div>';
-    if (!list.length) return out + '<p class="muted">Nothing matches that search.</p>';
+    if (!list.length) {
+      return out + '<p class="muted">' +
+        (q ? 'Nobody matches that search.' : 'No registrations for this day yet.') + '</p>';
+    }
     list.forEach(function (r) { out += partyCard(r); });
     return out;
   }
@@ -490,7 +494,7 @@
           esc(r.rid) + ':' + esc(p.i) + '">' +
           esc(band.ok ? 'Check in' : 'Check in, ' + bandText(band).toLowerCase()) + '</button>';
       }
-      if (p.why) out += '<div class="stuck">' + esc('the ship refused this tap: ' + p.why) + '</div>';
+      if (p.why) out += '<div class="stuck">' + esc('The ship would not take this tap: ' + p.why) + '</div>';
       out += '</div>';
     });
     if ((r.people || []).length > 1) {
@@ -506,7 +510,7 @@
     actsFor(day).forEach(function (a) {
       var got = doc[a[0]] || {};
       out += '<div class="act"><h3>' + esc(a[1]) + '</h3>' +
-        '<p class="planned">planned: ' + esc(plan[a[0]] === undefined ? 0 : plan[a[0]]) + '</p>' +
+        '<p class="planned">Planned: ' + esc(plan[a[0]] === undefined ? 0 : plan[a[0]]) + '</p>' +
         '<label>Actual<input type="number" min="0" data-count="' + esc(a[0]) + '.count" value="' + esc(got.count === undefined ? '' : got.count) + '"></label>' +
         '<label>Time<input type="text" data-count="' + esc(a[0]) + '.time" value="' + esc(got.time || '') + '"></label>' +
         '<label>Note<input type="text" data-count="' + esc(a[0]) + '.note" value="' + esc(got.note || '') + '"></label>' +
@@ -606,9 +610,9 @@
   });
   function saveCounts(free) {
     var done = free || function () { };
-    if (!recall(countsKey(), null)) { done(); return say('nothing to save'); }
+    if (!recall(countsKey(), null)) { done(); return say('Nothing typed yet, so there is nothing to save.'); }
     store(armKey(), true);
-    if (!navigator.onLine) { done(); return say('saved on the phone, it will go up when there is signal', true); }
+    if (!navigator.onLine) { done(); return say('Saved on this phone. It goes up when there is signal.', true); }
     drainCounts().then(function () { done(); drawSync(); }, function () { done(); });
   }
 
