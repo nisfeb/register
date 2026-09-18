@@ -391,6 +391,50 @@
     (expect !>(!=('' (gs:reg c 'form.social_soldout'))))
     (expect !>(!=('' (gs:reg c 'next.lapsed'))))
   ==
+::  +test-copy-manage-mail: the backoffice offers a manage resend, so the
+::  document carries a subject and a body for it. Without them the resend
+::  answers "no copy for email.manage.subject" and the Emails tab is
+::  missing a template the organizers can edit.
+::
+++  test-copy-manage-mail
+  =/  c=json  starter-copy:reg
+  =/  body=@t  (gs:reg c 'email.manage.body')
+  ;:  weld
+    (expect !>(!=('' (gs:reg c 'email.manage.subject'))))
+    (expect !>(!=('' body)))
+    (expect !>(!=(body (fill:reg body ~[['first' 'Ana']]))))
+    (expect !>(!=(body (fill:reg body ~[['link' 'http://x']]))))
+  ==
+::  +test-with-starter: a ship that has run an older release keeps its own
+::  copy document for ever, so the strings a release adds are filled in on
+::  the way out. What somebody edited is never touched.
+::
+++  test-with-starter
+  =/  old=json  (jo '{"landing.title": "Ours", "form.person": "Walker {{n}}"}')
+  =/  got=json  (with-starter:reg old)
+  ;:  weld
+    (expect !>(=('Ours' (gs:reg got 'landing.title'))))
+    (expect !>(=('Walker {{n}}' (gs:reg got 'form.person'))))
+    (expect !>(!=('' (gs:reg got 'form.same_as'))))
+    (expect !>(!=('' (gs:reg got 'email.manage.body'))))
+    (expect !>(=(starter-copy:reg (with-starter:reg [%o ~]))))
+    (expect !>(=(starter-copy:reg (with-starter:reg starter-copy:reg))))
+  ==
+::  +test-copy-person-name: the form names a person by the name typed for
+::  them, so the party switch and the per-person copy box both carry a
+::  {{name}} placeholder for the page to fill.
+::
+++  test-copy-person-name
+  =/  c=json  starter-copy:reg
+  =/  tog=@t  (gs:reg c 'form.together')
+  =/  same=@t  (gs:reg c 'form.same_as')
+  ;:  weld
+    (expect !>(!=('' tog)))
+    (expect !>(!=('' same)))
+    (expect !>(!=(tog (fill:reg tog ~[['name' 'Ana Silva']]))))
+    (expect !>(!=(same (fill:reg same ~[['name' 'Ana Silva']]))))
+    (expect !>(!=('' (gs:reg c 'form.person'))))
+  ==
 ::  ==  the shape ladder
 ::
 ++  test-read-reg-1

@@ -1423,7 +1423,8 @@
       ['form.why' s+'Why are you walking this pilgrimage?']
       ['form.assistance' s+'I would like to be considered for financial assistance.']
       ['form.assistance.help' s+'Not all requests can be accepted. You are not registered until payment is made or assistance is approved.']
-      ['form.together' s+'Everyone in my party is doing the same things']
+      ['form.together' s+'Everyone in my party is doing the same things as {{name}}']
+      ['form.same_as' s+'Same as {{name}}']
       ['form.people.title' s+'Who is coming']
       ['form.person' s+'Person {{n}}']
       ['form.first' s+'First name']
@@ -1478,6 +1479,8 @@
       ['stub.banner' s+'Rehearsal mode: signing and payment complete themselves and no email is sent.']
       ['email.confirmation.subject' s+'You are registered for the Baby Steps Camino']
       ['email.confirmation.body' s+'{{first}}, you are registered. Change or cancel your registration any time before the event at {{link}}']
+      ['email.manage.subject' s+'Your Baby Steps Camino registration link']
+      ['email.manage.body' s+'{{first}}, here is the link to view, change or cancel your registration: {{link}}']
       ['email.waitlist.subject' s+'You are on the Baby Steps Camino wait list']
       ['email.waitlist.body' s+'{{first}}, the track you chose is full. You are number {{position}} on the wait list and we will email you if a spot opens.']
       ['email.promoted.subject' s+'A spot opened for you on the Baby Steps Camino']
@@ -1491,4 +1494,20 @@
       ['email.cancelled.subject' s+'Your Baby Steps Camino registration was cancelled']
       ['email.cancelled.body' s+'{{first}}, your registration was cancelled. If that was a mistake, register again at {{site}}']
   ==
+::  +with-starter: a stored copy document with the strings a release
+::  added filled in from the starter.
+::
+::  The document is laid down once, on the first load, and never laid
+::  again, so a ship that has run an older release keeps its own copy for
+::  ever. A string a release adds would be missing there, and the page
+::  draws a missing string as its own key. A string somebody edited is
+::  never touched: the stored value always wins.
+::
+++  with-starter
+  |=  cur=json
+  ^-  json
+  =/  base=json  starter-copy
+  ?.  ?=([%o *] base)  cur
+  ?.  ?=([%o *] cur)  base
+  [%o (~(uni by p.base) p.cur)]
 --
