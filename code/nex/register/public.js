@@ -39,7 +39,35 @@
     return k === 'manage.closed' || k === 'manage.pay_more' || k === 'manage.cancel.confirm';
   }
 
-  var pure = { esc: esc, varsOf: varsOf, missingVars: missingVars, multiline: multiline };
+  // the name a person is called by everywhere on the form, as soon as
+  // either half of it is typed. Nothing typed yet gives '', and the
+  // caller falls back to the copy's "Person {{n}}".
+  function typedName(p) {
+    var f = String((p && p.first) || '').trim();
+    var l = String((p && p.last) || '').trim();
+    return (f + ' ' + l).trim();
+  }
+  // what one person copies from another when their "Same as" box is
+  // ticked: the choices, and nothing that is theirs alone
+  var CHOICES = ['days', 'sun_ten', 'social_fri', 'social_sat', 'mass_fri', 'holy_hour', 'bus'];
+  function copyChoices(from, to) {
+    var out = JSON.parse(JSON.stringify(to || {}));
+    CHOICES.forEach(function (k) {
+      var v = (from || {})[k];
+      out[k] = v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v;
+    });
+    return out;
+  }
+  // the first person's choices, flowed to everyone whose box is ticked.
+  // The first person is never a copy of anybody.
+  function syncSame(people, same) {
+    return (people || []).map(function (p, i) {
+      return i > 0 && (same || [])[i] ? copyChoices((people || [])[0], p) : p;
+    });
+  }
+
+  var pure = { esc: esc, varsOf: varsOf, missingVars: missingVars, multiline: multiline,
+    typedName: typedName, copyChoices: copyChoices, syncSame: syncSame, CHOICES: CHOICES };
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; }
   if (typeof document === 'undefined') { return; }
 
@@ -62,6 +90,11 @@
   var editing = false;        // edit mode, the owner's alone
   var step = '';              // the step being previewed, or ''
   var busy = 0;               // how many fetches are in flight
+  // which people after the first are copying the first one's choices.
+  // This lives in the page alone: what goes to the ship is the copied
+  // values themselves, so the ship never learns who copied whom.
+  var sameAs = [];
+  var manageWas = null;       // the status the manage view loaded
 
   // the twelve pilgrim views, each reachable from edit mode with a
   // fixture, and the strings that belong to no view of their own
@@ -83,6 +116,7 @@
   // every string that lands in innerHTML goes through here, so no call
   // site knows about edit mode. In edit mode the raw template is shown,
   // placeholders and all, in a span the organizer types into.
+  // A string inside an attribute value is not editable in place.
   function tx(key, vars) {
     if (!editing) return esc(t(key, vars));
     return '<span class="copy" data-copy="' + esc(key) + '" contenteditable="plaintext-only" spellcheck="true">' +
@@ -197,12 +231,30 @@
     if (editing) return '<div class="field">' + tx(key) + box + '</div>';
     return '<label>' + esc(t(key)) + box + '</label>';
   }
-  function check(k, key, on, off, noteKey) {
+  // `vars` fills the string's placeholders; `mark` is put on the span
+  // that holds it, so a live rename can rewrite that span alone
+  function check(k, key, on, off, noteKey, vars, mark, extraCls) {
     var body = '<input type="checkbox" data-k="' + k + '"' + (on ? ' checked' : '') + (off ? ' disabled' : '') + '>' +
-      '<span>' + tx(key) + (noteKey ? ' <span class="note">' + tx(noteKey) + '</span>' : '') + '</span>';
-    var cls = 'check' + (off ? ' off' : '');
+      '<span' + (mark || '') + '>' + tx(key, vars) + (noteKey ? ' <span class="note">' + tx(noteKey) + '</span>' : '') + '</span>';
+    var cls = 'check' + (off ? ' off' : '') + (extraCls || '');
     if (editing) return '<div class="' + cls + '">' + body + '</div>';
     return '<label class="' + cls + '">' + body + '</label>';
+  }
+  // the name a person is called by on screen: what has been typed for
+  // them, else the copy's "Person {{n}}"
+  function who(p, i) {
+    return typedName(p) || t('form.person', { n: i + 1 });
+  }
+  // the card's heading. A typed name is the pilgrim's own text, so it is
+  // escaped and never editable; the fallback is copy, so it is.
+  function personHead(p, i) {
+    var name = typedName(p);
+    return name ? esc(name) : tx('form.person', { n: i + 1 });
+  }
+  // the box that makes one person's choices follow the first person's
+  function sameBox(i, m) {
+    return check('same.' + i, 'form.same_as', !!sameAs[i], false, '',
+      { name: who(m.people[0], 0) }, ' class="who" data-who="same" data-i="' + i + '"', ' same');
   }
   function choices(p, i, m) {
     var k = 'people.' + i + '.';
@@ -220,11 +272,17 @@
   }
   function person(p, i, m) {
     var k = 'people.' + i + '.';
-    var out = '<div class="card person"><h2>' + tx('form.person', { n: i + 1 }) + '</h2>';
-    if (m.people.length > 1) out += '<button type="button" class="btn quiet small remove" data-act="remove" data-i="' + i + '">' + tx('form.remove_person') + '</button>';
+    var out = '<div class="card person"><h2 class="who" data-who="head" data-i="' + i + '">' + personHead(p, i) + '</h2>';
+    if (m.people.length > 1) {
+      out += '<button type="button" class="btn quiet small remove" data-act="remove" data-i="' + i +
+        '" aria-label="' + esc(t('form.remove_person') + ' ' + who(p, i)) + '">' + tx('form.remove_person') + '</button>';
+    }
     out += '<div class="row">' + input(k + 'first', 'form.first', p.first) + input(k + 'last', 'form.last', p.last) + '</div>';
     out += check(k + 'child', 'form.child', p.child);
-    if (i === 0 || !m.together) out += choices(p, i, m);
+    // the party switch speaks for everybody; below it each person after
+    // the first says for themselves whether they follow the first one
+    if (i > 0 && !m.together) out += sameBox(i, m);
+    if (i === 0 || (!m.together && !sameAs[i])) out += choices(p, i, m);
     out += check(k + 'first_bsc', 'form.first_bsc', p.first_bsc) + check(k + 'knight_dame', 'form.knight_dame', p.knight_dame) + check(k + 'volunteer', 'form.volunteer', p.volunteer);
     return out + '</div>';
   }
@@ -249,7 +307,10 @@
       (status.orgs || []).map(function (o) { return '<option value="' + esc(o) + '">'; }).join('') + '</datalist>';
     out += '</div>';
     out += '<h2>' + tx('form.people.title') + '</h2>';
-    if (m.people.length > 1) out += check('together', 'form.together', m.together);
+    if (m.people.length > 1) {
+      out += check('together', 'form.together', m.together, false, '',
+        { name: who(m.people[0], 0) }, ' class="who" data-who="together" data-i="0"');
+    }
     m.people.forEach(function (p, i) { out += person(p, i, m); });
     if (m.people.length < status.caps.party) out += '<button type="button" class="btn quiet small" data-act="add">' + tx('form.add_person') + '</button>';
     var why = '<textarea data-k="why">' + esc(m.why) + '</textarea>';
@@ -334,7 +395,7 @@
     toggleEl.hidden = !mine;
     toggleEl.className = 'editcopy' + (editing ? ' on' : '');
     toggleEl.textContent = editing ? 'Editing text' : 'Edit text';
-    document.body.className = editing ? 'editing' : '';
+    document.body.classList.toggle('editing', editing);
     stepsEl.hidden = !editing;
     stepsEl.innerHTML = editing ? stepsHtml() : '';
   }
@@ -343,11 +404,18 @@
   function fixtureReg(st) {
     return { status: st, fees: 22500, position: 3, lapsed: true, contact: { email: 'pilgrim@example.com' } };
   }
+  // the full-track fixture is a party of two, so the party switch and
+  // the second person's "Same as" box are both on screen to be edited
   function fixtureModel(track) {
     var m = blankModel(track);
     if (track === 'full') m.people.push(blankPerson());
     m.people[0].days.sun = true;
     return m;
+  }
+  // the second person of a fixture party starts as a copy of the first,
+  // the way a person added to a real party does
+  function fixtureSame(m) {
+    return m.people.map(function (p, i) { return i > 0; });
   }
   function otherHtml() {
     return '<h1>Other strings</h1><p class="muted">A status line, a dialog and what an error says. ' +
@@ -356,7 +424,8 @@
       '</div>';
   }
   function previewHtml(name) {
-    var keep = { status: status, model: model, mode: mode, rid: rid, token: token };
+    // every module variable a preview may touch must be listed here
+    var keep = { status: status, model: model, mode: mode, rid: rid, token: token, sameAs: sameAs };
     var out = '';
     try {
       status = JSON.parse(JSON.stringify(keep.status));
@@ -372,11 +441,13 @@
         status.counts.social_fri = status.caps.social_fri;
         status.counts.social_sat = status.caps.social_sat;
         model = fixtureModel(name === 'form' ? 'full' : 'bambino');
+        sameAs = fixtureSame(model);
         out = form(model);
       } else if (name === 'manage') {
         mode = 'manage';
         status.changes_open = true;
         model = fixtureModel('full');
+        sameAs = fixtureSame(model);
         out = form(model);
       } else if (name === 'other') {
         out = otherHtml();
@@ -386,6 +457,7 @@
       }
     } finally {
       status = keep.status; model = keep.model; mode = keep.mode; rid = keep.rid; token = keep.token;
+      sameAs = keep.sameAs;
     }
     return '<div class="ribbon">Preview: ' + esc(labelOf(name)) +
       '. Nothing here is real and no button works.</div>' + out;
@@ -422,12 +494,29 @@
     else el.parentNode.appendChild(tag);
     if (!bad) setTimeout(function () { if (tag.parentNode) tag.parentNode.removeChild(tag); }, 300);
   }
+  // the view on screen, drawn again from the copy the page now holds. No
+  // read: the document in hand is already the one the ship took.
+  function repaint() {
+    var on = document.activeElement;
+    var held = on && on.classList && on.classList.contains('copy') ? on.getAttribute('data-copy') : '';
+    if (step) render(previewHtml(step));
+    else if (mode === 'landing') render(landing());
+    else if ((mode === 'new' || mode === 'manage') && model) render(form(model));
+    else if (mode === 'next' && lastReg) render(nextStep(lastReg));
+    else return;
+    if (!held) return;
+    var back = document.querySelector('.copy[data-copy="' + held + '"]');
+    if (back) back.focus();
+  }
   function sendCopy(el, key, next, was) {
     // the page shows the new string the moment the request goes up, so
     // a re-render keeps it; a refusal puts the old one back
     status.copy[key] = next;
     post('/admin/copy/set', { key: key, value: next }, true).then(function () {
-      flag(el, '✓', false);
+      // one key can stand in more than one place, so the whole view is
+      // drawn again and the tick goes on the span that is there now
+      repaint();
+      flag(document.querySelector('.copy[data-copy="' + key + '"]') || el, '✓', false);
     }).catch(function (e) {
       status.copy[key] = was;
       el.textContent = was;
@@ -542,12 +631,16 @@
         mode = 'new';
         if (!model || model.track !== parts[1]) {
           model = blankModel(parts[1]);
+          // a party that came from somewhere else is taken as it stands:
+          // nobody is copying anybody until the pilgrim says so
+          sameAs = [];
           var d = recall(parts[1]); rid = d ? d.rid : null; token = d ? d.token : null;
           if (rid) {
             render(loading());
             return api('/reg/' + rid + '?t=' + encodeURIComponent(token)).then(function (r) {
               if (gen !== routeGen) return;
               if (r.status === 'draft') model = fromReg(r); else { rid = null; token = null; }
+              sameAs = [];
               render(form(model));
             }).catch(function () {
               if (gen !== routeGen) return;
@@ -581,13 +674,14 @@
           if (gen !== routeGen) return;
           status.changes_open = r.changes_open;
           if (r.status === 'draft' || r.status === 'cancelled') { location.hash = '#next/' + rid + '/' + token; return; }
-          model = fromReg(r); render(form(model));
+          manageWas = r.status;
+          model = fromReg(r); sameAs = []; render(form(model));
         }).catch(function (e) {
           if (gen !== routeGen) return;
           render('<div id="error"></div>'); showError(e.message);
         });
       }
-      model = null; rid = null; token = null; mode = 'landing';
+      model = null; sameAs = []; rid = null; token = null; mode = 'landing';
       render(landing());
     }).catch(function (e) {
       if (gen !== routeGen) return;
@@ -596,6 +690,24 @@
   }
   view.addEventListener('input', onChange);
   view.addEventListener('change', onChange);
+  // a typed name moves the card heading, the party switch, the "Same as"
+  // boxes and the remove buttons. Only those nodes are rewritten, so the
+  // field being typed into keeps its caret.
+  function rename() {
+    var first = who(model.people[0], 0);
+    Array.prototype.forEach.call(view.querySelectorAll('.who'), function (el) {
+      var kind = el.getAttribute('data-who');
+      var i = Number(el.getAttribute('data-i'));
+      var p = model.people[i];
+      if (kind === 'head') el.innerHTML = personHead(p, i);
+      else if (kind === 'same') el.innerHTML = tx('form.same_as', { name: first });
+      else if (kind === 'together') el.innerHTML = tx('form.together', { name: first });
+    });
+    Array.prototype.forEach.call(view.querySelectorAll('[data-act="remove"]'), function (el) {
+      var i = Number(el.getAttribute('data-i'));
+      el.setAttribute('aria-label', t('form.remove_person') + ' ' + who(model.people[i], i));
+    });
+  }
   function onChange(ev) {
     if (editing) return;
     var el = ev.target, k = el.getAttribute('data-k');
@@ -604,9 +716,27 @@
     if (ev.type === 'change' && !box) return;
     if (ev.type === 'input' && box) return;
     var val = el.type === 'checkbox' ? el.checked : el.value;
+    // the "Same as" box is the page's own, not a field of the model: it
+    // copies the first person's choices in and hides the section
+    var same = /^same\.(\d+)$/.exec(k);
+    if (same) {
+      var j = Number(same[1]);
+      sameAs[j] = !!val;
+      if (sameAs[j]) model.people[j] = copyChoices(model.people[0], model.people[j]);
+      render(form(model));
+      scheduleSave();
+      return;
+    }
     setPath(model, k, val);
-    // structural changes re-render; a keystroke only updates the fees
+    // a change to the first person's choices follows through to everyone
+    // still copying them
+    if (/^people\.0\.(days\.|sun_ten$|social_|mass_fri$|holy_hour$|bus$)/.test(k)) {
+      model.people = syncSame(model.people, sameAs);
+    }
+    // structural changes re-render; a name moves the headings alone; a
+    // keystroke anywhere else only updates the fees
     if (k === 'together' || /\.days\.sun$/.test(k)) { render(form(model)); }
+    else if (/^people\.\d+\.(first|last)$/.test(k)) { rename(); }
     else { var fb = view.querySelector('.fees'); if (fb) fb.outerHTML = feesBox(model); }
     scheduleSave();
   }
@@ -619,8 +749,22 @@
     var el = ev.target.closest('[data-act]');
     if (!el) return;
     var act2 = el.getAttribute('data-act');
-    if (act2 === 'add') { model.people.push(blankPerson()); render(form(model)); scheduleSave(); }
-    else if (act2 === 'remove') { model.people.splice(+el.getAttribute('data-i'), 1); render(form(model)); scheduleSave(); }
+    if (act2 === 'add') {
+      model.people.push(blankPerson());
+      // somebody added to the party is doing what the first person is
+      // doing until they say otherwise
+      sameAs[model.people.length - 1] = true;
+      model.people = syncSame(model.people, sameAs);
+      render(form(model));
+      scheduleSave();
+    }
+    else if (act2 === 'remove') {
+      var gone = +el.getAttribute('data-i');
+      model.people.splice(gone, 1);
+      sameAs.splice(gone, 1);
+      render(form(model));
+      scheduleSave();
+    }
     else if (act2 === 'submit') { clearTimeout(saveTimer); dirty = false; submit(el); }
     else if (act2 === 'save') {
       showError('');
@@ -634,10 +778,14 @@
     else if (act2 === 'cancel') {
       if (!window.confirm(t('manage.cancel.confirm'))) return;
       var freeCancel = spin(el);
+      // the writer applies after the answer leaves, so the next page
+      // must read past the status this one was loaded with, or a fast
+      // read repaints the old status with nothing to correct it
+      leaving = manageWas;
       post('/reg/' + rid + '/cancel?t=' + encodeURIComponent(token), {}).then(function () {
         fresh = { status: 'cancelled' };
         location.hash = '#next/' + rid + '/' + token;
-      }).catch(function (e) { freeCancel(); showError(e.message); });
+      }).catch(function (e) { freeCancel(); leaving = null; showError(e.message); });
     }
     else if (act2 === 'sign' || act2 === 'pay') {
       var freeStep = spin(el);

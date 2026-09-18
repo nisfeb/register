@@ -52,6 +52,9 @@ textarea { min-height: 5.5rem; resize: vertical; }
 .check .note { color: var(--muted); font-size: .85rem; }
 .check.off { color: var(--muted); }
 .help { color: var(--muted); font-size: .85rem; margin: .1rem 0 .6rem; }
+/* the box that makes one person follow the first sits above their
+   choices, set apart so it reads as a heading for what follows */
+.check.same { margin: .9rem 0 .2rem; font-weight: 600; }
 .person { position: relative; }
 .person .remove { position: absolute; top: .8rem; right: .9rem; }
 .fees table { width: 100%; border-collapse: collapse; }
