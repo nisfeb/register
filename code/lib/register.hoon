@@ -873,7 +873,9 @@
   ^-  (list json)
   ?~  people  ~
   [(en-roster-person i.people day i) $(people t.people, i +(i))]
-::  +en-roster-row: one party as the check-in app reads it
+::  +en-roster-row: one party as the check-in app reads it. The email is
+::  here because a volunteer searches by it; the page never draws it,
+::  and the rest of the contact stays off the phone.
 ::
 ++  en-roster-row
   |=  [r=reg day=@tas]
@@ -882,6 +884,7 @@
   =/  why=@t  ?:(?=(%| -.band) p.band '')
   %-  pairs:enjs:format
   :~  ['rid' s+id.r]
+      ['email' s+email.contact.r]
       ['status' s+status.r]
       ['track' s+track.r]
       ['exempt' b+exempt.r]

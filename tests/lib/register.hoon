@@ -703,6 +703,11 @@
   ;:  weld
     (expect-eq !>('abc123') !>((gs:reg fri 'rid')))
     (expect-eq !>('complete') !>((gs:reg fri 'status')))
+    ::  the email rides along for the search, and nothing else from the
+    ::  contact leaves the ship
+    (expect-eq !>('abc123') !>((gs:reg fri 'email')))
+    (expect !>(!(has-key:reg fri 'phone')))
+    (expect !>(!(has-key:reg fri 'street')))
     (expect !>((gb:reg (gj:reg fri 'wristband') 'ok')))
     (expect-eq !>('') !>((gs:reg (gj:reg fri 'wristband') 'why')))
     ::  each person carries their index, so a tap names them
