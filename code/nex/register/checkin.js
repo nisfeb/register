@@ -166,6 +166,7 @@
   var reloginEl = document.getElementById('relogin');
   var qEl = document.getElementById('q');
   var searchEl = document.getElementById('search');
+  var busyEl = document.getElementById('busy');
 
   var day = 'fri';
   var tab = 'roster';
@@ -188,6 +189,11 @@
   // taps twice
   var draining = false;
   var syncFail = '';
+  // how many fetches are in flight, for the bar across the top
+  var busy = 0;
+  // the first roster has not landed and this phone kept nothing: the
+  // screen says so rather than showing an empty day
+  var firstLoad = true;
 
   function fresh() {
     var now = Date.now();
@@ -206,8 +212,30 @@
     sayEl.className = 'say' + (good ? ' ok' : '');
     sayEl.textContent = msg || '';
   }
+  // the bar counts fetches, not one flag: two calls in flight must not
+  // have the first one to answer clear the bar
+  function track(p) {
+    busy += 1;
+    busyEl.hidden = false;
+    function done() { busy -= 1; if (busy < 1) { busy = 0; busyEl.hidden = true; } }
+    return p.then(function (d) { done(); return d; }, function (e) { done(); throw e; });
+  }
+  // a button that started a call: disabled with a spinner until the
+  // ship answers
+  function spin(el) {
+    if (!el || el.disabled) return function () { };
+    el.disabled = true;
+    var tag = document.createElement('span');
+    tag.className = 'spin';
+    el.appendChild(tag);
+    return function () {
+      el.disabled = false;
+      if (tag.parentNode) tag.parentNode.removeChild(tag);
+    };
+  }
+  function loadingView() { return '<div class="loading"><span class="spin"></span>Loading</div>'; }
   function api(url, opts) {
-    return fetch(url, opts || {}).then(function (r) {
+    return track(fetch(url, opts || {}).then(function (r) {
       return r.text().then(function (txt) {
         var d = {};
         try { d = txt ? JSON.parse(txt) : {}; } catch (e) { d = {}; }
@@ -218,7 +246,7 @@
         }
         return d;
       });
-    });
+    }));
   }
   function post(path, body) {
     return api(API + path, {
@@ -297,6 +325,7 @@
   function paintStored() {
     var kept = recall(rosterKey(), null);
     if (!kept) return;
+    firstLoad = false;
     rows = kept.rows || [];
     plan = kept.planned || {};
     counts = kept.counts || {};
@@ -308,10 +337,13 @@
       plan = d.planned || {};
       counts = d.counts || {};
       store(rosterKey(), { rows: rows, planned: plan, counts: counts, at: new Date().toISOString() });
+      firstLoad = false;
       refreshed();
     }).catch(function (e) {
+      firstLoad = false;
       if (e.status === 403) return locked();
       say(e.message);
+      refreshed();
     });
   }
   function locked() {
@@ -407,6 +439,7 @@
     render();
   }
   function rosterView() {
+    if (firstLoad && !rows.length) return loadingView();
     var live = mergeRoster(rows, fresh(), queue, day);
     var q = qEl.value;
     var list = live.filter(function (r) { return matches(r, q); });
@@ -521,9 +554,10 @@
     }
     var all = el.getAttribute('data-all');
     if (all) {
+      var freeAll = spin(el);
       return act(function () {
         var row = rows.filter(function (r) { return r.rid === all; })[0];
-        if (!row) return;
+        if (!row) return freeAll();
         asking = null;
         (row.people || []).forEach(function (p) {
           if (!p.checked) {
@@ -535,11 +569,12 @@
         });
         store(QKEY, queue);
         render();
-        drain();
+        drain().then(freeAll, freeAll);
       });
     }
     if (el.getAttribute('data-act') === 'save-counts') {
-      return act(function () { saveCounts(); });
+      var freeSave = spin(el);
+      return act(function () { saveCounts(freeSave); });
     }
   });
   view.addEventListener('input', function (ev) {
@@ -554,11 +589,12 @@
     store(countsKey(), pending);
     drawSync();
   });
-  function saveCounts() {
-    if (!recall(countsKey(), null)) return say('nothing to save');
+  function saveCounts(free) {
+    var done = free || function () { };
+    if (!recall(countsKey(), null)) { done(); return say('nothing to save'); }
     store(armKey(), true);
-    if (!navigator.onLine) return say('saved on the phone, it will go up when there is signal', true);
-    drainCounts().then(function () { drawSync(); });
+    if (!navigator.onLine) { done(); return say('saved on the phone, it will go up when there is signal', true); }
+    drainCounts().then(function () { done(); drawSync(); }, function () { done(); });
   }
 
   // ---- the beacon, read raw the way the backoffice does ----
@@ -608,7 +644,7 @@
   drawActor();
   paintStored();
   render();
-  fetch(API + '/status').then(function (r) { return r.json(); }).then(function (d) {
+  track(fetch(API + '/status').then(function (r) { return r.json(); })).then(function (d) {
     var want = openDay(((d || {}).event || {}).days, localDay(new Date()), recall('register.day', null));
     if (want !== day) { day = want; }
     paintStored();
