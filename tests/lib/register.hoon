@@ -390,6 +390,34 @@
     (expect !>(!=('' (gs:reg c 'email.waitlist.body'))))
     (expect !>(!=('' (gs:reg c 'form.social_soldout'))))
     (expect !>(!=('' (gs:reg c 'next.lapsed'))))
+    ::  the strings the redesigned form reads
+    (expect !>(!=('' (gs:reg c 'landing.choose'))))
+    (expect !>(!=('' (gs:reg c 'landing.full.fee'))))
+    (expect !>(!=('' (gs:reg c 'form.people.help'))))
+    (expect !>(!=('' (gs:reg c 'form.sun.ten'))))
+    (expect !>(!=('' (gs:reg c 'form.sun.short'))))
+    (expect !>(!=('' (gs:reg c 'form.sun.bambino'))))
+    (expect !>(!=('' (gs:reg c 'form.friday.closed'))))
+    (expect !>(!=('' (gs:reg c 'form.around.title'))))
+    (expect !>(!=('' (gs:reg c 'form.fees.child'))))
+    (expect !>(!=('' (gs:reg c 'form.submit.waitlist'))))
+    (expect !>(!=('' (gs:reg c 'next.draft.body'))))
+    (expect !>(!=('' (gs:reg c 'manage.line'))))
+    ::  the two strings the old flat form read are gone
+    (expect !>(=('' (gs:reg c 'form.together'))))
+    (expect !>(=('' (gs:reg c 'form.sun_ten'))))
+  ==
+::  +test-copy-links: a string may carry one [text](url) link, which the
+::  page renders as an anchor. The default intro and the two socials
+::  carry one, so an organizer has a worked example to copy.
+::
+++  test-copy-links
+  =/  c=json  starter-copy:reg
+  =/  intro=tape  (trip (gs:reg c 'landing.intro'))
+  =/  soc=tape  (trip (gs:reg c 'form.social_fri'))
+  ;:  weld
+    (expect !>(?=(^ (find "](https://" intro))))
+    (expect !>(?=(^ (find "](https://" soc))))
   ==
 ::  +test-copy-manage-mail: the backoffice offers a manage resend, so the
 ::  document carries a subject and a body for it. Without them the resend
@@ -415,25 +443,34 @@
   ;:  weld
     (expect !>(=('Ours' (gs:reg got 'landing.title'))))
     (expect !>(=('Walker {{n}}' (gs:reg got 'form.person'))))
-    (expect !>(!=('' (gs:reg got 'form.same_as'))))
+    (expect !>(!=('' (gs:reg got 'form.same_weekend'))))
     (expect !>(!=('' (gs:reg got 'email.manage.body'))))
     (expect !>(=(starter-copy:reg (with-starter:reg [%o ~]))))
     (expect !>(=(starter-copy:reg (with-starter:reg starter-copy:reg))))
   ==
-::  +test-copy-person-name: the form names a person by the name typed for
-::  them, so the party switch and the per-person copy box both carry a
-::  {{name}} placeholder for the page to fill.
+::  +test-copy-person-name: the form calls a person by the name typed for
+::  them, so every string that names one carries a placeholder for the
+::  page to fill. The weekend radio names the first person; the card
+::  headings, the remove button and the first-time box name their own.
 ::
 ++  test-copy-person-name
   =/  c=json  starter-copy:reg
-  =/  tog=@t  (gs:reg c 'form.together')
-  =/  same=@t  (gs:reg c 'form.same_as')
+  =/  same=@t  (gs:reg c 'form.same_weekend')
+  =/  week=@t  (gs:reg c 'form.weekend')
+  =/  about=@t  (gs:reg c 'form.about')
+  =/  gone=@t  (gs:reg c 'form.remove_person')
+  =/  once=@t  (gs:reg c 'form.first_bsc')
   ;:  weld
-    (expect !>(!=('' tog)))
-    (expect !>(!=('' same)))
-    (expect !>(!=(tog (fill:reg tog ~[['name' 'Ana Silva']]))))
-    (expect !>(!=(same (fill:reg same ~[['name' 'Ana Silva']]))))
+    (expect !>(!=(same (fill:reg same ~[['first' 'Ana Silva']]))))
+    (expect !>(!=(week (fill:reg week ~[['name' 'Ana Silva']]))))
+    (expect !>(!=(about (fill:reg about ~[['name' 'Ana Silva']]))))
+    (expect !>(!=(gone (fill:reg gone ~[['name' 'Ana Silva']]))))
+    (expect !>(!=(once (fill:reg once ~[['name' 'Ana Silva']]))))
     (expect !>(!=('' (gs:reg c 'form.person'))))
+    (expect !>(!=('' (gs:reg c 'form.you'))))
+    (expect !>(!=('' (gs:reg c 'form.weekend.you'))))
+    (expect !>(!=('' (gs:reg c 'form.about.you'))))
+    (expect !>(!=('' (gs:reg c 'form.first_bsc.you'))))
   ==
 ::  ==  the shape ladder
 ::
