@@ -61,11 +61,18 @@ async function main() {
   check('the social row carries the venue as a link that opens a new tab',
     !!ajua && ajua.href === 'https://ajuajax.com/' && ajua.tab === '_blank' &&
     /noopener/.test(ajua.rel || ''), JSON.stringify(ajua));
+  check('the day that was ticked keeps the keyboard after the form redraws',
+    (await p.evaluate(() => (document.activeElement || {}).getAttribute
+      ? document.activeElement.getAttribute('data-k') : null)) === 'people.0.days.fri',
+    await p.evaluate(() => (document.activeElement || {}).getAttribute
+      ? document.activeElement.getAttribute('data-k') : null));
   await p.click('[data-k="people.0.days.sun"]');
   await p.waitForSelector('[data-k="people.0.sun_ten"]', { timeout: 10000 });
   check('checking Sunday asks which Sunday walk it is',
     (await p.$$('[data-k="people.0.sun_ten"]')).length === 2,
     (await p.$$('[data-k="people.0.sun_ten"]')).length);
+  check('and the full Camino starts on the 10 miles, not the short walk',
+    (await p.$eval('[data-k="people.0.sun_ten"][value="1"]', (n) => n.checked)) === true);
 
   // ---- a second person, following the first ----
   await p.click('[data-act="add"]');
@@ -77,6 +84,18 @@ async function main() {
     /Walking Friday and Sunday/.test(await sum()), await sum());
   check('a person following shows no choices of their own',
     (await p.$$('[data-k^="people.1.days"]')).length === 0);
+  // Remove is a quiet text link in the card's corner, not a bordered
+  // button under the name that reads as the thing to press next
+  const gone = await p.$eval('[data-act="remove"][data-i="1"]', (n) => {
+    const s = getComputedStyle(n);
+    const card = n.closest('.card.person').getBoundingClientRect();
+    const box = n.getBoundingClientRect();
+    return { cls: n.className, border: s.borderTopWidth, pos: s.position,
+      right: Math.round(card.right - box.right), top: Math.round(box.top - card.top) };
+  });
+  check('the Remove link is unbordered and sits in the card\'s top corner',
+    !/\bbtn\b/.test(gone.cls) && gone.border === '0px' && gone.pos === 'absolute' &&
+    gone.right < 30 && gone.top < 40, JSON.stringify(gone));
   await p.click('[data-k="people.0.days.sat"]');
   await sleep(300);
   check('the summary follows the first person\'s choices as they change',
@@ -91,6 +110,15 @@ async function main() {
   await p.waitForSelector('[data-k="people.1.days.fri"]', { timeout: 10000 });
   check('a different weekend opens their own groups',
     (await p.$$('[data-k^="people.1.days"]')).length === 3);
+  check('and the radio that was picked keeps the keyboard',
+    (await p.evaluate(() => {
+      const el = document.activeElement || {};
+      return el.getAttribute ? el.getAttribute('data-k') + '=' + el.value : null;
+    })) === 'same.1=own',
+    await p.evaluate(() => {
+      const el = document.activeElement || {};
+      return el.getAttribute ? el.getAttribute('data-k') + '=' + el.value : null;
+    }));
   check('and it starts from what they were copying',
     (await p.$eval('[data-k="people.1.days.fri"]', (n) => n.checked)) === true &&
     (await p.$eval('[data-k="people.1.social_fri"]', (n) => n.checked)) === true);

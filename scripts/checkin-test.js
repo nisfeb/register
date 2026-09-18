@@ -387,14 +387,24 @@ const walker = (over) => Object.assign({ first: 'Ana', last: 'Silva', child: fal
 ok('the whole weekend reads as one sentence each',
   pub.weekendWords(walker({ days: { fri: true, sat: true, sun: true }, sun_ten: true,
     mass_fri: true, holy_hour: true, social_fri: true, social_sat: true, bus: true }), 'full') ===
-  'Walking Friday, Saturday and Sunday (10 miles). Friday Mass and Holy Hour. ' +
+  'Walking Friday, Saturday and Sunday, the 10 miles on Sunday. Friday Mass and Holy Hour. ' +
   'Socials at Ajua and Pusser\'s. Needs the bus.');
 ok('one day alone is one clause',
   pub.weekendWords(walker({ days: { fri: false, sat: true, sun: false } }), 'full') ===
   'Walking Saturday.');
-ok('the short Sunday says which Sunday it is',
+ok('the distance is said of Sunday, not of the whole list of days',
   pub.weekendWords(walker({ days: { fri: false, sat: false, sun: true } }), 'full') ===
-  'Walking Sunday (the last 2.5 miles).');
+  'Walking Sunday, the last 2.5 miles on Sunday.');
+// the venues are named by the copy, so an organizer who moves a social
+// moves the summary with it. Two arguments still read the defaults.
+ok('the venue names come from the words handed in',
+  pub.weekendWords(walker({ days: { fri: true, sat: true, sun: false }, social_fri: true, social_sat: true }),
+    'full', { social_fri: 'The Cantina', social_sat: 'The Inn' }) ===
+  'Walking Friday and Saturday. Socials at The Cantina and The Inn.');
+ok('a half-filled words object keeps the default for the other venue',
+  pub.weekendWords(walker({ days: { fri: true, sat: true, sun: false }, social_fri: true, social_sat: true }),
+    'full', { social_sat: 'The Inn' }) ===
+  'Walking Friday and Saturday. Socials at Ajua and The Inn.');
 ok('no socials means no social sentence',
   pub.weekendWords(walker({ days: { fri: true, sat: false, sun: false }, mass_fri: true }), 'full') ===
   'Walking Friday. Friday Mass.');
@@ -427,6 +437,64 @@ ok('brackets with no url stay text',
 ok('the text is escaped before it becomes a link',
   pub.links(pub.esc('[<b>x</b>](https://x.test/)')) ===
   '<a href="https://x.test/" target="_blank" rel="noopener noreferrer">&lt;b&gt;x&lt;/b&gt;</a>');
+
+// ---- the link rule runs on the template and never on a typed value ----
+ok('a link in the template is still a link once the values are in',
+  pub.fill('social at [Ajua](https://ajuajax.com/) with {{name}}', { name: 'Ana' }) ===
+  'social at <a href="https://ajuajax.com/" target="_blank" rel="noopener noreferrer">Ajua</a> with Ana');
+ok('a link typed into a name is not a link, it is the text it was typed as',
+  pub.fill('Remove {{name}}', { name: '[x](https://e.test/)' }).indexOf('<a') < 0,
+  pub.fill('Remove {{name}}', { name: '[x](https://e.test/)' }));
+ok('and the brackets are still readable afterwards',
+  pub.fill('Remove {{name}}', { name: '[x](https://e.test/)' }) === 'Remove [x](https://e.test/)');
+ok('a value with markup in it is escaped where it lands',
+  pub.fill('{{name}} is here', { name: '<img src=x onerror=alert(1)>' }) ===
+  '&lt;img src=x onerror=alert(1)&gt; is here');
+ok('a template with no values is the escaped template',
+  pub.fill('a & b', null) === 'a &amp; b');
+ok('a placeholder nobody fills is left where it stands',
+  pub.fill('{{percent}}% of the full Camino is taken', {}) ===
+  '{{percent}}% of the full Camino is taken');
+
+// ---- a new person's Sunday, per track ----
+ok('a new full-Camino person starts on the 10 miles',
+  pub.blankPerson('full').sun_ten === true);
+ok('a Bambino person has no such choice and leaves it off',
+  pub.blankPerson('bambino').sun_ten === false);
+ok('the first person of a full-track party starts there too',
+  pub.blankModel('full').people[0].sun_ten === true);
+ok('and the Bambino model starts on Sunday with the choice off',
+  pub.blankModel('bambino').people[0].sun_ten === false &&
+  pub.blankModel('bambino').people[0].days.sun === true);
+
+// ---- a stored registration, as the form holds it ----
+const stored = { track: 'full', contact: { email: 'a@b.test' }, org: '', why: '',
+  assistance: false, together: true,
+  people: [{ first: 'Ana', last: 'Silva', child: false, days: { fri: true, sat: false, sun: true },
+    sun_ten: true, social_fri: true, social_sat: false, mass_fri: false, holy_hour: false,
+    bus: false, first_bsc: false, knight_dame: false, volunteer: false },
+  { first: 'Bo', last: 'Silva', child: true, days: { fri: true, sat: false, sun: true },
+    sun_ten: true, social_fri: true, social_sat: false, mass_fri: false, holy_hour: false,
+    bus: false, first_bsc: false, knight_dame: false, volunteer: false }] };
+ok('a registration that was made together comes back not together',
+  pub.fromReg(stored).together === false);
+ok('and every person keeps their own values', pub.fromReg(stored).people[1].first === 'Bo' &&
+  pub.fromReg(stored).people[1].days.fri === true);
+ok('a party whose choices all match the first is shown as following them',
+  JSON.stringify(pub.sameFrom(stored.people)) === '[false,true]');
+const apart = JSON.parse(JSON.stringify(stored.people));
+apart[1].bus = true;
+ok('and one who differs anywhere is shown on a weekend of their own',
+  JSON.stringify(pub.sameFrom(apart)) === '[false,false]');
+ok('one person alone follows nobody', JSON.stringify(pub.sameFrom([stored.people[0]])) === '[false]');
+
+// ---- what the backoffice says a manual add landed as ----
+ok('a wait-listed add says so', back.addedText('waitlist') === 'Added and wait-listed');
+ok('an add that still wants the waiver says what it wants',
+  back.addedText('waiver') === 'Added, waiting on the waiver');
+ok('a finished add says it is finished', back.addedText('complete') === 'Added and complete');
+ok('a status nobody mapped still reads as a sentence',
+  back.addedText('nonesuch') === 'Added. It is nonesuch now.');
 
 // ---- one fee line per person ----
 const feeFolk = [{ first: 'Ana', last: 'Silva', child: false },

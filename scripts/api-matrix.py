@@ -4,7 +4,8 @@ The HTTP gate for register: the pilgrim's flow and the organizers'
 backoffice in stub mode against a fake ship. HOST like
 http://localhost:8080; JAR a curl cookie jar with the owner cookie.
 Exits 1 on any failure. Safe to rerun: it cancels what an earlier run
-left and restores the settings and the counts it changed."""
+left and restores the settings and the counts it changed.
+Two runs must never overlap: both write the same ship."""
 import base64, csv, json, os, subprocess, sys, tempfile, time, traceback
 
 HOST, JAR = sys.argv[1:3]

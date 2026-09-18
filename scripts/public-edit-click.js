@@ -211,6 +211,8 @@ async function main() {
   // ---- every step, from a fixture ----
   const steps = await p.$$eval('#steps button[data-step]', (ns) => ns.map((n) => n.getAttribute('data-step')).filter(Boolean));
   check('the step row offers the twelve views and the leftover strings', steps.length === 13, steps.join(','));
+  // every key the previews put on screen, gathered as they are walked
+  const seen = new Set();
   for (const name of steps) {
     await p.click('#steps button[data-step="' + name + '"]');
     await sleep(250);
@@ -221,7 +223,16 @@ async function main() {
     }));
     check('the ' + name + ' preview renders with its strings editable',
       shape.ribbon && shape.spans > 0 && shape.len > 40, JSON.stringify(shape));
+    (await p.$$eval('#view .copy', (ns) => ns.map((n) => n.getAttribute('data-copy'))))
+      .forEach((k) => seen.add(k));
   }
+  // a string an organizer cannot reach is a string nobody can fix. The
+  // email templates are edited in the backoffice, not here, so they are
+  // the one group the previews owe nothing to.
+  const reachable = Object.keys(before.copy).filter((k) => !/^email\./.test(k));
+  const missed = reachable.filter((k) => !seen.has(k));
+  check('every string a pilgrim reads is editable in some preview or under Other strings',
+    missed.length === 0, missed.join(' '));
   // ---- the Form fixture is a party of two, so both party strings show ----
   await p.click('#steps button[data-step="form"]');
   await sleep(400);
