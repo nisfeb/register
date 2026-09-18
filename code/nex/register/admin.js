@@ -196,10 +196,23 @@
     return out;
   }
 
+  // what a manual add landed as, in the words an organizer uses. The
+  // bare status name reads as jargon in a sentence, and it is the one
+  // line that tells them whether there is anything left to do.
+  function addedText(status) {
+    var said = { waitlist: 'Added and wait-listed',
+      waiver: 'Added, waiting on the waiver',
+      payment: 'Added, waiting on payment',
+      assistance: 'Added, waiting on the assistance decision',
+      complete: 'Added and complete',
+      draft: 'Added, not finished yet' };
+    return said[String(status)] || ('Added. It is ' + String(status) + ' now.');
+  }
+
   var pure = {
     esc: esc, money: money, varsOf: varsOf, missingVars: missingVars, mailGroups: mailGroups,
     ageText: ageText, patchReg: patchReg, settled: settled, patchRow: patchRow,
-    verdict: verdict, HOLD: HOLD,
+    verdict: verdict, addedText: addedText, HOLD: HOLD,
   };
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; }
   if (typeof document === 'undefined') { return; }
@@ -469,7 +482,7 @@
     // a manual add has no notes route yet, so the field waits for the detail
     if (!m.isAdd) out += '<label>Organizers’ notes<textarea data-k="notes">' + esc(m.notes) + '</textarea></label>';
     out += '</div>';
-    if (m.people.length > 1) out += '<div class="card soft">' + box('together', 'Everyone does the same things', m.together) + '</div>';
+    if (m.people.length > 1) out += '<div class="card soft">' + box('together', 'Copy the first person\'s choices to everyone else', m.together) + '</div>';
     m.people.forEach(function (p, i) { out += personCard(p, i, m); });
     var cap = (roster && roster.caps ? roster.caps.party : 12) || 12;
     if (m.people.length < cap) out += '<p><button type="button" class="btn quiet small" data-act="add-person">Add a person</button></p>';
@@ -615,7 +628,7 @@
     if (r.status !== 'draft' && r.status !== 'cancelled') {
       out += '<button type="button" class="btn small" data-act="waiver-paper">They signed on paper</button>';
     }
-    out += '<button type="button" class="btn quiet small" data-act="recheck-waiver">Ask DocuSign again</button>';
+    out += '<button type="button" class="btn quiet small" data-act="recheck-waiver">Check whether they have signed</button>';
     return out + '</div></div>';
   }
   function actionsCard(r) {
@@ -1352,7 +1365,7 @@
         write('/add', body).then(function (d) {
           freeAdd();
           model = null;
-          say('Added. It is ' + d.status + ' now.', true);
+          say(addedText(d.status), true);
           location.hash = '#reg/' + d.rid;
         }).catch(function (e) { freeAdd(); say(e.message); });
       });
