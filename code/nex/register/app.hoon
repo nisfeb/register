@@ -452,13 +452,21 @@
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
   =/  key=@t  (gs:reg jon 'key')
-  =/  val=@t  (gs:reg jon 'value')
+  =/  vj=json  (gj:reg jon 'value')
   ?:  =('' key)  (refuse 'set-copy-key' 'key: required')
+  ::  a poke with no value, or a value that is a number or a boolean,
+  ::  would store the empty string over a string somebody reads
+  ?.  ?=([%s *] vj)  (refuse 'set-copy-key' 'value: a string is required')
+  =/  val=@t  p.vj
   ?:  (over-cap:reg val max-copy:reg)  (refuse 'set-copy-key' 'value: too long')
-  ;<  cur=json  bind:m  (read-json (rf 0 / %'copy.json'))
+  ;<  raw-cur=json  bind:m  (read-json (rf 0 / %'copy.json'))
+  ?.  ?=([%o *] raw-cur)  (refuse 'set-copy-key' 'copy: an object is required')
+  ::  the strings a release added are filled in here, so the first edit
+  ::  brings this ship's own document up to the release it is running
+  =/  cur=json  (with-starter:reg raw-cur)
   ?.  ?=([%o *] cur)  (refuse 'set-copy-key' 'copy: an object is required')
   ?.  (~(has by p.cur) key)  (refuse 'set-copy-key' 'key: not in copy')
-  ?:  =(`json`s+val (fall (~(get by p.cur) key) ~))
+  ?:  &(=(`json`s+val (fall (~(get by p.cur) key) ~)) =(cur raw-cur))
     ;<  ~  bind:m  (note-rid 'set-copy-key' & key (by-of jon) '')
     (pure:m |)
   =/  doc=json  [%o (~(put by p.cur) key s+val)]
@@ -737,8 +745,9 @@
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
   ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
-  ;<  cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
+  ;<  raw-cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
+  =/  cj=json  (with-starter:reg raw-cj)
   =/  s=settings:reg  (de-settings:reg sj)
   (send-json eyre-id 200 (status-json:reg s sj cj (tally:reg s regs now) now owner))
 ::  +serve-draft: a draft the moment there is an email or a phone. The
@@ -1114,7 +1123,10 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  doc=json  bind:m  (read-json (rf 1 / name))
-  (send-json eyre-id 200 doc)
+  ::  a release may add strings this ship has never stored, so the copy
+  ::  document is answered with those filled in
+  =/  out=json  ?:(=(%'copy.json' name) (with-starter:reg doc) doc)
+  (send-json eyre-id 200 out)
 ++  serve-settings
   |=  eyre-id=@ta
   =/  m  (fiber:fiber:nexus ,~)
@@ -1151,10 +1163,15 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  key=@t  (gs:reg jon 'key')
-  =/  val=@t  (gs:reg jon 'value')
+  =/  vj=json  (gj:reg jon 'value')
   ?:  =('' key)  (send-err eyre-id 400 'key: required')
+  ::  a request with no value, or a value that is a number or a boolean,
+  ::  would store the empty string over a string a pilgrim reads
+  ?.  ?=([%s *] vj)  (send-err eyre-id 400 'value: a string is required')
+  =/  val=@t  p.vj
   ?:  (over-cap:reg val max-copy:reg)  (send-err eyre-id 400 'value: too long')
-  ;<  cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
+  ;<  raw-cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
+  =/  cj=json  (with-starter:reg raw-cj)
   ?.  (has-key:reg cj key)  (send-err eyre-id 400 'key: not in copy')
   =/  pk=json
     %-  pairs:enjs:format
@@ -1728,8 +1745,9 @@
     ==
   ?.  known
     (send-err eyre-id 400 'template: not one of the seven')
-  ;<  cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
+  ;<  raw-cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
+  =/  cj=json  (with-starter:reg raw-cj)
   =/  raw=@t  (gs:reg cj (rap 3 'email.' tpl '.subject' ~))
   =/  who=@t  ?~(people.r '' first.i.people.r)
   =/  posn=@t  (crip (a-co:co (position-of:reg regs r)))
