@@ -24,6 +24,19 @@
         return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + text + '</a>';
       });
   }
+  // a copy template becomes the html a pilgrim reads. The template is
+  // escaped and the link rule runs over it, and only then do the values
+  // go in, each one escaped on its own. A value is never read as
+  // markup, so a name a pilgrim typed can never become an anchor. A
+  // {{placeholder}} carries no character esc touches and none the link
+  // rule matches, so it survives both and is still there to fill.
+  function fill(s, vars) {
+    var out = links(esc(s));
+    Object.keys(vars || {}).forEach(function (k) {
+      out = out.split('{{' + k + '}}').join(esc(vars[k]));
+    });
+    return out;
+  }
   // the {{placeholders}} a template holds, each one once
   function varsOf(s) {
     var seen = {}, out = [];
@@ -65,11 +78,18 @@
     if (xs.length < 2) return xs.join('');
     return xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1];
   }
+  // the short name of each social's venue. The copy holds the long
+  // line a pilgrim ticks, so it holds these too, and the page hands
+  // them to weekendWords. A caller with no copy in hand, which is what
+  // the node tests are, gets these.
+  var VENUES = { social_fri: 'Ajua', social_sat: "Pusser's" };
   // one person's weekend in words. The Same-weekend radio shows the
   // first person's, and the last page shows the whole party's, so a
   // pilgrim never has to hold a list of check boxes in their head.
-  function weekendWords(p, track) {
+  // `words` names the venues; leaving it out uses the defaults above.
+  function weekendWords(p, track, words) {
     var q = p || {};
+    var w = words || {};
     var d = q.days || {};
     var out = [];
     if (track === 'bambino') {
@@ -80,16 +100,18 @@
       if (d.sat) days.push('Saturday');
       if (d.sun) days.push('Sunday');
       if (!days.length) out.push('Not walking.');
+      // which Sunday it is belongs to Sunday, not to the whole list: a
+      // party that walks all three days walks 10 miles on each of them
       else out.push('Walking ' + joinWords(days) +
-        (d.sun ? (q.sun_ten ? ' (10 miles)' : ' (the last 2.5 miles)') : '') + '.');
+        (d.sun ? (q.sun_ten ? ', the 10 miles on Sunday' : ', the last 2.5 miles on Sunday') : '') + '.');
     }
     var fri = [];
     if (q.mass_fri) fri.push('Mass');
     if (q.holy_hour) fri.push('Holy Hour');
     if (fri.length) out.push('Friday ' + joinWords(fri) + '.');
     var soc = [];
-    if (q.social_fri) soc.push('Ajua');
-    if (q.social_sat) soc.push("Pusser's");
+    if (q.social_fri) soc.push(w.social_fri || VENUES.social_fri);
+    if (q.social_sat) soc.push(w.social_sat || VENUES.social_sat);
     if (soc.length) out.push((soc.length > 1 ? 'Socials at ' : 'Social at ') + joinWords(soc) + '.');
     if (q.bus) out.push('Needs the bus.');
     return out.join(' ');
@@ -112,6 +134,50 @@
       return i > 0 && (same || [])[i] ? copyChoices((people || [])[0], p) : p;
     });
   }
+  // who on the manage page is doing what the first person is doing.
+  // Nothing on the ship records that, because what was submitted is
+  // each person's own values, so the page works it out again from the
+  // values themselves: a person whose every choice matches the first
+  // person's is shown as following them.
+  function sameFrom(people) {
+    var xs = people || [];
+    var lead = xs[0] || {};
+    return xs.map(function (p, i) {
+      return i > 0 && CHOICES.every(function (k) {
+        return JSON.stringify((p || {})[k]) === JSON.stringify(lead[k]);
+      });
+    });
+  }
+  // a person with nothing filled in. On the full Camino the Sunday
+  // choice starts on the 10 miles, which is what the full track is;
+  // the Bambino track has no such choice and leaves it off.
+  function blankPerson(track) {
+    return { first: '', last: '', child: false, days: { fri: false, sat: false, sun: false },
+      sun_ten: track !== 'bambino',
+      social_fri: false, social_sat: false, mass_fri: false, holy_hour: false, bus: false,
+      first_bsc: false, knight_dame: false, volunteer: false };
+  }
+  function blankModel(track) {
+    var m = { track: track, contact: { email: '', phone: '', street: '', city: '', state: '', zip: '' },
+      org: '', why: '', assistance: false, together: false, people: [blankPerson(track)] };
+    // the Bambino track is the Sunday walk, so the one row it offers is
+    // ticked from the start: nobody registers for it to stay home
+    if (track === 'bambino') m.people[0].days.sun = true;
+    return m;
+  }
+  // a stored registration, as the form holds it. `together` is always
+  // false here: the ship was sent every person's own values, expanded,
+  // so there is nothing left to expand and the form must not fold the
+  // party back up under the first person.
+  function fromReg(r) {
+    return { track: r.track, contact: r.contact, org: r.org, why: r.why, assistance: r.assistance,
+      together: false,
+      people: r.people.map(function (p) {
+        var q = {};
+        Object.keys(blankPerson(r.track)).forEach(function (k) { q[k] = p[k]; });
+        return q;
+      }) };
+  }
   // one fee line per person, not one per price: a pilgrim checks their
   // own name against the total. `kind` names the word beside the name,
   // which the page reads out of the copy.
@@ -125,9 +191,10 @@
     return (lines || []).reduce(function (n, l) { return n + (Number(l.each) || 0); }, 0);
   }
 
-  var pure = { esc: esc, links: links, varsOf: varsOf, missingVars: missingVars, multiline: multiline,
-    typedName: typedName, joinWords: joinWords, weekendWords: weekendWords,
-    copyChoices: copyChoices, syncSame: syncSame, feeLines: feeLines, feesTotal: feesTotal,
+  var pure = { esc: esc, links: links, fill: fill, varsOf: varsOf, missingVars: missingVars,
+    multiline: multiline, typedName: typedName, joinWords: joinWords, weekendWords: weekendWords,
+    copyChoices: copyChoices, syncSame: syncSame, sameFrom: sameFrom, feeLines: feeLines,
+    feesTotal: feesTotal, blankPerson: blankPerson, blankModel: blankModel, fromReg: fromReg,
     CHOICES: CHOICES };
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; }
   if (typeof document === 'undefined') { return; }
@@ -165,12 +232,17 @@
     ['waitlist', 'Wait list'], ['complete', 'Complete'], ['cancelled', 'Cancelled'],
     ['manage', 'Manage'], ['closed', 'Closed'], ['soldout', 'Sold out'],
     ['other', 'Other strings']];
-  // the strings no fixture puts on screen: a status line, a dialog, what
-  // an error says, and the few that only show when a track is full or a
-  // party is one person
+  // the strings no fixture puts on screen as a span of their own: a
+  // status line, a dialog, what an error says, the few that only show
+  // when a track is full or a party is one person, and the words the
+  // page drops into another string's placeholder, which land there as
+  // plain text and so are editable only here.
   var OTHER = ['form.saving', 'form.error.duplicate', 'form.resend', 'form.resend.done',
     'form.you.lower', 'form.friday.closed', 'form.submit.waitlist', 'form.submit.full',
-    'next.payment.body.one', 'next.draft.title', 'next.draft.body',
+    'form.fees.full', 'form.fees.bambino', 'form.fees.child',
+    'form.social_fri.short', 'form.social_sat.short',
+    'track.full', 'track.bambino',
+    'next.payment.spots', 'next.payment.body.one', 'next.draft.title', 'next.draft.body',
     'manage.closed', 'manage.pay_more', 'manage.cancel.confirm', 'stub.banner'];
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
     'August', 'September', 'October', 'November', 'December'];
@@ -187,7 +259,7 @@
   // placeholders, brackets and all, in a span the organizer types into.
   // A string inside an attribute value is not editable in place.
   function tx(key, vars) {
-    if (!editing) return links(esc(t(key, vars)));
+    if (!editing) return fill(raw(key), vars);
     return '<span class="copy" data-copy="' + esc(key) + '" contenteditable="plaintext-only" spellcheck="true">' +
       esc(raw(key)) + '</span>';
   }
@@ -257,23 +329,6 @@
     }
     return once();
   }
-  function blankPerson() {
-    return { first: '', last: '', child: false, days: { fri: false, sat: false, sun: false }, sun_ten: false,
-      social_fri: false, social_sat: false, mass_fri: false, holy_hour: false, bus: false,
-      first_bsc: false, knight_dame: false, volunteer: false };
-  }
-  function blankModel(track) {
-    var m = { track: track, contact: { email: '', phone: '', street: '', city: '', state: '', zip: '' },
-      org: '', why: '', assistance: false, together: false, people: [blankPerson()] };
-    // the Bambino track is the Sunday walk, so the one row it offers is
-    // ticked from the start: nobody registers for it to stay home
-    if (track === 'bambino') m.people[0].days.sun = true;
-    return m;
-  }
-  function fromReg(r) {
-    return { track: r.track, contact: r.contact, org: r.org, why: r.why, assistance: r.assistance,
-      together: r.together, people: r.people.map(function (p) { var q = {}; Object.keys(blankPerson()).forEach(function (k) { q[k] = p[k]; }); return q; }) };
-  }
   function lines(m) { return feeLines(m.people, m.track, status.fees); }
   function fees(m) { return feesTotal(lines(m)); }
   function soldOut(which) { return status.counts[which] >= status.caps[which]; }
@@ -281,6 +336,11 @@
     return track === 'bambino' ? status.counts.bambino >= status.caps.bambino : status.counts.full >= status.caps.full;
   }
   function trackWords(track) { return t(track === 'bambino' ? 'track.bambino' : 'track.full'); }
+  // the short venue names the weekend summary reads, out of the copy, so
+  // an organizer who moves a social moves the summary with it
+  function venueWords() {
+    return { social_fri: t('form.social_fri.short'), social_sat: t('form.social_sat.short') };
+  }
   function setPath(obj, path, val) {
     var ks = path.split('.'), o = obj;
     for (var i = 0; i < ks.length - 1; i++) o = o[ks[i]];
@@ -369,12 +429,12 @@
   // the words under the "Same weekend" radio: what the first person
   // chose, spelled out, so the choice being offered is on the screen
   function summaryOf(m) {
-    return esc(weekendWords(m.people[0], m.track));
+    return esc(weekendWords(m.people[0], m.track, venueWords()));
   }
   // the whole party's weekend, for the last page
   function partyWords(people, track) {
     return (people || []).map(function (p, i) {
-      return who(p, i) + ': ' + weekendWords(p, track);
+      return who(p, i) + ': ' + weekendWords(p, track, venueWords());
     }).join(' ');
   }
   // the pair of radios that opens a second person's weekend, with the
@@ -433,7 +493,7 @@
     var k = 'people.' + i + '.';
     var out = '<div class="card person"><h2 class="who" data-who="head" data-i="' + i + '">' + personHead(p, i) + '</h2>';
     if (m.people.length > 1) {
-      out += '<button type="button" class="btn quiet small remove who" data-act="remove" data-who="remove" data-i="' + i +
+      out += '<button type="button" class="remove who" data-act="remove" data-who="remove" data-i="' + i +
         '" aria-label="' + esc(t('form.remove_person', { name: who(p, i) })) + '">' +
         tx('form.remove_person', { name: who(p, i) }) + '</button>';
     }
@@ -616,12 +676,15 @@
     m.people[0].days.sun = true;
     m.people[0].mass_fri = true;
     if (track !== 'full') return m;
-    m.people.push(blankPerson());
+    m.people.push(blankPerson(track));
     m.people[0].first = 'Ana';
     m.people[0].last = 'Silva';
     m.people[0].days.fri = true;
     m.people[0].sun_ten = true;
     m.people[1] = copyChoices(m.people[0], m.people[1]);
+    // the second person is a child, so the fee table shows the word a
+    // child's line carries as well as the one an adult's does
+    m.people[1].child = true;
     return m;
   }
   // the second person of a fixture party follows the first, the way a
@@ -891,7 +954,12 @@
           if (r.status === 'draft' || r.status === 'cancelled') { location.hash = '#next/' + rid + '/' + token; return; }
           manageWas = r.status;
           manageMade = r.created;
-          model = fromReg(r); sameAs = []; render(form(model));
+          model = fromReg(r);
+          // a party that registered together comes back with the same
+          // choices on every card, so the radio says so rather than
+          // opening every card's boxes again
+          sameAs = sameFrom(model.people);
+          render(form(model));
         }).catch(function (e) {
           if (gen !== routeGen) return;
           render('<div id="error"></div>'); showError(e.message);
@@ -932,6 +1000,15 @@
     var fb = view.querySelector('.fees');
     if (fb) fb.outerHTML = feesBox(model);
   }
+  // a day tick and the weekend radio both draw the form again, which
+  // replaces the control that was just operated and takes the keyboard
+  // back to the top of the page. Put it on the new control instead. A
+  // pair of radios shares one data-k, so the value tells them apart.
+  function refocus(k, val) {
+    var sel = '[data-k="' + k + '"]' + (val === undefined ? '' : '[value="' + val + '"]');
+    var el = view.querySelector(sel);
+    if (el) el.focus();
+  }
   function onChange(ev) {
     if (editing) return;
     var el = ev.target, k = el.getAttribute('data-k');
@@ -949,6 +1026,7 @@
       sameAs[j] = el.value === 'same';
       if (sameAs[j]) model.people[j] = copyChoices(model.people[0], model.people[j]);
       render(form(model));
+      refocus(k, el.value);
       scheduleSave();
       return;
     }
@@ -960,7 +1038,7 @@
     }
     // a day opens or closes that day's group, so it re-renders; a name
     // or another choice only moves the lines that carry it
-    if (/\.days\.(fri|sat|sun)$/.test(k)) render(form(model));
+    if (/\.days\.(fri|sat|sun)$/.test(k)) { render(form(model)); refocus(k); }
     else retouch();
     scheduleSave();
   }
@@ -974,7 +1052,7 @@
     if (!el) return;
     var act2 = el.getAttribute('data-act');
     if (act2 === 'add') {
-      model.people.push(blankPerson());
+      model.people.push(blankPerson(model.track));
       // somebody added to the party is doing what the first person is
       // doing until they say otherwise
       sameAs[model.people.length - 1] = true;

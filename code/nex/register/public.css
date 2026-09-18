@@ -61,11 +61,15 @@ textarea { min-height: 5.5rem; resize: vertical; }
 /* a person's card, and the two questions it answers about them */
 .person { position: relative; }
 .person > h2 { padding-right: 9rem; }
-.person .remove { position: absolute; top: .8rem; right: .9rem; max-width: 8.5rem; }
-@media (max-width: 480px) {
-  .person > h2 { padding-right: 0; }
-  .person .remove { position: static; display: block; max-width: none; margin: 0 0 .6rem; }
-}
+/* Remove is a quiet text link in the card's top corner, at every width.
+   A bordered button under the name reads as the thing to press next,
+   which on this card it never is. A long name is cut short here; the
+   button's aria-label still carries the whole of it. */
+.person .remove { position: absolute; top: .95rem; right: .9rem; max-width: 8.5rem;
+  font: 400 .85rem var(--body); padding: 0; border: 0; background: none;
+  color: var(--muted); text-decoration: underline; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.person .remove:hover { color: var(--bad); }
 .person .weekend, .person .about { border-top: 1px solid var(--line); margin-top: 1.1rem; padding-top: .3rem; }
 .group { margin: 0 0 .7rem; }
 .group .closed { color: var(--muted); font-size: .85rem; margin: .2rem 0 0; }
@@ -114,7 +118,7 @@ header .tools { display: flex; align-items: center; gap: .9rem; }
 .steps button.on { background: var(--accent); color: var(--accent-ink); }
 body.editing .copy { outline: 1px dashed var(--accent); outline-offset: 2px; border-radius: 2px; background: var(--accent-soft); }
 body.editing .copy:focus { outline: 2px solid var(--accent); background: var(--bg); white-space: pre-wrap; }
-body.editing .btn, body.editing .check, body.editing a.btn { cursor: default; }
+body.editing .btn, body.editing .check, body.editing a.btn, body.editing .remove { cursor: default; }
 .tick { color: var(--good); font-weight: 600; margin-left: .3rem; }
 .copy-bad { color: var(--bad); font-size: .85rem; margin-left: .3rem; }
 .ribbon { background: #fff4d6; color: #5b4300; padding: .45rem .8rem; border-radius: 6px; font-size: .85rem; font-weight: 600; margin-bottom: 1rem; }
