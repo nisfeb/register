@@ -188,6 +188,8 @@
   // can all ask at once, and two batches in flight would send the same
   // taps twice
   var draining = false;
+  // the drain in flight, so a button that started one can wait on it
+  var inFlight = null;
   var syncFail = '';
   // how many fetches are in flight, for the bar across the top
   var busy = 0;
@@ -331,7 +333,13 @@
     counts = kept.counts || {};
   }
   function fetchRoster() {
-    if (!navigator.onLine) return Promise.resolve();
+    // offline on a first open, with nothing kept on the phone: the
+    // screen says so rather than spinning for a roster that cannot come
+    if (!navigator.onLine) {
+      firstLoad = false;
+      refreshed();
+      return Promise.resolve();
+    }
     return api(API + '/checkin/roster?day=' + day).then(function (d) {
       rows = d.rows || [];
       plan = d.planned || {};
@@ -368,10 +376,13 @@
   }
   function drain() {
     if (stopped || !navigator.onLine) { drawSync(); return Promise.resolve(); }
-    if (draining) return Promise.resolve();
+    // a caller that wants to know when the taps are up gets the drain
+    // already running, not an answer that arrives before it has
+    if (draining) return inFlight || Promise.resolve();
     draining = true;
-    var done = function () { draining = false; };
-    return drainBatch().then(done, done);
+    var done = function () { draining = false; inFlight = null; };
+    inFlight = drainBatch().then(done, done);
+    return inFlight;
   }
   function drainBatch() {
     return drainCounts().then(function () {
@@ -440,6 +451,7 @@
   }
   function rosterView() {
     if (firstLoad && !rows.length) return loadingView();
+    if (!rows.length && !navigator.onLine) return '<p class="muted">Offline, no roster yet</p>';
     var live = mergeRoster(rows, fresh(), queue, day);
     var q = qEl.value;
     var list = live.filter(function (r) { return matches(r, q); });
@@ -554,10 +566,11 @@
     }
     var all = el.getAttribute('data-all');
     if (all) {
-      var freeAll = spin(el);
+      // the spinner starts once the name is in hand: a prompt the
+      // volunteer cancels must not leave a button disabled for ever
       return act(function () {
         var row = rows.filter(function (r) { return r.rid === all; })[0];
-        if (!row) return freeAll();
+        if (!row) return;
         asking = null;
         (row.people || []).forEach(function (p) {
           if (!p.checked) {
@@ -569,12 +582,14 @@
         });
         store(QKEY, queue);
         render();
+        // the paint above replaced the button, so the spinner goes on
+        // the one now on screen, and it holds until the taps are up
+        var freeAll = spin(view.querySelector('[data-all="' + all + '"]') || el);
         drain().then(freeAll, freeAll);
       });
     }
     if (el.getAttribute('data-act') === 'save-counts') {
-      var freeSave = spin(el);
-      return act(function () { saveCounts(freeSave); });
+      return act(function () { saveCounts(spin(el)); });
     }
   });
   view.addEventListener('input', function (ev) {

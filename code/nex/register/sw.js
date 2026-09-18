@@ -4,7 +4,12 @@
 // in localStorage, not a stale HTTP answer.
 (function () {
   'use strict';
-  var V = 'register-checkin-7';
+  // the release this shell belongs to. The version bump step changes
+  // this number and code/version.json together, so every release lands a
+  // new cache instead of serving the last release's files, and
+  // page-smoke.py refuses a worker whose number has fallen behind.
+  var VERSION = 9;
+  var V = 'register-checkin-' + VERSION;
   // each shell path with the type its answer must carry. A ship that
   // wants the login again answers the page with the login form, and a
   // login form cached under checkin.js would brick the app on the next
@@ -31,7 +36,7 @@
   }
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { keepable: keepable, SHELL: SHELL, TYPES: TYPES };
+    module.exports = { keepable: keepable, SHELL: SHELL, TYPES: TYPES, VERSION: VERSION, V: V };
   }
   if (typeof self === 'undefined' || !self.addEventListener) { return; }
 

@@ -23,6 +23,9 @@ header {
 }
 header .top { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
 header .brand { font-family: var(--head); font-weight: 600; font-size: 1.15rem; }
+/* the way back to the backoffice, small enough not to be tapped by
+   mistake by a volunteer reaching for the sync badge */
+header .back { margin-right: auto; font-size: .85rem; font-weight: 600; color: var(--accent); text-decoration: none; }
 .sync { font-size: .85rem; font-weight: 600; padding: .2rem .55rem; border-radius: 999px; background: var(--good-soft); color: var(--good); }
 .sync.waiting { background: var(--warn-soft); color: var(--warn); }
 .sync.offline { background: var(--soft); color: var(--muted); }
