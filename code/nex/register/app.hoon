@@ -1609,9 +1609,14 @@
   ?~  items  (pure:m [done (flop bad)])
   =/  it=json  i.items
   =/  rid=@t  (gs:reg it 'rid')
-  =/  i=@ud  (fall (gn:reg it 'i') 0)
+  ::  an item with no index, or one that is not a number, is a bad item
+  ::  and is named as one. Reading it as person 0 would check in the
+  ::  wrong pilgrim.
+  =/  idx=(unit @ud)  (gn:reg it 'i')
+  =/  i=@ud  (fall idx 0)
   =/  cur=(unit reg:reg)  (find-by-id regs ?:((ok-rid:reg rid) `@ta`rid %$))
   =/  why=@t
+    ?~  idx  'bad index'
     ?~  cur  'no such registration'
     ?.  (lth i (lent people.u.cur))  'no such person'
     ''
@@ -1625,7 +1630,16 @@
         ['day' s+day]  ['undo' b+(gb:reg it 'undo')]  ['by' s+by]
     ==
   ;<  err=(unit tang)  bind:m  (poke-writer pk)
-  (apply-checkins regs day by t.items ?^(err done +(done)) bad)
+  ::  a writer that would not take the poke is neither applied nor
+  ::  silently dropped: the phone hears it and taps again
+  ?^  err
+    =/  row=json
+      %-  pairs:enjs:format
+      :~  ['rid' s+rid]  ['i' (en-num:reg i)]
+          ['why' s+'the ship did not take this tap']
+      ==
+    (apply-checkins regs day by t.items done [row bad])
+  (apply-checkins regs day by t.items +(done) bad)
 ::  +do-checkin: one person checked in, or the check-in taken back. A
 ::  tap that changes nothing writes nothing: no grub, no ring entry, no
 ::  beacon, so two volunteers tapping the same name cost one write.
