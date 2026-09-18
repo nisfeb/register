@@ -552,6 +552,15 @@ def backoffice(live_rid):
     code, d = admin('POST', '/add', {'input': party('full', 'matrix-empty@example.com', [])})
     check('a manual add with no people is 400 naming people',
           code == 400 and 'people' in str((d or {}).get('error', '')), (code, d))
+    code, d = admin('POST', '/add', {
+        'input': party('full', 'matrix-nopaper@example.com', [person('No', 'Paper')]),
+        'paid': {'method': 'cash', 'amount': 15000, 'ref': 'no paper'}})
+    check('a manual add with a payment and no paper waiver is 400, not a dropped payment',
+          code == 400 and 'waiver on paper' in str((d or {}).get('error', '')), (code, d))
+    settle()
+    code, d = admin('GET', '/regs')
+    left = [r['id'] for r in (d or {}).get('regs', []) if r['email'] == 'matrix-nopaper@example.com']
+    check('the refused add wrote nothing at all', code == 200 and not left, left)
 
     # ---- exempt from the caps ----
     code, d = curl('POST', API + '/submit', party('full', 'matrix-exempt@example.com',
@@ -725,7 +734,44 @@ def backoffice(live_rid):
                           '-w', '\n%{http_code}', API + '/admin/import?dry=1'],
                          capture_output=True, text=True).stdout
     check('an import body that does not say it is JSON is 415', out.strip().endswith('415'), out[-60:])
+    code, d = admin('POST', '/import?dry=1', {'bundle': {'regs': [], 'settings': None}})
+    check('a bundle whose settings is a JSON null is 400 naming settings',
+          code == 400 and 'settings' in str((d or {}).get('error', '')), (code, d))
+    code, d = admin('POST', '/import?dry=1', {'bundle': {'regs': [], 'copy': 7}})
+    check('a bundle whose copy is a number is 400 naming copy',
+          code == 400 and 'copy' in str((d or {}).get('error', '')), (code, d))
+    # a bundle with no documents at all must leave the stored ones alone
+    code, before_copy = admin('GET', '/copy')
+    code, before_counts = admin('GET', '/counts')
+    code, d = admin('POST', '/import?dry=1', {'bundle': {'regs': []}})
+    check('a regs-only bundle inspects as empty and answers a confirm token',
+          code == 200 and d.get('regs') == 0 and len(str(d.get('confirm', ''))) == 8, (code, d))
+    code, d = admin('POST', '/import?wipe=0&confirm=' + str(d.get('confirm')), {'bundle': {'regs': []}})
+    check('a regs-only bundle applies', code == 200 and d.get('applied') == 0, (code, d))
+    time.sleep(8)
+    code, after_copy = admin('GET', '/copy')
+    check('a bundle without the documents left copy.json intact',
+          code == 200 and isinstance(after_copy, dict) and len(after_copy) > 3 and after_copy == before_copy,
+          (len(after_copy or {}), len(before_copy or {})))
+    code, after_counts = admin('GET', '/counts')
+    check('the same bundle left counts.json intact',
+          code == 200 and after_counts == before_counts, (after_counts, before_counts))
+    code, after_settings = admin('GET', '/settings')
+    check('the same bundle left settings.json intact',
+          code == 200 and isinstance(after_settings, dict) and len(after_settings) > 3,
+          str(after_settings)[:160])
+
+    # the confirm token the dry run answers is what the apply needs back
+    code, dry1 = admin('POST', '/import?dry=1', {'jam': b64})
+    check('the dry run over the jam answers a confirm token',
+          code == 200 and len(str(dry1.get('confirm', ''))) == 8, (code, dry1))
     code, d = admin('POST', '/import?wipe=0', {'jam': b64})
+    check('an apply with no confirm token is 400 naming confirm',
+          code == 400 and 'confirm' in str((d or {}).get('error', '')), (code, d))
+    code, d = admin('POST', '/import?wipe=0&confirm=deadbeef', {'jam': b64})
+    check('an apply with a stale confirm token is 400',
+          code == 400 and 'confirm' in str((d or {}).get('error', '')), (code, d))
+    code, d = admin('POST', '/import?wipe=0&confirm=' + dry1['confirm'], {'jam': b64})
     check('the apply answers how many it wrote', code == 200 and d.get('applied') == len(roster['regs']), (code, d))
     time.sleep(15)
     code, after = admin('GET', '/regs')
@@ -737,7 +783,10 @@ def backoffice(live_rid):
     settle()
     code, d = admin('GET', '/reg/' + ck_rid)
     check('it reads as cancelled', code == 200 and d['status'] == 'cancelled', (code, d['status']))
-    code, d = admin('POST', '/import?wipe=0', {'jam': b64})
+    code, dry2 = admin('POST', '/import?dry=1', {'jam': b64})
+    check('a fresh dry run answers a token for the tree as it stands now',
+          code == 200 and len(str(dry2.get('confirm', ''))) == 8, (code, dry2))
+    code, d = admin('POST', '/import?wipe=0&confirm=' + dry2['confirm'], {'jam': b64})
     check('the same jam applies again', code == 200, (code, d))
     time.sleep(15)
     code, d = admin('GET', '/reg/' + ck_rid)
