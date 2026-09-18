@@ -415,6 +415,13 @@ def checkin(done_rid, waiting_rid):
           mine and mine['people'][0]['i'] == 0 and mine['people'][0]['last']
           and mine['people'][0]['walks'] is True
           and mine['people'][0]['checked'] is False, mine)
+    # the volunteer searches by email, so the row carries it. Nothing
+    # else from the contact goes to the phone.
+    check('the roster row carries the email the search needs',
+          mine and mine.get('email', '').lower().startswith('matrix-'), mine and mine.get('email'))
+    check('and no phone, street, city, state or zip',
+          mine and not [k for k in ('phone', 'street', 'city', 'state', 'zip') if k in mine],
+          mine and sorted(mine.keys()))
 
     # the planned walk figure is the counted walkers that day
     code, all_regs = admin('GET', '/regs')
@@ -472,6 +479,16 @@ def checkin(done_rid, waiting_rid):
     check('a person the party does not have is rejected by name',
           code == 200 and d.get('applied') == 0 and d['rejected']
           and d['rejected'][0]['i'] == 9 and d['rejected'][0]['why'] == 'no such person', (code, d))
+    # an item with no index is not person 0: reading it that way would
+    # check in the wrong pilgrim
+    code, d = tap('fri', [{'rid': done_rid}])
+    check('an item with no index is rejected by name',
+          code == 200 and d.get('applied') == 0 and d['rejected']
+          and d['rejected'][0]['why'] == 'bad index', (code, d))
+    code, d = tap('fri', [{'rid': done_rid, 'i': 'first'}])
+    check('an index that is not a number is rejected the same way',
+          code == 200 and d.get('applied') == 0 and d['rejected']
+          and d['rejected'][0]['why'] == 'bad index', (code, d))
     code, d = tap('fri', [{'rid': '0123456789', 'i': 0}, {'rid': done_rid, 'i': 0}])
     check('a rid that is gone is rejected and the good one still applies',
           code == 200 and d.get('applied') == 1 and len(d['rejected']) == 1
