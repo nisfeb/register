@@ -14,6 +14,7 @@
   var DAYS = [['fri', 'Friday'], ['sat', 'Saturday'], ['sun', 'Sunday']];
   var ACTS = [['walk', 'Walk'], ['mass', 'Mass'], ['holy_hour', 'Holy Hour'],
     ['social', 'Social'], ['bus', 'Bus']];
+  var SUN_ACTS = [['sun_ten', '10 mile start'], ['sun_short', '2.5 mile start']];
   var SEGMENTS = [['all', 'all'], ['complete', 'complete'], ['pending', 'pending'],
     ['waitlist', 'wait list'], ['assistance', 'financial assistance'], ['unpaid', 'unpaid'],
     ['unsigned', 'unsigned'], ['draft', 'drafts'], ['cancelled', 'cancelled'],
@@ -586,7 +587,11 @@
       '</dl><p class="help">Live registrations only, so a draft or a cancelled one is left out.</p></div>';
     out += '</div>';
 
-    // planned per day per activity, against the actual counts when they exist
+    // planned per day per activity, against the actual counts when they
+    // exist. The checked-in figure counts the rows the volunteers' app
+    // works from, which is every row but a draft, so it agrees with the
+    // planned block that app shows.
+    var counted = all.filter(function (r) { return r.status !== 'draft'; });
     var cd = countsDoc || {};
     var plans = {
       fri: { walk: plan.fri, mass: plan.mass_fri, holy_hour: plan.holy_hour, social: plan.social_fri, bus: plan.bus },
@@ -603,7 +608,7 @@
         var got = getPath(cd, d[0] + '.' + a[0] + '.count');
         out += '<td class="num">' + esc(want) + (got === undefined || got === null || got === '' ? '' : ' / ' + esc(got)) + '</td>';
       });
-      var seen = all.reduce(function (n, r) { return n + (Number((r.checked || {})[d[0]]) || 0); }, 0);
+      var seen = counted.reduce(function (n, r) { return n + (Number((r.checked || {})[d[0]]) || 0); }, 0);
       out += '<td class="num">' + esc(seen) + '</td></tr>';
     });
     out += '</tbody></table><p class="help">Planned from the registrations, actual from the counts screen, ' +
@@ -647,12 +652,17 @@
   }
 
   // ---- counts, copy, settings, backup ----
+  // the day's activities: the two Sunday walk starts are counted beside
+  // the rest, the same grid the volunteers' app shows
+  function actsFor(d) {
+    return d === 'sun' ? ACTS.concat(SUN_ACTS) : ACTS;
+  }
   function countsView() {
     var cd = countsDoc || {};
     var out = '<h1>Counts</h1><p class="muted">What actually happened, per day and per activity.</p>';
     DAYS.forEach(function (d) {
       out += '<h2>' + esc(d[1]) + '</h2><div class="grid3">';
-      ACTS.forEach(function (a) {
+      actsFor(d[0]).forEach(function (a) {
         var base = d[0] + '.' + a[0];
         out += '<div class="card"><h3>' + esc(a[1]) + '</h3>' +
           field(base + '.count', 'Count', getPath(cd, base + '.count'), 'number') +
