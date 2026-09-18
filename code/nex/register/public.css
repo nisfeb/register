@@ -5,6 +5,9 @@
   --head: "Poppins", "Open Sans", system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
+/* a class that sets display beats the browser's own rule for the
+   hidden attribute, and this page hides things by that attribute */
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; font: 16px/1.55 var(--body); color: var(--ink); background: var(--bg); }
 header { display: flex; align-items: center; justify-content: space-between; padding: .9rem 16px; border-bottom: 1px solid var(--line); }
@@ -35,7 +38,7 @@ p { margin: 0 0 .8rem; }
 .btn.danger { border-color: var(--bad); background: transparent; color: var(--bad); }
 .btn[disabled] { opacity: .5; cursor: default; }
 .btn.small { font-size: .85rem; padding: .35rem .7rem; }
-label { display: block; font-weight: 600; font-size: .9rem; margin: .7rem 0 .25rem; }
+label, .field { display: block; font-weight: 600; font-size: .9rem; margin: .7rem 0 .25rem; }
 input[type=text], input[type=email], input[type=tel], textarea, select {
   width: 100%; font: 1rem var(--body); padding: .55rem .65rem; border: 1px solid #c4c4c4; border-radius: 6px; background: var(--bg); color: var(--ink);
 }
@@ -59,3 +62,35 @@ textarea { min-height: 5.5rem; resize: vertical; }
 .status { font-size: .85rem; color: var(--muted); }
 .error { background: #fdecea; color: var(--bad); padding: .6rem .8rem; border-radius: 6px; margin: .8rem 0; }
 .ok { color: var(--good); }
+
+/* the wait a person can see: a bar across the top while any fetch is in
+   flight, and a spinner in the button that started one */
+.busy { position: fixed; top: 0; left: 0; right: 0; height: 3px; background: var(--accent-soft); overflow: hidden; z-index: 20; }
+.busy::after { content: ""; display: block; height: 100%; width: 40%; background: var(--accent); animation: busy-slide 1.1s linear infinite; }
+@keyframes busy-slide { from { transform: translateX(-100%); } to { transform: translateX(350%); } }
+.spin {
+  display: inline-block; width: .8em; height: .8em; margin-left: .45rem; vertical-align: -.05em;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin-turn .6s linear infinite;
+}
+@keyframes spin-turn { to { transform: rotate(360deg); } }
+.loading { text-align: center; color: var(--muted); padding: 2.5rem 0; }
+.loading .spin { display: block; width: 1.5rem; height: 1.5rem; border-width: 3px; margin: 0 auto .6rem; color: var(--accent); }
+/* edit mode: the toggle, the organizer's name, the step row and the
+   spans an organizer types into. A stranger never sees any of it. */
+header .tools { display: flex; align-items: center; gap: .9rem; }
+.editcopy { font: 600 .85rem var(--body); color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: 5px; padding: .2rem .55rem; cursor: pointer; }
+.editcopy.on { background: var(--accent); color: var(--accent-ink); }
+.prompt { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; padding: .6rem 16px; background: var(--accent-soft); }
+.prompt label { margin: 0; font-size: .85rem; }
+.prompt input { width: 14rem; }
+.steps { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; padding: .5rem 16px; background: var(--soft); border-bottom: 1px solid var(--line); }
+.steps .lead { font-size: .8rem; font-weight: 600; color: var(--muted); margin-right: .3rem; }
+.steps button { font: 600 .8rem var(--body); color: var(--accent); background: var(--bg); border: 1px solid var(--accent); border-radius: 5px; padding: .2rem .5rem; cursor: pointer; }
+.steps button.on { background: var(--accent); color: var(--accent-ink); }
+body.editing .copy { outline: 1px dashed var(--accent); outline-offset: 2px; border-radius: 2px; background: var(--accent-soft); }
+body.editing .copy:focus { outline: 2px solid var(--accent); background: var(--bg); white-space: pre-wrap; }
+body.editing .btn, body.editing .check, body.editing a.btn { cursor: default; }
+.tick { color: var(--good); font-weight: 600; margin-left: .3rem; }
+.copy-bad { color: var(--bad); font-size: .85rem; margin-left: .3rem; }
+.ribbon { background: #fff4d6; color: #5b4300; padding: .45rem .8rem; border-radius: 6px; font-size: .85rem; font-weight: 600; margin-bottom: 1rem; }
+.otherlist .key { display: block; font-size: .78rem; color: var(--muted); margin-top: .8rem; }
