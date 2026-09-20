@@ -253,7 +253,10 @@
   ?.  =(%draft status.u.cur)  (refuse 'save-draft' 'not a draft')
   =/  r=reg:reg  (with-input:reg u.cur p.got)
   ;<  ~  bind:m  (write-reg 0 r(updated now) |)
-  (pure:m &)
+  ::  the tree changed, but the beacon is for the organizers' screens:
+  ::  a keystroke on a draft is not worth every open backoffice
+  ::  refetching the whole roster. The minute timer catches it.
+  (pure:m |)
 ::  +do-submit: the form becomes a held registration or a wait list row.
 ::  The caps are checked here, against the tree as it is at this
 ::  moment, so two submits for the last spot cannot both hold it.
