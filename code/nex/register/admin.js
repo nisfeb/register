@@ -15,7 +15,7 @@
   var ACTS = [['walk', 'Walk'], ['mass', 'Mass'], ['holy_hour', 'Holy Hour'],
     ['social', 'Social'], ['bus', 'Bus']];
   var SUN_ACTS = [['sun_ten', '10 mile start'], ['sun_short', '2.5 mile start']];
-  var SEGMENTS = [['all', 'all'], ['complete', 'complete'], ['pending', 'pending'],
+  var SEGMENTS = [['active', 'registrations'], ['all', 'everything'], ['complete', 'complete'], ['pending', 'pending'],
     ['waitlist', 'wait list'], ['assistance', 'financial assistance'], ['unpaid', 'unpaid'],
     ['unsigned', 'unsigned'], ['draft', 'drafts'], ['cancelled', 'cancelled'],
     ['bambino', 'Bambino only'], ['nonwalker', 'non-walkers'],
@@ -209,10 +209,56 @@
     return said[String(status)] || ('Added. It is ' + String(status) + ' now.');
   }
 
+  // the addresses of a set of rows, each once, for a mail client's To
+  // line. Lowercased so a pilgrim who typed their address twice with
+  // different capitals is one person, and blanks (a phone-only draft)
+  // are left out.
+  function emailsOf(rows) {
+    var seen = {}, out = [];
+    (rows || []).forEach(function (r) {
+      var e = String(r.email || '').trim().toLowerCase();
+      if (!e || seen[e]) return;
+      seen[e] = true;
+      out.push(e);
+    });
+    return out;
+  }
+  // every word typed must be somewhere in the row: "Mary Smith" finds
+  // "Smith, Mary", a phone typed with dashes finds one stored bare, and
+  // a trailing space matches nothing extra
+  function matches(r, q) {
+    var words = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return true;
+    var digits = String(r.phone || '').replace(/\D/g, '');
+    var hay = [r.email, r.phone, digits, r.org, r.id].concat(r.names || []).join(' ').toLowerCase();
+    // the same text with its punctuation dropped, so a phone with
+    // dashes and an O'Brien are found either way they are typed
+    hay += ' ' + hay.replace(/[^a-z0-9@. ]/g, '');
+    return words.every(function (w) {
+      var bare = w.replace(/[^a-z0-9@.]/g, '');
+      return hay.indexOf(w) >= 0 || (bare && hay.indexOf(bare) >= 0);
+    });
+  }
+  // the emails of every row that is neither a draft nor cancelled: a
+  // draft with one of these addresses was finished under another row
+  function liveEmails(regs) {
+    var out = {};
+    (regs || []).forEach(function (r) {
+      if (r.status === 'draft' || r.status === 'cancelled') return;
+      var e = String(r.email || '').trim().toLowerCase();
+      if (e) out[e] = true;
+    });
+    return out;
+  }
+  function superseded(r, live) {
+    return r.status === 'draft' && !!live[String(r.email || '').trim().toLowerCase()];
+  }
+
   var pure = {
     esc: esc, money: money, varsOf: varsOf, missingVars: missingVars, mailGroups: mailGroups,
     ageText: ageText, patchReg: patchReg, settled: settled, patchRow: patchRow,
     verdict: verdict, addedText: addedText, HOLD: HOLD,
+    emailsOf: emailsOf, matches: matches, liveEmails: liveEmails, superseded: superseded,
   };
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; }
   if (typeof document === 'undefined') { return; }
@@ -229,7 +275,9 @@
   var settingsDoc = null, copyDoc = null, countsDoc = null;
   var dry = null, fileBody = null, fileName = '';
   var sortBy = { col: 'created', up: false };
-  var filters = { seg: 'all', q: '', track: 'all' };
+  var filters = { seg: 'active', q: '', track: 'all' };
+  var dirty = false;          // something typed on this view and not yet saved
+  var lastHash = location.hash, restoring = false;
   var routeGen = 0, lastRev = null, refreshTimer = null;
   var copyWas = null;         // the email templates as the ship last gave them
   var waitingOn = null;       // the op the page painted and the ship has not confirmed
@@ -316,6 +364,23 @@
     }).catch(function (e) {
       if (e.status === 400 && /actor/.test(String(e.message))) askActor();
       throw e;
+    });
+  }
+  // the clipboard API needs https or localhost; on a plain http ship the
+  // old selection trick still works
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed'; ta.style.top = '-1000px';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      if (ok) resolve(); else reject(new Error('copy refused'));
     });
   }
   // the party's check-ins for a day, as ticks
@@ -472,6 +537,7 @@
         return '<option value="' + t + '"' + (m.track === t ? ' selected' : '') + '>' + t + '</option>';
       }).join('') + '</select></label>';
     out += '<div class="row">' + field('contact.email', 'Email', c.email, 'email') + field('contact.phone', 'Phone', c.phone, 'tel') + '</div>';
+    if (!m.isAdd && c.email) out += '<p class="help"><a href="mailto:' + esc(c.email) + '">Write to ' + esc(c.email) + '</a></p>';
     out += field('contact.street', 'Street', c.street);
     out += '<div class="row3">' + field('contact.city', 'City', c.city) +
       field('contact.state', 'State', c.state, 'text', ' maxlength="40"') + field('contact.zip', 'ZIP', c.zip) + '</div>';
@@ -490,16 +556,17 @@
   }
 
   // ---- the roster ----
-  function inSegment(r, seg) {
+  function inSegment(r, seg, liveMail) {
     var live = r.status !== 'draft' && r.status !== 'cancelled';
     if (seg === 'all') return true;
+    if (seg === 'active') return live;
     if (seg === 'complete') return r.status === 'complete';
     if (seg === 'pending') return r.status === 'waiver' || r.status === 'payment' || r.status === 'assistance';
     if (seg === 'waitlist') return r.status === 'waitlist';
     if (seg === 'assistance') return r.status === 'assistance' || r.assistance;
     if (seg === 'unpaid') return live && r.paid === 'none';
     if (seg === 'unsigned') return live && r.waiver !== 'completed';
-    if (seg === 'draft') return r.status === 'draft';
+    if (seg === 'draft') return r.status === 'draft' && !superseded(r, liveMail || {});
     if (seg === 'cancelled') return r.status === 'cancelled';
     if (seg === 'bambino') return r.track === 'bambino';
     if (seg === 'nonwalker') return !!r.nonwalker;
@@ -508,11 +575,6 @@
     if (seg === 'admin') return r.source === 'admin';
     return true;
   }
-  function matches(r, q) {
-    if (!q) return true;
-    var hay = [r.email, r.phone, r.org].concat(r.names || []).join(' ').toLowerCase();
-    return hay.indexOf(q.toLowerCase()) >= 0;
-  }
   function sortKey(r, col) {
     if (col === 'name') return String((r.names || [])[0] || '').toLowerCase();
     if (col === 'state') return String(r.state || '').toUpperCase();
@@ -520,8 +582,9 @@
     return String(r[col] || '');
   }
   function rows() {
+    var liveMail = liveEmails(roster.regs);
     var out = (roster.regs || []).filter(function (r) {
-      return inSegment(r, filters.seg) && matches(r, filters.q) &&
+      return inSegment(r, filters.seg, liveMail) && matches(r, filters.q) &&
         (filters.track === 'all' || r.track === filters.track);
     });
     out.sort(function (a, b) {
@@ -537,7 +600,8 @@
   }
   function rosterView() {
     var all = roster.regs || [];
-    var drafts = all.filter(function (r) { return r.status === 'draft'; }).length;
+    var liveMail = liveEmails(all);
+    var drafts = all.filter(function (r) { return r.status === 'draft' && !superseded(r, liveMail); }).length;
     var out = '<h1>Roster</h1>';
     out += '<div class="bar">';
     out += '<div><label>Segment</label><select id="f-seg">' + SEGMENTS.map(function (s) {
@@ -548,12 +612,16 @@
       return '<option value="' + t + '"' + (filters.track === t ? ' selected' : '') + '>' + t + '</option>';
     }).join('') + '</select></div>';
     out += '<div><label>&nbsp;</label><a class="btn quiet small" href="#add">Add a registration</a></div>';
+    var list = rows();
+    var mails = emailsOf(list);
+    out += '<div><label>&nbsp;</label><button type="button" class="btn quiet small" data-act="copy-emails"' +
+      (mails.length ? '' : ' disabled') + ' title="The addresses of the rows shown, for a mail client">Copy ' +
+      esc(mails.length) + (mails.length === 1 ? ' email' : ' emails') + '</button></div>';
     out += '</div>';
     out += '<p class="muted">' + esc(roster.counts.full + ' of ' + roster.caps.full + ' pilgrims, ' +
       roster.counts.bambino + ' of ' + roster.caps.bambino + ' Bambino, ' +
       roster.counts.waitlist + ' on the wait list, ' + drafts + ' drafts') +
       (rosterAge ? ' <span class="stale">kept in this browser, ' + esc(rosterAge) + '</span>' : '') + '</p>';
-    var list = rows();
     out += '<table><thead><tr>' +
       head('name', 'Party') + head('state', 'State') + head('status', 'Status') + head('track', 'Track') +
       '<th class="num">People</th><th class="num">Walkers</th>' +
@@ -570,7 +638,8 @@
       if (r.volunteer) flags += '<span class="tag">vol</span>';
       if (r.refunded) flags += '<span class="tag">refunded</span>';
       out += '<tr' + (r.pending ? ' class="pending"' : '') + '><td><a href="#reg/' + esc(r.id) + '">' + esc(names || r.email || r.id) + '</a>' +
-        '<div class="muted">' + esc(r.email) + (r.org ? ' &middot; ' + esc(r.org) : '') + '</div></td>' +
+        '<div class="muted">' + (r.email ? '<a href="mailto:' + esc(r.email) + '">' + esc(r.email) + '</a>' : '') +
+        (r.org ? ' &middot; ' + esc(r.org) : '') + '</div></td>' +
         '<td>' + esc(r.state) + '</td>' +
         '<td><span class="badge ' + esc(r.status) + '">' + esc(r.status) + '</span>' +
         (r.position ? ' <span class="muted">#' + esc(r.position) + '</span>' : '') + '</td>' +
@@ -1073,7 +1142,26 @@
     if (!roster || !roster.regs || !row) return;
     roster.regs = roster.regs.map(function (r) { return String(r.id) === String(row.id) ? row : r; });
   }
-  function render(html) { view.innerHTML = html; markNav(); }
+  // a re-render replaces the inputs. The filter bar's are rebuilt with
+  // their values from `filters`, so the one that had focus gets it back
+  // with its caret where it was, and the roster can repaint under a
+  // resting cursor.
+  function render(html) {
+    var had = document.activeElement, id = had ? had.id : '';
+    var pos = had && /^f-/.test(id) && had.setSelectionRange ? had.selectionStart : null;
+    view.innerHTML = html;
+    markNav();
+    if (/^f-/.test(id)) {
+      var again = document.getElementById(id);
+      if (again) {
+        again.focus();
+        if (pos !== null && again.setSelectionRange) {
+          var at = Math.min(pos, again.value.length);
+          try { again.setSelectionRange(at, at); } catch (e) { }
+        }
+      }
+    }
+  }
   function refresh() {
     var r = route();
     var mine = ++routeGen;
@@ -1212,6 +1300,13 @@
   var reTimer = null;
   function reconcile() {
     if (!waitingOn) return Promise.resolve();
+    // typing since the save is not overwritten by the read that
+    // confirms it; the read waits for the next Save or the next bump
+    if (dirty) {
+      clearTimeout(reTimer);
+      reTimer = setTimeout(reconcile, 1200);
+      return Promise.resolve();
+    }
     var mine = waitingOn;
     return read('/reg/' + encodeURIComponent(mine.id)).then(function (d) {
       if (waitingOn !== mine) return;
@@ -1247,21 +1342,17 @@
     var k = el.getAttribute('data-k');
     if (el.id === 'f-seg') { filters.seg = el.value; return render(rosterView()); }
     if (el.id === 'f-track') { filters.track = el.value; return render(rosterView()); }
-    if (el.id === 'f-q') {
-      filters.q = el.value;
-      var tbody = view.querySelector('tbody');
-      if (tbody) { render(rosterView()); var box = document.getElementById('f-q'); if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); } }
-      return;
-    }
+    if (el.id === 'f-q') { filters.q = el.value; if (view.querySelector('tbody')) render(rosterView()); return; }
     if (el.id === 'file') return pickFile(el);
     var copyKey = el.getAttribute('data-copy');
-    if (copyKey && copyDoc) { copyDoc[copyKey] = el.value; return; }
+    if (copyKey && copyDoc) { copyDoc[copyKey] = el.value; dirty = true; return; }
     if (!k) return;
     var isBox = el.type === 'checkbox';
     if (ev.type === 'change' && !isBox && el.tagName !== 'SELECT') return;
     if (ev.type === 'input' && isBox) return;
     var val = isBox ? el.checked : el.value;
     var r = route();
+    dirty = true;
     if (r.name === 'counts') { setPath(countsDoc, k, val); return; }
     if (r.name === 'settings') { setPath(settingsDoc, k, val); return; }
     if (!model) return;
@@ -1306,13 +1397,33 @@
     var rid = detail ? detail.id : '';
     function pick(id) { var n = document.getElementById(id); return n ? n.value : ''; }
     function post(body) { return run(body, el); }
-    if (a === 'add-person') { model.people.push(blankPerson()); return render(route().name === 'add' ? addView() : detailView()); }
-    if (a === 'remove-person') { model.people.splice(+el.getAttribute('data-i'), 1); return render(route().name === 'add' ? addView() : detailView()); }
+    if (a === 'add-person') { dirty = true; model.people.push(blankPerson()); return render(route().name === 'add' ? addView() : detailView()); }
+    if (a === 'remove-person') { dirty = true; model.people.splice(+el.getAttribute('data-i'), 1); return render(route().name === 'add' ? addView() : detailView()); }
+    if (a === 'copy-emails') {
+      var addrs = emailsOf(rows()).join(', ');
+      if (!addrs) return;
+      var freeCopy = spin(el);
+      copyText(addrs).then(function () {
+        freeCopy();
+        say('Copied. Paste into the To line of an email.', true);
+      }, function () {
+        freeCopy();
+        say('This browser would not copy. The addresses are in the console.');
+        try { console.log(addrs); } catch (e) { }
+      });
+      return;
+    }
     if (a === 'save') {
       return act(function () {
-        var bodies = [{ op: 'edit', input: partyInput(model) }];
+        // only what changed goes up. The party as an edit only when the
+        // party moved: a note alone must not write an "edited" line,
+        // restart a lapsed hold, or be refused for a full track.
+        var bodies = [];
+        if (JSON.stringify(partyInput(model)) !== JSON.stringify(partyInput(before))) bodies.push({ op: 'edit', input: partyInput(model) });
         if (!!model.exempt !== !!before.exempt) bodies.push({ op: 'exempt', on: !!model.exempt });
         if (String(model.notes) !== String(before.notes)) bodies.push({ op: 'note', notes: model.notes });
+        if (!bodies.length) { dirty = false; return say('Nothing to save.', true); }
+        dirty = false;
         runAll(bodies, el);
       });
     }
@@ -1354,6 +1465,7 @@
     if (a === 'resend') return act(function () { post({ op: 'resend', template: pick('tpl') }); });
     if (a === 'submit-add') {
       return act(function () {
+        dirty = false;
         var body = { input: partyInput(model), exempt: !!model.exempt, waiver_paper: !!model.waiver_paper };
         if (model.pay_method && model.waiver_paper) {
           body.paid = {
@@ -1372,6 +1484,7 @@
     }
     if (a === 'save-counts') {
       return act(function () {
+        dirty = false;
         var freeCounts = spin(el);
         say('Counts saved.', true);
         write('/counts', countsDoc, 'PUT').then(function () { freeCounts(); })
@@ -1385,6 +1498,7 @@
       return act(function () {
         var changed = keys.filter(function (k) { return String(copyDoc[k]) !== String((copyWas || {})[k]); });
         if (!changed.length) return say('Nothing changed in this email.', true);
+        dirty = false;
         var gone = [];
         changed.forEach(function (k) {
           missingVars((copyWas || {})[k], copyDoc[k]).forEach(function (v) { if (gone.indexOf(v) < 0) gone.push(v); });
@@ -1417,6 +1531,7 @@
     }
     if (a === 'save-settings') {
       return act(function () {
+        dirty = false;
         var doc = JSON.parse(JSON.stringify(settingsDoc));
         ['fees.full', 'fees.bambino'].forEach(function (k) { setPath(doc, k, cents(getPath(settingsDoc, k))); });
         ['caps.full', 'caps.bambino', 'caps.social_fri', 'caps.social_sat', 'caps.late_adds', 'caps.sunday', 'hold_hours']
@@ -1479,8 +1594,11 @@
   // a re-render replaces the inputs, so a bump waits while one has focus
   function editing() {
     var el = document.activeElement;
+    if (dirty) return true;
     if (!el) return false;
     if (!promptEl.hidden) return true;
+    // the filter bar is not an edit: render() keeps its focus and caret
+    if (/^f-/.test(el.id || '')) return false;
     return (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') &&
       (view.contains(el) || promptEl.contains(el));
   }
@@ -1533,7 +1651,18 @@
     }
   }
 
-  window.addEventListener('hashchange', function () { model = null; dry = null; refresh(); });
+  // a view with unsaved typing is not left by accident: the move is put
+  // back unless the organizer says to drop the typing
+  window.addEventListener('hashchange', function () {
+    if (restoring) { restoring = false; return; }
+    if (dirty && !window.confirm('You have changes here that are not saved. Leave and lose them?')) {
+      if (location.hash !== lastHash) { restoring = true; location.hash = lastHash; }
+      return;
+    }
+    dirty = false;
+    lastHash = location.hash;
+    model = null; dry = null; refresh();
+  });
   document.addEventListener('visibilitychange', function () { if (!document.hidden && !editing()) refresh(); });
   setInterval(function () {
     if (document.hidden || editing()) return;
