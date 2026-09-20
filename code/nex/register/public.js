@@ -225,12 +225,12 @@
   var manageWas = null;       // the status the manage view loaded
   var manageMade = '';        // when the registration the manage view holds was made
 
-  // the twelve pilgrim views, each reachable from edit mode with a
+  // the thirteen pilgrim views, each reachable from edit mode with a
   // fixture, and the strings that belong to no view of their own
   var STEPS = [['landing', 'Landing'], ['form', 'Form (full)'], ['bambino', 'Form (Bambino)'],
     ['waiver', 'Waiver step'], ['payment', 'Payment step'], ['assistance', 'Assistance'],
     ['waitlist', 'Wait list'], ['complete', 'Complete'], ['cancelled', 'Cancelled'],
-    ['manage', 'Manage'], ['closed', 'Closed'], ['soldout', 'Sold out'],
+    ['manage', 'Manage'], ['notyet', 'Not open yet'], ['closed', 'Closed'], ['soldout', 'Sold out'],
     ['other', 'Other strings']];
   // the strings no fixture puts on screen as a span of their own: a
   // status line, a dialog, what an error says, the few that only show
@@ -348,6 +348,14 @@
   }
 
   // ---- render ----
+  // a visitor before opening day reads the date, not "closed": the site
+  // links here weeks ahead, and "closed" sends them to Susan's inbox
+  function closedCard() {
+    var opens = getPath(status, 'window.open');
+    var early = opens && status.now && Date.parse(status.now) < Date.parse(opens);
+    return '<div class="card soft"><p>' +
+      (early ? tx('landing.notyet', { opens: dateWords(opens) }) : tx('landing.closed')) + '</p></div>';
+  }
   function landing() {
     var pct = Math.min(100, Math.round(100 * status.counts.full / Math.max(1, status.caps.full)));
     var out = '<h1>' + tx('landing.title') + '</h1><p>' + tx('landing.intro') + '</p>';
@@ -355,7 +363,7 @@
       '<div class="fill" style="width:' + pct + '%"></div></div>' +
       '<div class="label">' + tx('landing.meter', { count: status.counts.full, cap: status.caps.full, percent: pct }) + '</div>' +
       (pct > 80 ? '<div class="label hurry">' + tx('landing.meter.hurry') + '</div>' : '') + '</div>';
-    if (!status.open) return out + '<div class="card soft"><p>' + tx('landing.closed') + '</p></div>';
+    if (!status.open) return out + closedCard();
     function door(track) {
       var full = trackFull(track);
       return '<div class="card door"><h2>' + tx('landing.' + track + '.title') + '</h2>' +
@@ -534,11 +542,9 @@
       if (!status.changes_open) out += '<div class="card soft"><p>' + tx('manage.closed') + '</p></div>';
     }
     out += '<div id="error"></div>';
-    // 1. who is coming
-    out += '<h2>' + tx('form.people.title') + '</h2><p class="help">' + tx('form.people.help') + '</p>';
-    m.people.forEach(function (p, i) { out += person(p, i, m); });
-    if (m.people.length < status.caps.party) out += '<button type="button" class="btn quiet small" data-act="add">' + tx('form.add_person') + '</button>';
-    // 2. how we reach you
+    // 1. how we reach you. First, because the draft saves only once an
+    // email or a phone exists: a family that gives up on the third
+    // person card has still left a row an organizer can follow up.
     out += '<div class="card"><h2>' + tx('form.contact.title') + '</h2><p class="help">' + tx('form.contact.help') + '</p>';
     out += '<div class="row">' + input('contact.email', 'form.email', c.email, 'email', ' autocomplete="email"') + input('contact.phone', 'form.phone', c.phone, 'tel', ' autocomplete="tel"') + '</div>';
     out += input('contact.street', 'form.street', c.street, 'text', ' autocomplete="street-address"');
@@ -549,6 +555,10 @@
     out += input('org', 'form.org', m.org, 'text', ' list="orgs"') + '<datalist id="orgs">' +
       (status.orgs || []).map(function (o) { return '<option value="' + esc(o) + '">'; }).join('') + '</datalist>';
     out += '<p class="help">' + tx('form.org.help') + '</p></div>';
+    // 2. who is coming
+    out += '<h2>' + tx('form.people.title') + '</h2><p class="help">' + tx('form.people.help') + '</p>';
+    m.people.forEach(function (p, i) { out += person(p, i, m); });
+    if (m.people.length < status.caps.party) out += '<button type="button" class="btn quiet small" data-act="add">' + tx('form.add_person') + '</button>';
     // 3. why are you walking
     var why = '<textarea data-k="why" aria-label="' + esc(t('form.why')) + '">' + esc(m.why) + '</textarea>';
     out += '<div class="card"><h2>' + tx('form.why') + '</h2><p class="help">' + tx('form.why.help') + '</p>' + why;
@@ -706,9 +716,13 @@
     try {
       status = JSON.parse(JSON.stringify(keep.status));
       rid = 'preview001'; token = 'preview';
-      if (name === 'landing' || name === 'closed' || name === 'soldout') {
+      if (name === 'landing' || name === 'notyet' || name === 'closed' || name === 'soldout') {
         mode = 'landing';
-        status.open = name !== 'closed';
+        status.open = name !== 'closed' && name !== 'notyet';
+        // the not-yet card shows only while the clock is before the window
+        if (!status.window) status.window = {};
+        if (name === 'notyet') setPath(status, 'window.open', '2036-01-01T00:00:00Z');
+        else if (name === 'closed') setPath(status, 'window.open', '2000-01-01T00:00:00Z');
         status.counts.full = name === 'soldout' ? status.caps.full : Math.round(status.caps.full / 2);
         status.counts.bambino = name === 'soldout' ? status.caps.bambino : 0;
         out = landing();
@@ -831,9 +845,12 @@
     if (el) el.innerHTML = msg ? '<div class="error">' + esc(msg) + (extra || '') + '</div>' : '';
   }
   function say(msg) { var el = document.getElementById('save-status'); if (el) el.textContent = msg; }
-  function remember() { try { sessionStorage.setItem('bsc.draft', JSON.stringify({ rid: rid, token: token, track: model.track })); } catch (e) { } }
+  // the draft pointer lives in localStorage, not the session: a pilgrim
+  // who closes the tab and comes back tomorrow picks up the same row
+  // instead of leaving an abandoned one beside a finished one
+  function remember(track) { try { localStorage.setItem('bsc.draft', JSON.stringify({ rid: rid, token: token, track: track || model.track })); } catch (e) { } }
   function recall(track) {
-    try { var d = JSON.parse(sessionStorage.getItem('bsc.draft') || 'null'); if (d && d.track === track) return d; } catch (e) { }
+    try { var d = JSON.parse(localStorage.getItem('bsc.draft') || 'null'); if (d && d.track === track) return d; } catch (e) { }
     return null;
   }
   function scheduleSave() {
@@ -862,7 +879,7 @@
       var body = JSON.parse(JSON.stringify(model));
       if (rid) { body.rid = rid; body.token = token; }
       return post('/submit', body).then(function (d) {
-        rid = d.rid; token = d.token; try { sessionStorage.removeItem('bsc.draft'); } catch (e) { }
+        rid = d.rid; token = d.token; try { localStorage.removeItem('bsc.draft'); } catch (e) { }
         leaving = 'draft';
         // the answer carries the status, the position and the fees, so
         // the next step paints now and the read only confirms it
@@ -905,7 +922,7 @@
     refreshStatus().then(function () {
       if (gen !== routeGen) return;
       if (parts[0] === 'form' && (parts[1] === 'full' || parts[1] === 'bambino')) {
-        if (!status.open) { mode = 'landing'; return render('<div class="card soft"><p>' + tx('landing.closed') + '</p></div>'); }
+        if (!status.open) { mode = 'landing'; return render(closedCard()); }
         mode = 'new';
         if (!model || model.track !== parts[1]) {
           model = blankModel(parts[1]);
@@ -937,6 +954,14 @@
         return loadReg(rid, token, was).then(function (r) {
           leaving = null;
           if (gen !== routeGen) return;
+          // a draft's link (the reminder email, a manage link) reopens
+          // the form on that draft rather than telling them to open the
+          // link they are standing on
+          if (r.status === 'draft' && (r.track === 'full' || r.track === 'bambino')) {
+            remember(r.track); model = null;
+            location.hash = '#form/' + r.track;
+            return;
+          }
           lastReg = r;
           render(nextStep(r));
         }).catch(function (e) {
@@ -951,7 +976,10 @@
         return api('/reg/' + rid + '?t=' + encodeURIComponent(token)).then(function (r) {
           if (gen !== routeGen) return;
           status.changes_open = r.changes_open;
-          if (r.status === 'draft' || r.status === 'cancelled') { location.hash = '#next/' + rid + '/' + token; return; }
+          // the emails all carry this link. A party that still has a step
+          // to take (sign, pay, or wait for a decision) lands on that
+          // step, not on an edit form with no button for it
+          if (r.status !== 'complete' && r.status !== 'waitlist') { location.hash = '#next/' + rid + '/' + token; return; }
           manageWas = r.status;
           manageMade = r.created;
           model = fromReg(r);
