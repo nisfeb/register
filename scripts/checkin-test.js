@@ -328,6 +328,21 @@ ok('the email templates are found by their subject and body keys',
   JSON.stringify(back.mailGroups({ 'email.reminder.subject': 'a', 'email.reminder.body': 'b', 'landing.title': 'c' })) ===
   '{"reminder":{"subject":"email.reminder.subject","body":"email.reminder.body"}}');
 ok('a copy document with no emails makes no groups', Object.keys(back.mailGroups({ 'landing.title': 'a' })).length === 0);
+
+const mary = { email: 'Mary@X.com', phone: '(904) 555-1234', org: 'St Paul', id: 'abc0000002', names: ['Smith, Mary', 'Smith, Bo'] };
+ok('a search finds a name typed first name first', back.matches(mary, 'Mary Smith'));
+ok('every word typed must be in the row', !back.matches(mary, 'Mary Jones'));
+ok('a phone is found with or without its punctuation', back.matches(mary, '9045551234') && back.matches(mary, '555-1234'));
+ok('a trailing space and a blank match as before', back.matches(mary, 'smith ') && back.matches(mary, '  '));
+ok('a name with an apostrophe is found either way', back.matches({ names: ["O'Brien, Pat"] }, 'obrien') && back.matches({ names: ["O'Brien, Pat"] }, "o'brien"));
+ok('the emails of the rows shown come out once each, lowercased, blanks left out',
+  JSON.stringify(back.emailsOf([{ email: 'A@b.c' }, { email: 'a@b.c' }, { email: '' }, { email: ' x@y.z ' }])) === '["a@b.c","x@y.z"]');
+const live = back.liveEmails([{ status: 'complete', email: 'A@b.c' }, { status: 'draft', email: 'q@q.q' }, { status: 'cancelled', email: 'z@z.z' }]);
+ok('a draft whose address finished under another row is superseded',
+  back.superseded({ status: 'draft', email: 'a@B.c' }, live) === true);
+ok('a draft whose address only cancelled, or never finished, is not',
+  back.superseded({ status: 'draft', email: 'z@z.z' }, live) === false && back.superseded({ status: 'draft', email: 'q@q.q' }, live) === false);
+ok('only a draft can be superseded', back.superseded({ status: 'complete', email: 'a@b.c' }, live) === false);
 ok('a dropped placeholder is refused in an email too',
   back.missingVars('Hello {{first}}, see {{link}}', 'Hello {{first}}').length === 1);
 ok('the age of a kept roster reads in words',

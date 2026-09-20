@@ -147,7 +147,7 @@ async function main() {
   check('a person no longer copying does not follow the first any more',
     (await s.$eval('[data-k="people.1.days.sat"]', (n) => n.checked)) === false);
   check('a party with no contact yet was never sent to the ship',
-    (await s.evaluate(() => sessionStorage.getItem('bsc.draft'))) === null);
+    (await s.evaluate(() => localStorage.getItem('bsc.draft'))) === null);
   await s.close();
 
   const p = await browser.newPage();
@@ -161,7 +161,9 @@ async function main() {
 
   // ---- edit mode ----
   await p.click('#edit-copy');
-  await sleep(1200);
+  // the toggle re-routes, which reads the status document first; on a
+  // loaded wex that read is seconds, so wait for the landing to repaint
+  await p.waitForSelector(spanOf(METER), { timeout: 60000 });
   check('the toggle turns edit mode on', (await p.evaluate(() => document.body.className)) === 'editing');
   check('every string on the landing is editable', (await p.$$('.copy')).length > 6, (await p.$$('.copy')).length);
   check('the raw template is on screen, placeholders and all',
@@ -210,7 +212,7 @@ async function main() {
 
   // ---- every step, from a fixture ----
   const steps = await p.$$eval('#steps button[data-step]', (ns) => ns.map((n) => n.getAttribute('data-step')).filter(Boolean));
-  check('the step row offers the twelve views and the leftover strings', steps.length === 13, steps.join(','));
+  check('the step row offers the thirteen views and the leftover strings', steps.length === 14, steps.join(','));
   // every key the previews put on screen, gathered as they are walked
   const seen = new Set();
   for (const name of steps) {
@@ -280,7 +282,7 @@ async function main() {
   // ---- put the string back ----
   await watchTicks(p);
   await retype(p, TITLE, wasTitle);
-  check('the tick says the string went back', await ticked(p, 10000));
+  check('the tick says the string went back', await ticked(p, 60000));
   await sleep(1500);
   const end = await (await fetch(api + '/status')).json();
   check('the copy document is as it was found', end.copy[TITLE] === wasTitle && end.copy[METER] === wasMeter,
@@ -288,7 +290,7 @@ async function main() {
 
   // ---- and edit mode turns off ----
   await p.click('#edit-copy');
-  check('the toggle turns edit mode off again', await gone(p, '.copy', 15000));
+  check('the toggle turns edit mode off again', await gone(p, '.copy', 60000));
   check('and the body no longer says it is editing',
     (await p.evaluate(() => document.body.className)) === '' &&
     (await p.$eval('#steps', (n) => n.hidden)) === true);

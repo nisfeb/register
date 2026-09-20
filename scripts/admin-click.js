@@ -132,6 +132,31 @@ async function main() {
   await gone(p, '.card.pending', 20000);
   check('the note it started with is back', (await p.$eval('[data-k="notes"]', (n) => n.value)) === wasNote);
 
+  // ---- typing that is not saved is not lost by a click away ----
+  await p.evaluate(() => {
+    const el = document.querySelector('[data-k="notes"]');
+    el.value = 'half typed';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  let asked = 0;
+  const sayNo = async (d) => { asked++; await d.dismiss(); };
+  p.on('dialog', sayNo);
+  await p.evaluate(() => { location.hash = '#roster'; });
+  await sleep(800);
+  check('leaving with unsaved typing asks first', asked === 1, asked);
+  check('and saying no keeps the page and the typing',
+    (await p.evaluate(() => location.hash)) === '#reg/' + RID &&
+    (await p.$eval('[data-k="notes"]', (n) => n.value)) === 'half typed', await p.evaluate(() => location.hash));
+  p.off('dialog', sayNo);
+  p.on('dialog', (d) => d.accept());
+  await p.evaluate(() => { location.hash = '#roster'; });
+  await p.waitForSelector('table tbody tr', { timeout: 20000 });
+  check('saying yes leaves', (await p.evaluate(() => location.hash)) === '#roster');
+  const copyBtn = await p.$eval('[data-act="copy-emails"]', (n) => n.textContent.trim());
+  check('the roster offers to copy the emails of the rows shown', /^Copy \d+ emails?$/.test(copyBtn), copyBtn);
+  check('the roster opens on registrations, not on everything',
+    (await p.$eval('#f-seg', (n) => n.value)) === 'active');
+
   // ---- the roster keeps its rows rather than reading them again ----
   await p.goto(BASE + '/apps/register/admin#roster', { waitUntil: 'networkidle2' });
   await p.waitForSelector('table tbody tr', { timeout: 20000 });
@@ -151,7 +176,9 @@ async function main() {
     toCheckin.length === 1 && toCheckin[0][0] === 'Check-in' && toCheckin[0][1] === null,
     JSON.stringify(toCheckin));
   await p.goto(BASE + '/apps/register/admin#emails', { waitUntil: 'networkidle2' });
-  await p.waitForSelector('.card.mail', { timeout: 20000 });
+  // the emails page has no kept copy to paint first: it waits on the
+  // ship's read of copy.json, which a loaded wex answers in tens of seconds
+  await p.waitForSelector('.card.mail', { timeout: 60000 });
   const keys = await p.$$eval('[data-copy]', (ns) => ns.map((n) => n.getAttribute('data-copy')));
   check('the emails page edits the email templates and nothing else',
     keys.length > 4 && keys.every((k) => k.indexOf('email.') === 0), keys.join(','));
