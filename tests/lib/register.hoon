@@ -398,6 +398,8 @@
     (expect !>(!=('' (gs:reg c 'form.sun.short'))))
     (expect !>(!=('' (gs:reg c 'form.sun.bambino'))))
     (expect !>(!=('' (gs:reg c 'form.friday.closed'))))
+    ::  the card a visitor reads before opening day names the date
+    (expect !>(!=('' (gs:reg c 'landing.notyet'))))
     (expect !>(!=('' (gs:reg c 'form.around.title'))))
     (expect !>(!=('' (gs:reg c 'form.fees.child'))))
     (expect !>(!=('' (gs:reg c 'form.submit.waitlist'))))

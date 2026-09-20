@@ -1421,6 +1421,7 @@
       ['landing.soldout' s+'This track is full. You can join the wait list and we will email you if a spot opens.']
       ['landing.waitlist.button' s+'Join the wait list']
       ['landing.closed' s+'Registration is closed. Contact us at register@babystepscamino.com with any questions.']
+      ['landing.notyet' s+'Registration opens {{opens}}. Come back then, or contact us at register@babystepscamino.com with any questions.']
       ['form.title' s+'Your registration']
       ['form.people.title' s+'Who is coming?']
       ['form.people.help' s+'Add everyone you are registering, children included. You will sign the waiver and pay for the whole party.']
