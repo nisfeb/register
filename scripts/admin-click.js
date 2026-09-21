@@ -59,12 +59,14 @@ async function main() {
   check('at least one party shows a Friday tick', ticked > 0, ticked);
 
   await p.goto(BASE + '/apps/register/admin#reports', { waitUntil: 'networkidle2' });
-  await sleep(4000);
+  // the reports paint after the settings and the counts are read, which
+  // a loaded wex answers in seconds; wait for the view, not a clock
+  await p.waitForSelector('.grid3', { timeout: 60000 });
   const rheads = await p.$$eval('th', (ns) => ns.map((n) => n.textContent));
   check('the per-day table has a checked-in column', rheads.includes('Checked in'), rheads.join(','));
 
   await p.goto(BASE + '/apps/register/admin#counts', { waitUntil: 'networkidle2' });
-  await sleep(4000);
+  await p.waitForSelector('[data-act="save-counts"]', { timeout: 60000 });
   const grids = await p.$$eval('h2 ~ .grid3', (ns) => ns.map((n) => n.textContent));
   const sun = grids[grids.length - 1] || '';
   check('the Sunday counts grid keeps Mass and the Holy Hour',
@@ -73,7 +75,7 @@ async function main() {
     sun.includes('10 mile start') && sun.includes('2.5 mile start'), sun.slice(0, 200));
 
   await p.goto(BASE + '/apps/register/admin#reg/' + RID, { waitUntil: 'networkidle2' });
-  await sleep(4000);
+  await p.waitForSelector('[data-act="save"]', { timeout: 60000 });
   const cards = await p.$$eval('.card h3', (ns) => ns.map((n) => n.textContent));
   check('the registration has a check-ins card', cards.includes('Check-ins'), cards.join(','));
   const undo = await p.$$('[data-act="undo-checkin"]');
@@ -116,7 +118,7 @@ async function main() {
   }));
   check('the change is on screen the moment the request goes up',
     painted.pending && painted.saying && painted.note === mark, JSON.stringify(painted));
-  check('and the faint mark goes once the ship has confirmed it', await gone(p, '.card.pending', 20000));
+  check('and the faint mark goes once the ship has confirmed it', await gone(p, '.card.pending', 60000));
   const settled = await p.$eval('[data-k="notes"]', (n) => n.value);
   check('the note the ship answers is the note that was typed', settled === mark, settled);
   const hist = await p.$$eval('.hist li', (ns) => ns.map((n) => n.textContent));
@@ -129,7 +131,7 @@ async function main() {
     el.dispatchEvent(new Event('input', { bubbles: true }));
   }, wasNote);
   await p.click('[data-act="save"]');
-  await gone(p, '.card.pending', 20000);
+  await gone(p, '.card.pending', 60000);
   check('the note it started with is back', (await p.$eval('[data-k="notes"]', (n) => n.value)) === wasNote);
 
   // ---- typing that is not saved is not lost by a click away ----
@@ -156,6 +158,31 @@ async function main() {
   check('the roster offers to copy the emails of the rows shown', /^Copy \d+ emails?$/.test(copyBtn), copyBtn);
   check('the roster opens on registrations, not on everything',
     (await p.$eval('#f-seg', (n) => n.value)) === 'active');
+
+  // ---- the day: who is here, and the fallback check-in ----
+  await p.goto(BASE + '/apps/register/admin#day/fri', { waitUntil: 'networkidle2' });
+  await p.waitForSelector('.count', { timeout: 60000 });
+  const countLine = await p.$eval('.count', (n) => n.textContent);
+  check('the day view counts who is here against who is expected, as a percentage',
+    /\d+ of \d+ expected \w+ checked in, \d+%/.test(countLine), countLine);
+  check('the day view offers the morning\'s links', await p.$('[data-act="checkin-mail"]') !== null);
+  check('and says what the button will do',
+    /complete party/.test(await p.$eval('#mail-said', (n) => n.textContent)), await p.$eval('#mail-said', (n) => n.textContent));
+  await p.select('#d-seg', 'all');
+  await sleep(300);
+  const dayBtn = await p.$('[data-act="day-checkin"][data-rid="' + RID + '"]');
+  check('the party this run undid a check-in for offers a check-in button', dayBtn !== null);
+  if (dayBtn) {
+    await dayBtn.click();
+    await sleep(300);
+    const ticks = await p.$$eval('tr.pending .tick', (ns) => ns.length);
+    check('the tick paints the moment the button is pressed', ticks >= 1, ticks);
+    await gone(p, 'tr.pending', 60000);
+    const rosterAfter = await (await fetch(BASE + '/apps/register/api/checkin/roster?day=fri', { headers: { cookie } })).json();
+    const mine = (rosterAfter.rows || []).find((r) => r.rid === RID);
+    check('and the volunteers\' roster agrees, naming the organizer',
+      mine && mine.people.every((q) => q.checked) && mine.people.some((q) => q.by === 'admin:Organizer'), JSON.stringify(mine && mine.people));
+  }
 
   // ---- the roster keeps its rows rather than reading them again ----
   await p.goto(BASE + '/apps/register/admin#roster', { waitUntil: 'networkidle2' });

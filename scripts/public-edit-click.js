@@ -212,7 +212,7 @@ async function main() {
 
   // ---- every step, from a fixture ----
   const steps = await p.$$eval('#steps button[data-step]', (ns) => ns.map((n) => n.getAttribute('data-step')).filter(Boolean));
-  check('the step row offers the thirteen views and the leftover strings', steps.length === 14, steps.join(','));
+  check('the step row offers the fourteen views and the leftover strings', steps.length === 15, steps.join(','));
   // every key the previews put on screen, gathered as they are walked
   const seen = new Set();
   for (const name of steps) {

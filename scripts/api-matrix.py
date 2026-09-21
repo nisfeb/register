@@ -377,6 +377,7 @@ def run():
     check('cancelling twice is 409', code == 409, code)
 
     checkin(ana_rid, w2_rid)
+    selfcheckin(ana_rid, ana_tok)
     backoffice(ana_rid)
 
     # ---- the window ----
@@ -517,6 +518,121 @@ def checkin(done_rid, waiting_rid):
 
     # ---- the check-ins the gate made are taken back ----
     tap('fri', [{'rid': done_rid, 'i': 0, 'undo': True}, {'rid': waiting_rid, 'i': 0, 'undo': True}])
+    settle()
+
+
+def selfcheckin(done_rid, done_tok):
+    # ---- the pilgrim's own check-in link ----
+    # the ship decides the day from its clock shifted by the event's
+    # offset, so the event's dates are moved so that today is Friday
+    from datetime import datetime, timedelta
+    s0 = status()
+    offset = int((original.get('event') or {}).get('utc_offset_hours', -5) or -5)
+    local = datetime.strptime(s0['now'], '%Y-%m-%dT%H:%M:%SZ') + timedelta(hours=offset)
+    days = [(local + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(3)]
+    was_event = json.loads(json.dumps(settings.get('event') or {}))
+    settings.setdefault('event', {})['days'] = days
+    admin('PUT', '/settings', settings); settle()
+
+    def page(rid, tok):
+        return curl('GET', API + f'/reg/{rid}/checkin?t={tok}')
+
+    def here(rid, tok, idx):
+        return curl('POST', API + f'/reg/{rid}/checkin?t={tok}', {'people': idx})
+
+    code, d = page(done_rid, 'wrong')
+    check('a check-in link with a wrong token is 404', code == 404, code)
+    code, d = page(done_rid, done_tok)
+    check('on the day the link says it is Friday and lists the party unchecked',
+          code == 200 and d.get('day') == 'fri' and d.get('status') == 'complete' and d.get('over') is False
+          and len(d.get('people', [])) == 3 and not any(p['checked'] for p in d['people']), (code, d))
+    code, d = here(done_rid, done_tok, [])
+    check('nobody named is 400', code == 400, (code, d))
+    code, d = here(done_rid, done_tok, [7])
+    check('an index past the party is 400', code == 400, (code, d))
+    code, d = here(done_rid, done_tok, [0, 2])
+    check('two of three check themselves in and the answer shows the ticks',
+          code == 200 and [p['checked'] for p in d['people']] == [True, False, True] and d['people'][0]['at'], (code, d))
+    settle()
+    code, d = roster('fri')
+    mine = row_of(d['rows'], done_rid)
+    check('the volunteers\' roster shows them checked in by pilgrim',
+          mine and mine['people'][0]['checked'] is True and mine['people'][0]['by'] == 'pilgrim'
+          and mine['people'][1]['checked'] is False, mine)
+    check('the roster carries expected and done for the day',
+          isinstance(d.get('expected'), int) and isinstance(d.get('done'), int) and d['done'] >= 2 and d['expected'] >= d['done'],
+          (d.get('expected'), d.get('done')))
+    code, d = admin('GET', '/reg/' + done_rid)
+    first_at = d['people'][0]['checkins']['fri']['at']
+    lines = len(d['history'])
+    check('the history says who checked in', any(h['by'] == 'pilgrim' and h['what'].startswith('checked in') for h in d['history']), d['history'][-2:])
+    code, d = here(done_rid, done_tok, [0])
+    check('checking in again changes nothing', code == 200 and d['people'][0]['at'] == first_at, (code, d))
+    settle()
+    code, d = admin('GET', '/reg/' + done_rid)
+    check('and writes no second history line', len(d['history']) == lines, (lines, len(d['history'])))
+    code, d = here(done_rid, done_tok, [1])
+    check('the third arrives later on the same link', code == 200 and all(p['checked'] for p in d['people']), (code, d))
+    settle()
+
+    # a party that has not paid gets no further than the organizers
+    code, d = curl('POST', API + '/submit', party('full', 'matrix-owing@example.com', [person('Owen', 'Owing')]))
+    ow_rid, ow_tok = d['rid'], d['token']
+    code, d = curl('POST', API + f'/reg/{ow_rid}/sign?t={ow_tok}', {})
+    settle()
+    code, d = page(ow_rid, ow_tok)
+    check('an unpaid party\'s link says its status', code == 200 and d.get('status') == 'payment', (code, d))
+    code, d = here(ow_rid, ow_tok, [0])
+    check('and its check-in is 409 gone', code == 409 and d.get('code') == 'gone', (code, d))
+
+    # the morning's links: complete parties not yet checked in, once
+    code, d = curl('POST', API + '/admin/checkin-mail', {'day': 'sat'}, jar=JAR)
+    check('checkin-mail without an actor is 400', code == 400, (code, d))
+    code, d = curl('POST', API + '/admin/checkin-mail', {'day': 'sat'})
+    check('checkin-mail without the cookie is 403', code == 403, code)
+    code, d = admin('POST', '/checkin-mail', {'day': 'mon'})
+    check('a day the event does not have is 400', code == 400, (code, d))
+    code, d = admin('POST', '/checkin-mail', {'day': 'sat'})
+    check('the Saturday links go to complete parties and the answer counts them',
+          code == 200 and d.get('sent', 0) >= 1 and d.get('remaining') == 0, (code, d))
+    sent = d['sent']
+    settle()
+    code, d = curl('GET', INSTANCE + '/tr/log?raw=1', jar=JAR)
+    check('the ring holds one email.checkin.sat per party, subject filled',
+          code == 200 and len([e for e in d if e.get('op') == 'email.checkin.sat' and e.get('rid') == done_rid]) == 1
+          and any(e.get('op') == 'email.checkin.sat' and 'Saturday' in e.get('why', '') for e in d), str(d)[-300:])
+    code, d = admin('GET', '/reg/' + done_rid)
+    check('and the history says the link went out', sum(1 for h in d['history'] if h['what'] == 'email.checkin.sat') == 1, d['history'][-2:])
+    code, d = admin('GET', '/reg/' + ow_rid)
+    check('an unpaid party got no link', not any(h['what'] == 'email.checkin.sat' for h in d['history']), d['history'][-2:])
+    code, d = admin('POST', '/checkin-mail', {'day': 'sat'})
+    check('a second press sends to nobody', code == 200 and d.get('sent') == 0, (code, d))
+    code, d = admin('POST', '/checkin-mail', {'day': 'sat', 'again': True})
+    check('with again it sends to everyone not yet checked in, the first press included',
+          code == 200 and d.get('sent', 0) >= max(sent, 1), (code, d, sent))
+    code, d = admin('POST', '/checkin-mail', {'day': 'fri'})
+    settle()
+    code, d = admin('GET', '/reg/' + done_rid)
+    check('a party already checked in today is skipped', not any(h['what'] == 'email.checkin.fri' for h in d['history']), d['history'][-2:])
+
+    # before the day, and after the last
+    settings['event']['days'] = [(local + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(7, 10)]
+    admin('PUT', '/settings', settings); settle()
+    code, d = page(done_rid, done_tok)
+    check('a week early the link names the day it opens', code == 200 and d.get('day') == '' and d.get('opens') == settings['event']['days'][0], (code, d))
+    code, d = here(done_rid, done_tok, [0])
+    check('and a check-in is 409 early', code == 409 and d.get('code') == 'early', (code, d))
+    settings['event']['days'] = [(local - timedelta(days=i)).strftime('%Y-%m-%d') for i in (9, 8, 7)]
+    admin('PUT', '/settings', settings); settle()
+    code, d = page(done_rid, done_tok)
+    check('a week late the link says it is over', code == 200 and d.get('over') is True, (code, d))
+    code, d = here(done_rid, done_tok, [0])
+    check('and a check-in is 409 over', code == 409 and d.get('code') == 'over', (code, d))
+    settings['event'] = was_event
+    admin('PUT', '/settings', settings); settle()
+    # the taps this section made are taken back
+    tap('fri', [{'rid': done_rid, 'i': i, 'undo': True} for i in range(3)])
+    curl('POST', API + f'/reg/{ow_rid}/cancel?t={ow_tok}', {})
     settle()
 
 
