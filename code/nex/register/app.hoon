@@ -174,6 +174,7 @@
   ?:  =('set-notes' op)  (do-set-notes jon)
   ?:  =('add' op)  (do-add jon)
   ?:  =('checkin' op)  (do-checkin jon)
+  ?:  =('mail-sent' op)  (do-mail-sent jon)
   ?:  =('set-settings' op)  (do-set-doc %'settings.json' 'set-settings' jon)
   ?:  =('set-copy' op)  (do-set-doc %'copy.json' 'set-copy' jon)
   ?:  =('set-copy-key' op)  (do-set-copy-key jon)
@@ -674,6 +675,8 @@
   ?:  &(=('POST' meth) ?=([%api %draft ~] suffix))               (serve-draft eyre-id jon)
   ?:  &(=('POST' meth) ?=([%api %submit ~] suffix))              (serve-submit eyre-id jon)
   ?:  &(=('GET' meth) ?=([%api %reg @ ~] suffix))                (serve-reg eyre-id s2 tok)
+  ?:  &(=('GET' meth) ?=([%api %reg @ %checkin ~] suffix))       (serve-checkin-page eyre-id s2 tok)
+  ?:  &(=('POST' meth) ?=([%api %reg @ %checkin ~] suffix))      (serve-self-checkin eyre-id s2 tok jon)
   ?:  &(=('POST' meth) ?=([%api %reg @ %edit ~] suffix))         (serve-edit eyre-id s2 tok jon 'pilgrim')
   ?:  &(=('POST' meth) ?=([%api %reg @ %cancel ~] suffix))       (serve-cancel eyre-id s2 tok jon 'pilgrim')
   ?:  &(=('POST' meth) ?=([%api %reg @ %sign ~] suffix))         (serve-sign eyre-id s2 tok)
@@ -724,6 +727,7 @@
   ?:  &(=('GET' meth) ?=([%api %admin %counts ~] suffix))        (own (serve-doc eyre-id %'counts.json'))
   ?:  &(=('PUT' meth) ?=([%api %admin %counts ~] suffix))        (own (act (serve-set-doc eyre-id 'set-counts' jon admin-by)))
   ?:  &(=('POST' meth) ?=([%api %admin %add ~] suffix))          (own (act (serve-add eyre-id jon admin-by)))
+  ?:  &(=('POST' meth) ?=([%api %admin %'checkin-mail' ~] suffix))  (own (act (serve-checkin-mail eyre-id jon admin-by)))
   ?:  &(=('GET' meth) ?=([%api %admin %export @ ~] suffix))      (own (serve-export eyre-id s3))
   ?:  &(=('POST' meth) ?=([%api %admin %import ~] suffix))       (own (act (serve-import eyre-id jon args admin-by)))
   (send-err eyre-id 404 'no such route')
@@ -1311,6 +1315,26 @@
   ;<  ~  bind:m  (write-reg 0 r |)
   ;<  ~  bind:m  (note-rid 'set-notes' & '' by rid)
   (pure:m &)
+::  +do-mail-sent: a history line saying an email went out, and nothing
+::  else. The morning check-in mail reads these lines to skip a party
+::  that already has its link.
+::
+++  do-mail-sent
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  rid=@ta  (rid-of jon)
+  =/  by=@t  (by-of jon)
+  =/  what=@t  (end [3 64] (gs:reg jon 'what'))
+  ?:  =('' what)  (refuse 'mail-sent' 'what: required')
+  ;<  now=@da  bind:m  get-time:io
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
+  ?~  cur  (refuse 'mail-sent' 'no such registration')
+  ;<  ~  bind:m  (write-reg 0 (note-hist:reg u.cur by what now) |)
+  ::  no beacon: the line is read by the next press, not by a live view,
+  ::  and a hundred bumps in a burst would have every phone on the beach
+  ::  re-reading the roster a hundred times
+  (pure:m |)
 ::  +do-add: an organizer's manual registration. No window and no cap:
 ::  the organizer looked. The waiver and the payment the organizer took
 ::  on the spot are applied in this one op, each with its history line.
@@ -1629,6 +1653,130 @@
 ::  volunteer searching the name reads the red answer rather than
 ::  nothing.
 ::
+::  +serve-checkin-page: what a pilgrim's check-in link reads. The day
+::  is the ship's clock where the event is, never the link's.
+::
+++  serve-checkin-page
+  |=  [eyre-id=@ta rid=@t tok=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cur=(unit reg:reg)  bind:m  (with-reg eyre-id rid tok)
+  ?~  cur  (send-err eyre-id 404 'no such registration')
+  ;<  now=@da  bind:m  get-time:io
+  ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
+  =/  s=settings:reg  (de-settings:reg sj)
+  =/  days=(list @t)  (event-days:reg sj)
+  =/  day=(unit @tas)  (event-day:reg days offset.s now)
+  =/  over=?  (event-over:reg days offset.s now)
+  =/  opens=@t  (next-event-day:reg days offset.s now)
+  (send-json eyre-id 200 (en-checkin-page:reg u.cur day over opens))
+::  +serve-self-checkin: the pilgrim checks in the people named by
+::  index. Only adds, never undoes: taking a check-in back is the
+::  volunteers' and the organizers' to do. A party that is not complete
+::  is sent to the organizers; before the day, or after the last, the
+::  page says so by the code.
+::
+++  serve-self-checkin
+  |=  [eyre-id=@ta rid=@t tok=@t jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cur=(unit reg:reg)  bind:m  (with-reg eyre-id rid tok)
+  ?~  cur  (send-err eyre-id 404 'no such registration')
+  ;<  now=@da  bind:m  get-time:io
+  ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
+  =/  s=settings:reg  (de-settings:reg sj)
+  =/  days=(list @t)  (event-days:reg sj)
+  =/  day=(unit @tas)  (event-day:reg days offset.s now)
+  =/  over=?  (event-over:reg days offset.s now)
+  =/  opens=@t  (next-event-day:reg days offset.s now)
+  =/  coded  |=([code=@ud why=@t tag=@t] (send-json eyre-id code (pairs:enjs:format ~[['error' s+why] ['code' s+tag]])))
+  ?.  =(%complete status.u.cur)  (coded 409 'this registration is not complete' 'gone')
+  ?:  over  (coded 409 'the event is over' 'over')
+  ?~  day  (coded 409 'not today' 'early')
+  =/  idx=(list (unit @ud))
+    (turn (ga:reg jon 'people') |=(j=json ?:(?=([%n *] j) (rush p.j dem) ~)))
+  =/  n=@ud  (lent people.u.cur)
+  ?~  idx  (send-err eyre-id 400 'people: name who is here, by index')
+  =/  bad=?  (lien `(list (unit @ud))`idx |=(i=(unit @ud) ?~(i & (gte u.i n))))
+  ?:  bad  (send-err eyre-id 400 'people: name who is here, by index')
+  ?:  (gth (lent idx) 20)  (send-err eyre-id 400 'people: too many')
+  =/  want=(list @ud)  (murn `(list (unit @ud))`idx |=(i=(unit @ud) i))
+  =/  items=(list json)
+    %+  turn  want
+    |=  i=@ud
+    (pairs:enjs:format ~[['rid' s+id.u.cur] ['i' (en-num:reg i)]])
+  ::  the party is already in hand, so the batch is checked against it
+  ::  alone rather than against a fresh read of the whole tree
+  ;<  out=[done=@ud bad=(list json)]  bind:m
+    (apply-checkins ~[u.cur] u.day 'pilgrim' items 0 ~)
+  ?^  bad.out  (send-err eyre-id 500 'the ship did not take the check-in')
+  ::  the writer applies after this answer leaves, so the page is
+  ::  painted from the same rule the writer runs, not from a read that
+  ::  would race it
+  =/  r=reg:reg
+    |-  ^-  reg:reg
+    ?~  want  u.cur
+    =/  next=(unit reg:reg)  (with-checkin:reg u.cur i.want u.day 'pilgrim' now |)
+    $(want t.want, u.cur ?~(next u.cur u.next))
+  (send-json eyre-id 200 (en-checkin-page:reg r day over opens))
+::  +serve-checkin-mail: the morning's links. Complete parties with
+::  nobody checked in that day yet, and no line saying the link went
+::  out, unless `again`. At most a hundred a press; the page presses
+::  until none remain. Until phase 2 sends, each recipient gets a ring
+::  note with the filled subject and the history line the next press
+::  reads. When phase 2 sends, a failed send must skip the history line
+::  so a repress retries it.
+::
+++  serve-checkin-mail
+  |=  [eyre-id=@ta jon=json by=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  want=(unit @tas)  (checkin-day:reg (gs:reg jon 'day'))
+  ?~  want  (send-err eyre-id 400 'day: fri, sat or sun')
+  =/  again=?  (gb:reg jon 'again')
+  =/  mark=@t  (cat 3 'email.checkin.' u.want)
+  ;<  raw-cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
+  ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
+  =/  cj=json  (with-starter:reg raw-cj)
+  =/  raw=@t  (gs:reg cj 'email.checkin.subject')
+  =/  day-word=@t  ?+(u.want 'Friday' %sat 'Saturday', %sun 'Sunday')
+  =/  due=(list reg:reg)
+    %+  skim  (sort regs by-last)
+    |=  r=reg:reg
+    ?.  =(%complete status.r)  |
+    ::  a family that walks only Sunday gets no Friday link
+    ?.  (there-that-day:reg r u.want)  |
+    ?:  (lien people.r |=(p=person:reg (~(has ^by checkins.p) u.want)))  |
+    ?:  again  &
+    !(lien history.r |=(st=step:reg =(mark what.st)))
+  =/  batch=(list reg:reg)  (scag 100 due)
+  =/  left=@ud  (sub (lent due) (lent batch))
+  =/  subj=@t
+    ?:  =('' raw)  'no copy for email.checkin.subject'
+    (fill:reg raw ~[['day' day-word]])
+  ;<  sent=@ud  bind:m  (mail-each batch mark subj by 0)
+  %^  send-json  eyre-id  200
+  (pairs:enjs:format ~[['sent' (en-num:reg sent)] ['remaining' (en-num:reg left)]])
+::  +mail-each: one recipient at a time: the ring note that stands in
+::  for the send, then the history line
+::
+++  mail-each
+  |=  [batch=(list reg:reg) mark=@t subj=@t by=@t sent=@ud]
+  =/  m  (fiber:fiber:nexus ,@ud)
+  ^-  form:m
+  ?~  batch  (pure:m sent)
+  =/  r=reg:reg  i.batch
+  =/  note=json
+    %-  pairs:enjs:format
+    :~  ['op' s+'note']  ['what' s+mark]  ['ok' b+&]
+        ['why' s+subj]  ['by' s+'stub']  ['rid' s+id.r]
+    ==
+  ;<  err=(unit tang)  bind:m  (poke-writer note)
+  ?^  err  (mail-each t.batch mark subj by sent)
+  =/  line=json
+    (pairs:enjs:format ~[['op' s+'mail-sent'] ['rid' s+id.r] ['what' s+mark] ['by' s+by]])
+  ;<  err2=(unit tang)  bind:m  (poke-writer line)
+  (mail-each t.batch mark subj by ?^(err2 sent +(sent)))
 ++  serve-checkin-roster
   |=  [eyre-id=@ta day=@t]
   =/  m  (fiber:fiber:nexus ,~)
@@ -1646,6 +1794,8 @@
       ['now' (en-time:reg now)]
       ['rows' a+(turn rows |=(r=reg:reg (en-roster-row:reg r u.want)))]
       ['planned' (planned:reg rows u.want)]
+      ['expected' (en-num:reg (checkin-expected:reg rows u.want))]
+      ['done' (en-num:reg (checkin-done:reg rows u.want))]
       ['counts' (gj:reg cj u.want)]
   ==
 ::  +serve-checkin: a batch of taps from one phone. Each item is checked
@@ -1744,26 +1894,42 @@
   =/  known=?
     ?|  =('confirmation' tpl)  =('manage' tpl)  =('promoted' tpl)
         =('assistance_approved' tpl)  =('assistance_declined' tpl)
-        =('reminder' tpl)  =('cancelled' tpl)
+        =('reminder' tpl)  =('cancelled' tpl)  =('checkin' tpl)
     ==
   ?.  known
-    (send-err eyre-id 400 'template: not one of the seven')
+    (send-err eyre-id 400 'template: not one of the eight')
   ;<  raw-cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
+  =/  s=settings:reg  (de-settings:reg sj)
+  ::  the check-in link names its day and goes out on that day: a hand
+  ::  resend from the record is the fallback for "we never got it"
+  =/  today=(unit @tas)  (event-day:reg (event-days:reg sj) offset.s now)
+  ?:  &(=('checkin' tpl) ?=(~ today))
+    (send-err eyre-id 409 'the check-in link is sent on the day')
+  =/  day-word=@t  ?~(today '' ?+(u.today 'Friday' %sat 'Saturday', %sun 'Sunday'))
+  =/  mark=@t  ?:(=('checkin' tpl) (cat 3 'email.checkin.' (need today)) (rap 3 'email.' tpl ~))
   =/  cj=json  (with-starter:reg raw-cj)
   =/  raw=@t  (gs:reg cj (rap 3 'email.' tpl '.subject' ~))
   =/  who=@t  ?~(people.r '' first.i.people.r)
   =/  posn=@t  (crip (a-co:co (position-of:reg regs r)))
   =/  subj=@t
     ?:  =('' raw)  (rap 3 'no copy for email.' tpl '.subject' ~)
-    (fill:reg raw ~[['first' who] ['position' posn]])
+    (fill:reg raw ~[['first' who] ['position' posn] ['day' day-word]])
   =/  pk=json
     %-  pairs:enjs:format
-    :~  ['op' s+'note']  ['what' s+(rap 3 'email.' tpl ~)]  ['ok' b+&]
+    :~  ['op' s+'note']  ['what' s+mark]  ['ok' b+&]
         ['why' s+subj]  ['by' s+'stub']  ['rid' s+id.r]
     ==
   ;<  err=(unit tang)  bind:m  (poke-writer pk)
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  ::  a check-in link sent by hand counts as sent, so the morning press
+  ::  does not send it again
+  ;<  err2=(unit tang)  bind:m
+    ?.  =('checkin' tpl)  (pure:(fiber:fiber:nexus ,(unit tang)) ~)
+    (poke-writer (pairs:enjs:format ~[['op' s+'mail-sent'] ['rid' s+id.r] ['what' s+mark] ['by' s+'admin']]))
+  ?^  err2  (send-err eyre-id 500 'the writer refused the poke')
   %^  send-json  eyre-id  200
   (pairs:enjs:format ~[['ok' b+&] ['template' s+tpl] ['subject' s+subj]])
 --
