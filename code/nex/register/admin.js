@@ -10,7 +10,7 @@
   var KEEP = '/grubbery/api/keep/apps/shell.shell/desks/register.desk/desk/data/register.register_app/beacon/rev';
   var SHRINE = 350;   // the Sunday capacity at the Shrine, reported not enforced
   var TEMPLATES = ['confirmation', 'manage', 'promoted', 'assistance_approved',
-    'assistance_declined', 'reminder', 'cancelled'];
+    'assistance_declined', 'reminder', 'cancelled', 'checkin'];
   var DAYS = [['fri', 'Friday'], ['sat', 'Saturday'], ['sun', 'Sunday']];
   var ACTS = [['walk', 'Walk'], ['mass', 'Mass'], ['holy_hour', 'Holy Hour'],
     ['social', 'Social'], ['bus', 'Bus']];
@@ -271,6 +271,7 @@
   var busyEl = document.getElementById('busy');
 
   var roster = null, pub = null, detail = null;
+  var dayDoc = null, dayFilters = { seg: 'missing', q: '', again: false, force: false }, mailing = null;
   var model = null, before = null;
   var settingsDoc = null, copyDoc = null, countsDoc = null;
   var dry = null, fileBody = null, fileName = '';
@@ -908,7 +909,8 @@
         out += '<td class="num">' + esc(want) + (got === undefined || got === null || got === '' ? '' : ' / ' + esc(got)) + '</td>';
       });
       var seen = counted.reduce(function (n, r) { return n + (Number((r.checked || {})[d[0]]) || 0); }, 0);
-      out += '<td class="num">' + esc(seen) + '</td></tr>';
+      var self = counted.reduce(function (n, r) { return n + (Number((r.self || {})[d[0]]) || 0); }, 0);
+      out += '<td class="num">' + esc(seen) + (seen ? ' <span class="muted">(' + esc(self) + ' themselves)</span>' : '') + '</td></tr>';
     });
     out += '</tbody></table><p class="help">Planned from the registrations, actual from the counts screen, ' +
       'checked in from the volunteers\' app. ' +
@@ -955,6 +957,183 @@
   // the rest, the same grid the volunteers' app shows
   function actsFor(d) {
     return d === 'sun' ? ACTS.concat(SUN_ACTS) : ACTS;
+  }
+  // ---- the day: who is here ----
+  // the event's day today, from the browser's local date the way the
+  // volunteers' app picks it; Friday outside the event
+  function todayEvent() {
+    var days = getPath(settingsDoc || {}, 'event.days') || [];
+    if (typeof days === 'string') days = days.split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+    var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
+    var today = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+    var i = days.indexOf(today);
+    return i >= 0 && i < DAYS.length ? DAYS[i][0] : '';
+  }
+  function todayKey() { return todayEvent() || 'fri'; }
+  // a party is expected that day when someone in it walks it or has
+  // its social, the same rule the ship's expected count uses
+  function expectedToday(r) {
+    return (r.people || []).some(function (p) { return p.walks || p.social; });
+  }
+  function dayRows() {
+    var rows = (dayDoc && dayDoc.rows) || [];
+    return rows.filter(function (r) {
+      if (r.status !== 'complete') return false;
+      var people = r.people || [];
+      var here = people.filter(function (p) { return p.checked; }).length;
+      // the day's own segments show parties expected today; a family
+      // that walks only Sunday is under "everyone" on Friday
+      if (dayFilters.seg !== 'all' && !expectedToday(r)) return false;
+      if (dayFilters.seg === 'missing' && here >= people.length) return false;
+      if (dayFilters.seg === 'absent' && here) return false;
+      if (dayFilters.seg === 'here' && here < people.length) return false;
+      return matches({ email: r.email, id: r.rid, names: people.map(function (p) { return p.last + ', ' + p.first; }) }, dayFilters.q);
+    });
+  }
+  function byWords(by) {
+    if (by === 'pilgrim') return 'themselves';
+    return String(by || '').replace(/^admin:/, '') || 'a volunteer';
+  }
+  function dayView() {
+    var d = dayDoc || {};
+    var day = d.day || 'fri';
+    var label = (DAYS.filter(function (x) { return x[0] === day; })[0] || DAYS[0])[1];
+    var expected = Number(d.expected) || 0, done = Number(d.done) || 0;
+    var pct = expected ? Math.round(100 * done / expected) : 0;
+    var complete = (d.rows || []).filter(function (r) { return r.status === 'complete'; });
+    var absent = complete.filter(function (r) { return expectedToday(r) && !(r.people || []).some(function (p) { return p.checked; }); }).length;
+    var today = todayEvent();
+    var isToday = today === day;
+    var out = '<h1>' + esc(label) + '</h1>';
+    out += '<p class="actions">' + DAYS.map(function (x) {
+      return '<a class="btn small' + (x[0] === day ? '' : ' quiet') + '" href="#day/' + x[0] + '">' + esc(x[1]) + '</a>';
+    }).join('') + '</p>';
+    out += '<div class="count"><strong>' + esc(done) + '</strong> of ' + esc(expected) + ' expected ' + esc(label) +
+      ' checked in, <strong>' + esc(pct) + '%</strong>' + meter(done, expected) + '<span class="muted">' + esc(absent) +
+      (absent === 1 ? ' party' : ' parties') + ' not here yet</span></div>';
+    // the morning's links. They go out on their day: another day's tab
+    // needs the organizer to say so
+    var running = !!(mailing && mailing.running);
+    var canSend = !running && (isToday || dayFilters.force);
+    out += '<div class="card mailbox"><div class="actions">' +
+      '<button type="button" class="btn small" data-act="checkin-mail"' + (canSend ? '' : ' disabled') + '>Email ' + esc(label) + '\'s check-in links</button>' +
+      '<label class="check"><input type="checkbox" id="d-again"' + (dayFilters.again ? ' checked' : '') + '><span>Send again to everyone who already got one</span></label>' +
+      (isToday ? '' : '<label class="check"><input type="checkbox" id="d-force"' + (dayFilters.force ? ' checked' : '') + '><span>It is not ' + esc(label) + ' yet. Send anyway</span></label>') +
+      '</div><p class="help" id="mail-said">' + esc(mailSaid(label)) + '</p></div>';
+    out += '<div class="bar">';
+    out += '<div><label>Show</label><select id="d-seg">' + [['missing', 'someone missing'], ['absent', 'nobody here yet'], ['here', 'everyone here'], ['all', 'everyone, any day']].map(function (s2) {
+      return '<option value="' + s2[0] + '"' + (dayFilters.seg === s2[0] ? ' selected' : '') + '>' + esc(s2[1]) + '</option>';
+    }).join('') + '</select></div>';
+    out += '<div><label>Search</label><input type="text" id="d-q" placeholder="Name or email" value="' + esc(dayFilters.q) + '"></div>';
+    out += '</div>';
+    var list = dayRows();
+    out += '<table><thead><tr><th>Party</th><th>Wristband</th><th>Check in</th></tr></thead><tbody>';
+    list.forEach(function (r) {
+      var people = r.people || [];
+      var left = people.filter(function (p) { return !p.checked; });
+      out += '<tr' + (r.pending ? ' class="pending"' : '') + '><td>';
+      people.forEach(function (p) {
+        out += '<div>' + (p.checked ? '<span class="tick">&#10003;</span> ' : '<span class="notick">&#9675;</span> ') +
+          '<a href="#reg/' + esc(r.rid) + '">' + esc(p.first + ' ' + p.last) + '</a>' +
+          (p.checked ? '<span class="muted"> ' + esc(byWords(p.by)) + ', ' + esc(clock(p.at)) + '</span>' : '') + '</div>';
+      });
+      out += '<div class="muted">' + esc(r.email) + '</div></td>';
+      out += '<td>' + (r.wristband && r.wristband.ok ? '<span class="badge complete">wristband</span>' :
+        '<span class="badge cancelled">' + esc((r.wristband || {}).why || 'no') + '</span>') + '</td>';
+      out += '<td>';
+      if (left.length > 1) {
+        out += '<button type="button" class="btn small" data-act="day-checkin" data-rid="' + esc(r.rid) + '" data-all="1">Check in everyone</button> ';
+      }
+      left.forEach(function (p) {
+        out += '<button type="button" class="btn quiet small" data-act="day-checkin" data-rid="' + esc(r.rid) + '" data-i="' + p.i + '">' +
+          esc(people.length > 1 ? p.first : 'Check in') + '</button> ';
+      });
+      out += '</td></tr>';
+    });
+    out += '</tbody></table>';
+    if (!list.length) {
+      out += '<p class="muted">' + (!complete.length ? 'No complete registrations yet.' :
+        dayFilters.q ? 'Nobody matches.' :
+        dayFilters.seg === 'missing' || dayFilters.seg === 'absent' ? 'Everyone expected ' + esc(label) + ' is here.' :
+        'Nobody yet.') + '</p>';
+    }
+    return out;
+  }
+  function clock(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    var h = d.getHours(), m = d.getMinutes();
+    return ((h % 12) || 12) + ':' + (m < 10 ? '0' : '') + m + (h < 12 ? 'am' : 'pm');
+  }
+  function mailSaid(label) {
+    var m = mailing;
+    var stub = pub && pub.mode === 'stub' ? 'Rehearsal: no email leaves the ship. ' : '';
+    if (!m) return stub + 'Sends the link to every complete party expected ' + (label || 'today') + ', not yet checked in, that has not had one.';
+    if (m.running) return stub + 'Sent ' + m.sent + ', ' + m.remaining + ' to go';
+    if (m.error) return stub + m.error;
+    if (!m.sent) return stub + 'Sent 0 links: everyone had one already, or is checked in.';
+    return stub + 'Sent ' + m.sent + (m.sent === 1 ? ' link.' : ' links.');
+  }
+  // the day's check-in, painted at once: the tick shows and the read
+  // after the write confirms it
+  function dayCheckin(rid, idxs, el) {
+    var row = ((dayDoc || {}).rows || []).filter(function (r) { return r.rid === rid; })[0];
+    if (!row) return;
+    var at = new Date().toISOString();
+    var was = JSON.parse(JSON.stringify(row));
+    var wasDone = dayDoc.done;
+    var added = 0;
+    row.people.forEach(function (p) {
+      if (idxs.indexOf(p.i) >= 0 && !p.checked) { p.checked = true; p.at = at; p.by = 'admin:' + actor; added += 1; }
+    });
+    if (expectedToday(row)) dayDoc.done = (Number(dayDoc.done) || 0) + added;
+    row.pending = true;
+    var paint = function () { if (route().name === 'day') render(dayView()); };
+    paint();
+    var free = spin(el);
+    var back = function () { Object.assign(row, was); dayDoc.done = wasDone; row.pending = false; };
+    writeApi('/checkin', { day: dayDoc.day, checkins: idxs.map(function (i) { return { rid: rid, i: i }; }) }).then(function (d) {
+      free();
+      // the ship answers 200 and names what it would not take
+      if ((d.rejected || []).length) { back(); paint(); return say(d.rejected[0].why || 'The ship did not take that check-in.'); }
+      row.pending = false;
+      paint();
+      setTimeout(function () { if (route().name === 'day') refresh(); }, 1200);
+    }).catch(function (e) {
+      free();
+      back();
+      paint();
+      say(e.message);
+    });
+  }
+  // press the route until nothing remains, saying how far it is
+  function sendCheckinMail(day, again) {
+    var mine = { running: true, sent: 0, remaining: 0 };
+    mailing = mine;
+    var paint = function () { if (route().name === 'day') render(dayView()); };
+    paint();
+    function once() {
+      return write('/checkin-mail', { day: day, again: again }).then(function (d) {
+        mine.sent += Number(d.sent) || 0;
+        mine.remaining = Number(d.remaining) || 0;
+        again = false;
+        var said = document.getElementById('mail-said');
+        if (said) said.textContent = mailSaid();
+        // the writer takes a moment to land the last party's line, so
+        // the next press waits for it rather than sending it twice
+        if (mine.remaining > 0 && (Number(d.sent) || 0) > 0) {
+          return new Promise(function (r) { setTimeout(r, 1500); }).then(once);
+        }
+        mine.running = false;
+        dayFilters.again = false; dayFilters.force = false;
+        paint();
+      });
+    }
+    return once().catch(function (e) {
+      mailing = { running: false, sent: mine.sent, remaining: 0, error: e.message };
+      paint();
+    });
   }
   function countsView() {
     var cd = countsDoc || {};
@@ -1010,6 +1189,8 @@
     var out = '<h1>Settings</h1>';
     out += '<div class="card"><h3>Event</h3>' +
       field('event.name', 'Name', getPath(s, 'event.name')) +
+      field('event.utc_offset_hours', 'Hours from UTC', getPath(s, 'event.utc_offset_hours'), 'number', ' step="1" min="-12" max="14"') +
+      '<p class="help">-5 in December for Florida. The ship uses it to know which event day it is.</p>' +
       '<label>Days, one per line<textarea data-k="event.days">' + esc((getPath(s, 'event.days') || []).join('\n')) + '</textarea></label>' +
       field('public_url', 'Public URL', s.public_url) + '</div>';
     out += '<div class="card"><h3>Fees, in dollars</h3><div class="row">' +
@@ -1102,6 +1283,10 @@
   // the whole roster is one big read, so a view that already has it in
   // memory works from that. The beacon and the minute timer drop it.
   function haveRoster() { return roster ? Promise.resolve(roster) : needRoster(); }
+  function needStatus() {
+    if (pub) return Promise.resolve(pub);
+    return api(API + '/status').then(function (d) { pub = d; return d; });
+  }
   function needCounts() {
     if (countsDoc) return Promise.resolve(countsDoc);
     return read('/counts').then(function (d) { countsDoc = d; return d; });
@@ -1148,10 +1333,10 @@
   // resting cursor.
   function render(html) {
     var had = document.activeElement, id = had ? had.id : '';
-    var pos = had && /^f-/.test(id) && had.setSelectionRange ? had.selectionStart : null;
+    var pos = had && /^[fd]-/.test(id) && had.setSelectionRange ? had.selectionStart : null;
     view.innerHTML = html;
     markNav();
-    if (/^f-/.test(id)) {
+    if (/^[fd]-/.test(id)) {
       var again = document.getElementById(id);
       if (again) {
         again.focus();
@@ -1211,6 +1396,22 @@
       p = Promise.all([haveRoster(), needSettings(), needCounts()]).then(function () {
         paint(reportsView());
       });
+    } else if (r.name === 'day') {
+      // the volunteers' roster route, with the day's two counts on it
+      var want = r.id === 'sat' || r.id === 'sun' ? r.id : r.id === 'fri' ? 'fri' : '';
+      if (!want) {
+        p = needSettings().then(function () { location.hash = '#day/' + todayKey(); });
+      } else {
+        if (!dayDoc || dayDoc.day !== want) {
+          paint(loading());
+          if (mailing && !mailing.running) mailing = null;
+          dayFilters.force = false;
+        }
+        p = Promise.all([needSettings(), needStatus(), api(API + '/checkin/roster?day=' + want)]).then(function (got) {
+          dayDoc = got[2];
+          paint(dayView());
+        });
+      }
     } else if (r.name === 'counts') {
       if (!countsDoc) paint(loading());
       p = read('/counts').then(function (d) { countsDoc = d; paint(countsView()); });
@@ -1343,6 +1544,10 @@
     if (el.id === 'f-seg') { filters.seg = el.value; return render(rosterView()); }
     if (el.id === 'f-track') { filters.track = el.value; return render(rosterView()); }
     if (el.id === 'f-q') { filters.q = el.value; if (view.querySelector('tbody')) render(rosterView()); return; }
+    if (el.id === 'd-seg') { dayFilters.seg = el.value; return render(dayView()); }
+    if (el.id === 'd-q') { dayFilters.q = el.value; return render(dayView()); }
+    if (el.id === 'd-again') { dayFilters.again = el.checked; return; }
+    if (el.id === 'd-force') { dayFilters.force = el.checked; return render(dayView()); }
     if (el.id === 'file') return pickFile(el);
     var copyKey = el.getAttribute('data-copy');
     if (copyKey && copyDoc) { copyDoc[copyKey] = el.value; dirty = true; return; }
@@ -1399,6 +1604,18 @@
     function post(body) { return run(body, el); }
     if (a === 'add-person') { dirty = true; model.people.push(blankPerson()); return render(route().name === 'add' ? addView() : detailView()); }
     if (a === 'remove-person') { dirty = true; model.people.splice(+el.getAttribute('data-i'), 1); return render(route().name === 'add' ? addView() : detailView()); }
+    if (a === 'day-checkin') {
+      var drid = el.getAttribute('data-rid');
+      var drow = ((dayDoc || {}).rows || []).filter(function (r) { return r.rid === drid; })[0];
+      if (!drow) return;
+      var idxs = el.getAttribute('data-all')
+        ? drow.people.filter(function (p) { return !p.checked; }).map(function (p) { return p.i; })
+        : [Number(el.getAttribute('data-i'))];
+      return act(function () { dayCheckin(drid, idxs, el); });
+    }
+    if (a === 'checkin-mail') {
+      return act(function () { sendCheckinMail((dayDoc || {}).day || 'fri', !!dayFilters.again); });
+    }
     if (a === 'copy-emails') {
       var addrs = emailsOf(rows()).join(', ');
       if (!addrs) return;
@@ -1536,6 +1753,9 @@
         ['fees.full', 'fees.bambino'].forEach(function (k) { setPath(doc, k, cents(getPath(settingsDoc, k))); });
         ['caps.full', 'caps.bambino', 'caps.social_fri', 'caps.social_sat', 'caps.late_adds', 'caps.sunday', 'hold_hours']
           .forEach(function (k) { setPath(doc, k, Number(getPath(settingsDoc, k)) || 0); });
+        // a blank offset means Eastern, not Greenwich
+        var off = getPath(settingsDoc, 'event.utc_offset_hours');
+        setPath(doc, 'event.utc_offset_hours', off === '' || off === undefined || off === null ? -5 : Math.round(Number(off) || 0));
         ['window.open', 'window.close', 'window.change_cutoff']
           .forEach(function (k) { setPath(doc, k, fromLocal(getPath(settingsDoc, k))); });
         var days = getPath(settingsDoc, 'event.days');
@@ -1598,7 +1818,7 @@
     if (!el) return false;
     if (!promptEl.hidden) return true;
     // the filter bar is not an edit: render() keeps its focus and caret
-    if (/^f-/.test(el.id || '')) return false;
+    if (/^[fd]-/.test(el.id || '')) return false;
     return (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') &&
       (view.contains(el) || promptEl.contains(el));
   }

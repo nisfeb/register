@@ -112,3 +112,10 @@ td.num, th.num { text-align: right; }
 tr.pending td, .card.pending { opacity: .55; }
 .stale { color: var(--warn); }
 .mail textarea { min-height: 7rem; }
+
+/* the day view: a tick per person, the count line, the send box */
+.count { font-size: 1.05rem; margin: 1rem 0; }
+.count .meter { display: inline-block; width: 12rem; margin: 0 .6rem; vertical-align: middle; }
+.tick { color: var(--good); font-weight: 600; }
+.notick { color: var(--muted); }
+.mailbox .actions { align-items: center; }
