@@ -225,12 +225,12 @@
   var manageWas = null;       // the status the manage view loaded
   var manageMade = '';        // when the registration the manage view holds was made
 
-  // the thirteen pilgrim views, each reachable from edit mode with a
+  // the fourteen pilgrim views, each reachable from edit mode with a
   // fixture, and the strings that belong to no view of their own
   var STEPS = [['landing', 'Landing'], ['form', 'Form (full)'], ['bambino', 'Form (Bambino)'],
     ['waiver', 'Waiver step'], ['payment', 'Payment step'], ['assistance', 'Assistance'],
     ['waitlist', 'Wait list'], ['complete', 'Complete'], ['cancelled', 'Cancelled'],
-    ['manage', 'Manage'], ['notyet', 'Not open yet'], ['closed', 'Closed'], ['soldout', 'Sold out'],
+    ['manage', 'Manage'], ['checkin', 'Check-in'], ['notyet', 'Not open yet'], ['closed', 'Closed'], ['soldout', 'Sold out'],
     ['other', 'Other strings']];
   // the strings no fixture puts on screen as a span of their own: a
   // status line, a dialog, what an error says, the few that only show
@@ -243,7 +243,9 @@
     'form.social_fri.short', 'form.social_sat.short',
     'track.full', 'track.bambino',
     'next.payment.spots', 'next.payment.body.one', 'next.draft.title', 'next.draft.body',
-    'manage.closed', 'manage.pay_more', 'manage.cancel.confirm', 'stub.banner'];
+    'manage.closed', 'manage.pay_more', 'manage.cancel.confirm', 'stub.banner',
+    'checkin.early', 'checkin.over', 'checkin.gone', 'checkin.solo.body', 'checkin.solo.button',
+    'checkin.done', 'checkin.nobody'];
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
     'August', 'September', 'October', 'November', 'December'];
 
@@ -269,7 +271,11 @@
   }
   // a date a pilgrim reads, not an ISO stamp
   function dateWords(iso) {
-    var d = new Date(String(iso || ''));
+    // a bare date parses as UTC midnight, which is the evening before
+    // anywhere west of Greenwich; noon keeps it on its own day
+    var t = String(iso || '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(t)) t += 'T12:00:00';
+    var d = new Date(t);
     if (isNaN(d.getTime())) return String(iso || '');
     return MONTHS[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
   }
@@ -613,6 +619,54 @@
     return '<div id="error"></div>' + out;
   }
 
+  // ---- the check-in link, on the day ----
+  // what the link shows is decided by the document the ship answers:
+  // the party's status, whether it is an event day, and who is here.
+  // The page never decides the day itself.
+  function clockWords(iso) {
+    var d = new Date(String(iso || ''));
+    if (isNaN(d.getTime())) return '';
+    var h = d.getHours(), m = d.getMinutes();
+    return ((h % 12) || 12) + ':' + (m < 10 ? '0' : '') + m + (h < 12 ? 'am' : 'pm');
+  }
+  function weekdayWords(iso) {
+    var d = new Date(String(iso || '') + 'T12:00:00');
+    if (isNaN(d.getTime())) return '';
+    return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getDay()];
+  }
+  function checkinPage(c) {
+    var out = '<h1>' + tx('checkin.title') + '</h1><div id="error"></div>';
+    var people = c.people || [];
+    if (c.status !== 'complete') return out + '<div class="card soft"><p>' + tx('checkin.gone') + '</p></div>';
+    if (c.over) return out + '<div class="card soft"><p>' + tx('checkin.over') + '</p></div>';
+    if (!c.day) {
+      return out + '<div class="card soft"><p>' +
+        tx('checkin.early', { day: weekdayWords(c.opens), date: dateWords(c.opens) }) + '</p></div>';
+    }
+    var here = people.filter(function (p) { return p.checked; });
+    if (people.length === 1) {
+      if (here.length) return out + '<div class="card"><p class="done">' + tx('checkin.done') + '</p></div>';
+      return out + '<div class="card"><p>' + tx('checkin.solo.body', { first: String(people[0].first || '').trim() || who(people[0], 0) }) + '</p>' +
+        '<p class="actions"><button type="button" class="btn big" data-act="checkin">' + tx('checkin.solo.button') + '</button></p></div>';
+    }
+    if (here.length === people.length) return out + '<div class="card"><p class="done">' + tx('checkin.done') + '</p></div>';
+    out += '<div class="card"><p>' + tx('checkin.group.body') + '</p>';
+    people.forEach(function (p) {
+      out += '<label class="check' + (p.checked ? ' off' : '') + '"><input type="checkbox" data-here="' + p.i + '"' +
+        (p.checked ? ' checked disabled' : '') + '><span>' + esc(who(p, p.i)) +
+        (p.checked ? ' <span class="note">' + esc(clockWords(p.at)) + '</span>' : '') + '</span></label>';
+    });
+    if (here.length) {
+      out += '<p class="help">' + tx('checkin.done.some', { names: joinWords(here.map(function (p) { return who(p, p.i); })) }) + '</p>';
+    }
+    out += '<p class="actions"><button type="button" class="btn big" data-act="checkin">' + tx('checkin.group.button') + '</button></p></div>';
+    return out;
+  }
+  function checkinFixture() {
+    return { status: 'complete', day: 'fri', over: false, opens: '',
+      people: [{ i: 0, first: 'Ana', last: 'Silva', checked: true, at: status.now }, { i: 1, first: 'Bo', last: 'Silva', checked: false, at: null }] };
+  }
+
   // ---- edit mode, the owner's alone ----
   var actor = '';
   try { actor = localStorage.getItem('register.actor') || ''; } catch (e) { }
@@ -740,6 +794,9 @@
         model = fixtureModel('full');
         sameAs = fixtureSame(model);
         out = form(model);
+      } else if (name === 'checkin') {
+        mode = 'checkin';
+        out = checkinPage(checkinFixture());
       } else if (name === 'other') {
         out = otherHtml();
       } else {
@@ -970,6 +1027,17 @@
           render('<div id="error"></div>'); showError(e.message);
         });
       }
+      if (parts[0] === 'checkin' && parts[1] && parts[2]) {
+        rid = parts[1]; token = parts[2]; mode = 'checkin';
+        render(loading());
+        return api('/reg/' + rid + '/checkin?t=' + encodeURIComponent(token)).then(function (c) {
+          if (gen !== routeGen) return;
+          render(checkinPage(c));
+        }).catch(function (e) {
+          if (gen !== routeGen) return;
+          render('<div id="error"></div>'); showError(e.message);
+        });
+      }
       if (parts[0] === 'manage' && parts[1] && parts[2]) {
         rid = parts[1]; token = parts[2]; mode = 'manage';
         render(loading());
@@ -1116,6 +1184,26 @@
         fresh = { status: 'cancelled' };
         location.hash = '#next/' + rid + '/' + token;
       }).catch(function (e) { freeCancel(); leaving = null; showError(e.message); });
+    }
+    else if (act2 === 'checkin') {
+      var boxes = Array.prototype.slice.call(view.querySelectorAll('input[data-here]'));
+      var ticked = boxes.filter(function (b) { return b.checked && !b.disabled; })
+        .map(function (b) { return Number(b.getAttribute('data-here')); });
+      if (!boxes.length) ticked = [0];
+      showError('');
+      if (!ticked.length) return showError(t('checkin.nobody'));
+      var freeIn = spin(el);
+      post('/reg/' + rid + '/checkin?t=' + encodeURIComponent(token), { people: ticked }).then(function (c) {
+        render(checkinPage(c));
+      }).catch(function (e) {
+        freeIn();
+        // the ship names why by a code the page already knows how to draw
+        if (e.code === 'early' || e.code === 'over' || e.code === 'gone') {
+          return api('/reg/' + rid + '/checkin?t=' + encodeURIComponent(token))
+            .then(function (c) { render(checkinPage(c)); }, function () { showError(e.message); });
+        }
+        showError(e.message);
+      });
     }
     else if (act2 === 'sign' || act2 === 'pay') {
       var freeStep = spin(el);

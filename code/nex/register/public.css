@@ -123,3 +123,7 @@ body.editing .btn, body.editing .check, body.editing a.btn, body.editing .remove
 .copy-bad { color: var(--bad); font-size: .85rem; margin-left: .3rem; }
 .ribbon { background: #fff4d6; color: #5b4300; padding: .45rem .8rem; border-radius: 6px; font-size: .85rem; font-weight: 600; margin-bottom: 1rem; }
 .otherlist .key { display: block; font-size: .78rem; color: var(--muted); margin-top: .8rem; }
+
+/* the check-in link: one big button for a hand holding a phone and a child */
+.btn.big { font-size: 1.2rem; padding: 1rem 1.6rem; width: 100%; text-align: center; }
+.done { font-weight: 600; font-size: 1.1rem; }
