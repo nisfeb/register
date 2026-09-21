@@ -109,6 +109,7 @@
       close=(unit @da)
       cutoff=(unit @da)
       mode=@tas                                 ::  %live or %stub
+      offset=@sd                                ::  hours from UTC: -5 is Eastern in December
   ==
 +$  counts  [full=@ud bambino=@ud social-fri=@ud social-sat=@ud late=@ud waitlist=@ud]
 ::  ==  caps, the spec's
@@ -223,6 +224,14 @@
   =/  v=json  (gj jon k)
   ?.  ?=([%n *] v)  ~
   (rush p.v dem)
+++  gsd                                         ::  a signed whole number
+  |=  [jon=json k=@t]
+  ^-  (unit @sd)
+  =/  v=json  (gj jon k)
+  ?.  ?=([%n *] v)  ~
+  %+  rush  p.v
+  %+  cook  |=([m=(unit @) n=@ud] ^-(@sd (new:si ?=(~ m) n)))
+  ;~(plug (punt hep) dem)
 ++  gb                                          ::  a boolean, false when absent
   |=  [jon=json k=@t]
   ^-  ?
@@ -393,6 +402,7 @@
   =/  wj=json  (gj jon 'window')
   =/  hours=@ud  (fall (gn jon 'hold_hours') 48)
   =/  mode=@t  (gs (gj jon 'providers') 'mode')
+  =/  offset=@sd  (fall (gsd (gj jon 'event') 'utc_offset_hours') -5)
   :*  :*  (fall (gn fj 'full') 7.500)
           (fall (gn fj 'bambino') 2.500)
       ==
@@ -407,6 +417,7 @@
       (gt wj 'close')
       (gt wj 'change_cutoff')
       ?:(=('live' mode) %live %stub)
+      offset
   ==
 ++  window-open
   |=  [s=settings now=@da]
@@ -730,6 +741,7 @@
       ['nonwalker' [%b =(0 w)]]
       ['plan' (en-plan people.r)]
       ['checked' (en-checked people.r)]
+      ['self' (en-self people.r)]
   ==
 ::  +en-checked: how many of the party are checked in, per day, so the
 ::  backoffice roster shows a tick without reading each registration
@@ -741,6 +753,17 @@
     |=  day=@tas
     ^-  json
     (en-num (lent (skim people |=(p=person (~(has by checkins.p) day)))))
+  (pairs:enjs:format ~[['fri' (many %fri)] ['sat' (many %sat)] ['sun' (many %sun)]])
+::  +en-self: of those, how many checked themselves in from their link
+::
+++  en-self
+  |=  people=(list person)
+  ^-  json
+  =/  many
+    |=  day=@tas
+    ^-  json
+    =/  mine  |=(p=person =([~ 'pilgrim'] (bind (~(get by checkins.p) day) |=(c=checkin by.c))))
+    (en-num (lent (skim people mine)))
   (pairs:enjs:format ~[['fri' (many %fri)] ['sat' (many %sat)] ['sun' (many %sun)]])
 ::  +en-plan: how many of the party plan each day and each activity, so
 ::  the reports add up without reading every registration whole
@@ -775,6 +798,105 @@
   ?:  =('sat' t)  `%sat
   ?:  =('sun' t)  `%sun
   ~
+::  +event-days: the event's dates from settings.json, in order
+::
+++  event-days
+  |=  sj=json
+  ^-  (list @t)
+  %+  scag  3
+  %+  murn  (ga (gj sj 'event') 'days')
+  |=(j=json ?:(?=([%s *] j) `p.j ~))
+::  +local-date: the calendar date where the event is, as the text
+::  +en-iso writes, cut at the day. The ship's clock is UTC; a Friday
+::  evening in Florida is already Saturday in UTC.
+::
+++  local-date
+  |=  [offset=@sd now=@da]
+  ^-  @t
+  =/  span=@dr  (mul ~h1 (abs:si offset))
+  =/  local=@da  ?:((syn:si offset) (add now span) (sub now span))
+  (end [3 10] (en-iso local))
+::  +event-day: which event day it is now where the event is, or ~ when
+::  it is not one. The first date is Friday, the second Saturday, the
+::  third Sunday, as the check-in app assumes.
+::
+++  event-day
+  |=  [days=(list @t) offset=@sd now=@da]
+  ^-  (unit @tas)
+  =/  today=@t  (local-date offset now)
+  =/  names=(list @tas)  ~[%fri %sat %sun]
+  |-  ^-  (unit @tas)
+  ?~  days  ~
+  ?~  names  ~
+  ?:  =(today i.days)  `i.names
+  $(days t.days, names t.names)
+::  +event-over: is the last event day behind us where the event is?
+::  Dates are compared as text with +aor: as atoms a cord's last
+::  character is its most significant, which is not date order.
+::
+++  event-over
+  |=  [days=(list @t) offset=@sd now=@da]
+  ^-  ?
+  ?~  days  |
+  !(aor (local-date offset now) (rear days))
+::  +next-event-day: the first event date not yet past, as text, or ''
+::
+++  next-event-day
+  |=  [days=(list @t) offset=@sd now=@da]
+  ^-  @t
+  =/  today=@t  (local-date offset now)
+  =/  ahead=(list @t)  (skim days |=(d=@t (aor today d)))
+  ?~(ahead '' i.ahead)
+::  +checkin-expected: the people in complete parties who are there
+::  that day: walking it or at its social. +checkin-done: those of them
+::  with a check-in that day. The day view's percentage is done over
+::  expected.
+::
+++  there-that-day
+  |=  [r=reg day=@tas]
+  ^-  ?
+  (lien people.r |=(p=person |((on-day day p) (social-day day p))))
+++  checkin-expected
+  |=  [regs=(list reg) day=@tas]
+  ^-  @ud
+  =/  folk=(list person)
+    (zing (turn (skim regs |=(r=reg =(%complete status.r))) |=(r=reg people.r)))
+  (lent (skim folk |=(p=person |((on-day day p) (social-day day p)))))
+++  checkin-done
+  |=  [regs=(list reg) day=@tas]
+  ^-  @ud
+  =/  folk=(list person)
+    (zing (turn (skim regs |=(r=reg =(%complete status.r))) |=(r=reg people.r)))
+  (lent (skim folk |=(p=person (~(has by checkins.p) day))))
+::  +en-checkin-page: what a pilgrim's check-in link reads. The day is
+::  the ship's, or '' when it is not an event day; `over` says the
+::  event is behind us; `opens` names the next event date, for the
+::  page that says come back then.
+::
+++  en-checkin-page
+  |=  [r=reg day=(unit @tas) over=? opens=@t]
+  ^-  json
+  =/  d=@tas  ?~(day %$ u.day)
+  %-  pairs:enjs:format
+  :~  ['status' s+status.r]
+      ['day' ?~(day s+'' s+u.day)]
+      ['over' b+over]
+      ['opens' s+opens]
+      :-  'people'
+      :-  %a
+      =/  i=@ud  0
+      |-  ^-  (list json)
+      ?~  people.r  ~
+      =/  c=(unit checkin)  ?~(day ~ (~(get by checkins.i.people.r) d))
+      :_  $(people.r t.people.r, i +(i))
+      %-  pairs:enjs:format
+      :~  ['i' (en-num i)]
+          ['first' s+first.i.people.r]
+          ['last' s+last.i.people.r]
+          ['checked' [%b ?=(^ c)]]
+          ['at' ?~(c ~ (en-time at.u.c))]
+      ==
+  ==
 ::  +on-day: is this person here that day?
 ::
 ++  on-day
@@ -1370,6 +1492,7 @@
       %-  pairs:enjs:format
       :~  ['name' s+'Baby Steps Camino 2026']
           ['days' a+~[s+'2026-12-04' s+'2026-12-05' s+'2026-12-06']]
+          ['utc_offset_hours' n+'-5']
       ==
       ['fees' (pairs:enjs:format ~[['full' (en-num 7.500)] ['bambino' (en-num 2.500)]])]
       :-  'caps'
@@ -1523,6 +1646,17 @@
       ['manage.closed' s+'Changes are closed. Contact us at register@babystepscamino.com.']
       ['manage.pay_more' s+'Your changes raise the fee by {{diff}}. Pay the difference to keep them.']
       ['stub.banner' s+'Rehearsal mode: signing and payment complete themselves and no email is sent.']
+      ['checkin.title' s+'Check in']
+      ['checkin.early' s+'Check-in for {{day}} opens on {{date}}. Come back then.']
+      ['checkin.over' s+'The Camino is over for this year. Thank you for walking with us.']
+      ['checkin.gone' s+'This registration is no longer active. Please see the organizers at the start.']
+      ['checkin.solo.body' s+'Welcome, {{first}}. Press the button and a volunteer will give you your wristband.']
+      ['checkin.solo.button' s+'I\'m here']
+      ['checkin.group.body' s+'Welcome. Tick everyone who is here today, then press the button. Someone who arrives later can use this link again.']
+      ['checkin.group.button' s+'Check us in']
+      ['checkin.done' s+'You\'re checked in. A volunteer at the start has your wristband.']
+      ['checkin.done.some' s+'{{names}} checked in. Anyone else can use this link when they arrive.']
+      ['checkin.nobody' s+'Tick at least one person.']
       ['email.confirmation.subject' s+'You are registered for the Baby Steps Camino']
       ['email.confirmation.body' s+'{{first}}, you are registered. Change or cancel your registration any time before the event at {{link}}']
       ['email.manage.subject' s+'Your Baby Steps Camino registration link']
@@ -1539,6 +1673,8 @@
       ['email.reminder.body' s+'{{first}}, your registration is not finished yet. Pick up where you left off: {{link}}']
       ['email.cancelled.subject' s+'Your Baby Steps Camino registration was cancelled']
       ['email.cancelled.body' s+'{{first}}, your registration was cancelled. If that was a mistake, register again at {{site}}']
+      ['email.checkin.subject' s+'Check in for {{day}}\'s walk']
+      ['email.checkin.body' s+'Good morning, {{first}}. When you reach the start today, open this link and check in: {{link}}. A volunteer will give you your wristband.']
   ==
 ::  +with-starter: a stored copy document with the strings a release
 ::  added filled in from the starter.

@@ -400,6 +400,20 @@
     (expect !>(!=('' (gs:reg c 'form.friday.closed'))))
     ::  the card a visitor reads before opening day names the date
     (expect !>(!=('' (gs:reg c 'landing.notyet'))))
+    ::  the check-in link's strings and its email
+    (expect !>(!=('' (gs:reg c 'checkin.title'))))
+    (expect !>(!=('' (gs:reg c 'checkin.early'))))
+    (expect !>(!=('' (gs:reg c 'checkin.over'))))
+    (expect !>(!=('' (gs:reg c 'checkin.gone'))))
+    (expect !>(!=('' (gs:reg c 'checkin.solo.body'))))
+    (expect !>(!=('' (gs:reg c 'checkin.solo.button'))))
+    (expect !>(!=('' (gs:reg c 'checkin.group.body'))))
+    (expect !>(!=('' (gs:reg c 'checkin.group.button'))))
+    (expect !>(!=('' (gs:reg c 'checkin.done'))))
+    (expect !>(!=('' (gs:reg c 'checkin.done.some'))))
+    (expect !>(!=('' (gs:reg c 'checkin.nobody'))))
+    (expect !>(!=('' (gs:reg c 'email.checkin.subject'))))
+    (expect !>(!=('' (gs:reg c 'email.checkin.body'))))
     (expect !>(!=('' (gs:reg c 'form.around.title'))))
     (expect !>(!=('' (gs:reg c 'form.fees.child'))))
     (expect !>(!=('' (gs:reg c 'form.submit.waitlist'))))
@@ -463,6 +477,7 @@
     (expect !>(=('Walker {{n}}' (gs:reg got 'form.person'))))
     (expect !>(!=('' (gs:reg got 'form.same_weekend'))))
     (expect !>(!=('' (gs:reg got 'email.manage.body'))))
+    (expect !>(!=('' (gs:reg got 'email.checkin.body'))))
     (expect !>(=(starter-copy:reg (with-starter:reg [%o ~]))))
     (expect !>(=(starter-copy:reg (with-starter:reg starter-copy:reg))))
   ==
@@ -752,6 +767,77 @@
     (expect-eq !>(`(unit @tas)`~) !>((checkin-day:reg 'mon')))
     (expect-eq !>(`(unit @tas)`~) !>((checkin-day:reg '')))
   ==
+::  +test-event-day: the ship's clock is UTC and the event is in
+::  Florida, so the day turns over at 05:00 UTC, not at midnight. The
+::  three dates are Friday, Saturday and Sunday in order.
+++  test-event-day
+  =/  days=(list @t)  ~['2026-12-04' '2026-12-05' '2026-12-06']
+  =/  off=@sd  -5
+  ;:  weld
+    (expect-eq !>(`(unit @tas)`~) !>((event-day:reg days off ~2026.12.3..12.00.00)))
+    (expect-eq !>(`(unit @tas)`[~ %fri]) !>((event-day:reg days off ~2026.12.4..12.00.00)))
+    ::  00:30 UTC on the 5th is 7:30pm Friday in Florida
+    (expect-eq !>(`(unit @tas)`[~ %fri]) !>((event-day:reg days off ~2026.12.5..00.30.00)))
+    ::  the day turns at 05:00 UTC
+    (expect-eq !>(`(unit @tas)`[~ %fri]) !>((event-day:reg days off ~2026.12.5..04.59.59)))
+    (expect-eq !>(`(unit @tas)`[~ %sat]) !>((event-day:reg days off ~2026.12.5..05.00.00)))
+    (expect-eq !>(`(unit @tas)`[~ %sun]) !>((event-day:reg days off ~2026.12.6..20.00.00)))
+    (expect-eq !>(`(unit @tas)`~) !>((event-day:reg days off ~2026.12.7..12.00.00)))
+    ::  a positive offset moves the other way
+    (expect-eq !>(`(unit @tas)`[~ %sat]) !>((event-day:reg days --7 ~2026.12.4..20.00.00)))
+    ::  a shorter list still answers for the days it has
+    (expect-eq !>(`(unit @tas)`[~ %sat]) !>((event-day:reg ~['2026-12-04' '2026-12-05'] off ~2026.12.5..12.00.00)))
+    (expect-eq !>(`(unit @tas)`~) !>((event-day:reg ~['2026-12-04' '2026-12-05'] off ~2026.12.6..12.00.00)))
+    ::  over, and the next date
+    (expect !>(!(event-over:reg days off ~2026.12.6..23.00.00)))
+    (expect !>((event-over:reg days off ~2026.12.7..12.00.00)))
+    (expect !>(!(event-over:reg ~ off ~2026.12.7..12.00.00)))
+    (expect-eq !>('2026-12-04') !>((next-event-day:reg days off ~2026.11.1..12.00.00)))
+    ::  03:00 UTC on the 5th is 10pm Friday in Florida: Friday is not yet past
+    (expect-eq !>('2026-12-04') !>((next-event-day:reg days off ~2026.12.5..03.00.00)))
+    ::  a fourth date is never an event day, so it is not read at all
+    (expect-eq !>(`(list @t)`~['2026-12-04' '2026-12-05' '2026-12-06']) !>((event-days:reg (jo '{"event": {"days": ["2026-12-04", "2026-12-05", "2026-12-06", "2026-12-07"]}}'))))
+    (expect-eq !>('') !>((next-event-day:reg days off ~2026.12.7..12.00.00)))
+    ::  the setting reads back, and is -5 when absent
+    (expect-eq !>(`@sd`-5) !>(offset:st))
+    (expect-eq !>(`@sd`--7) !>(offset:(de-settings:reg (jo '{"event": {"utc_offset_hours": 7}}'))))
+    (expect-eq !>(`@sd`-11) !>(offset:(de-settings:reg (jo '{"event": {"utc_offset_hours": -11}}'))))
+    (expect-eq !>(`(list @t)`~['2026-12-04' '2026-12-05' '2026-12-06']) !>((event-days:reg starter-settings:reg)))
+  ==
+::  +test-checkin-counts: the day view's percentage counts only complete
+::  parties, and only the people who are there that day
+++  test-checkin-counts
+  =/  p=person:reg  some-person
+  =/  kid=person:reg  p(first 'Bo', child &, days [| | &], sun-ten |, social-fri |, social-sat |, mass-fri |, bus |)
+  =/  base=reg:reg  (some-reg %abc123 %complete %full 2 t0)
+  =/  full=reg:reg  base(people ~[p p kid], waiver [%stub '' %completed `t0])
+  =/  owing=reg:reg  base(id %def456, status %payment, people ~[p])
+  =/  done=reg:reg  (need (with-checkin:reg full 0 %fri 'pilgrim' t1 |))
+  =/  paid-in=reg:reg  (need (with-checkin:reg owing 0 %fri 'admin:Sue' t1 |))
+  =/  regs=(list reg:reg)  ~[done paid-in]
+  =/  page=json  (en-checkin-page:reg done `%fri | '')
+  =/  people=(list json)  (ga:reg page 'people')
+  ::  not an event day: nobody is checked, the date to come back is named
+  =/  early=json  (en-checkin-page:reg done ~ | '2026-12-04')
+  ;:  weld
+    (expect !>((there-that-day:reg done %fri)))
+    (expect !>(!(there-that-day:reg base(people ~[kid]) %fri)))
+    (expect-eq !>(2) !>((checkin-expected:reg regs %fri)))
+    (expect-eq !>(3) !>((checkin-expected:reg regs %sun)))
+    (expect-eq !>(1) !>((checkin-done:reg regs %fri)))
+    (expect-eq !>(0) !>((checkin-done:reg regs %sat)))
+    ::  the page: three people, the first checked, the day named
+    (expect-eq !>('fri') !>((gs:reg page 'day')))
+    (expect-eq !>('complete') !>((gs:reg page 'status')))
+    (expect-eq !>(3) !>((lent people)))
+    (expect !>((gb:reg (at-n people 0) 'checked')))
+    (expect !>(!(gb:reg (at-n people 1) 'checked')))
+    (expect-eq !>('Bo') !>((gs:reg (at-n people 2) 'first')))
+    (expect-eq !>('') !>((gs:reg early 'day')))
+    (expect-eq !>('2026-12-04') !>((gs:reg early 'opens')))
+    (expect !>(!(gb:reg (at-n (ga:reg early 'people') 0) 'checked')))
+    (expect !>((gb:reg (en-checkin-page:reg done ~ & '') 'over')))
+  ==
 ++  test-with-checkin
   =/  r=reg:reg  (some-reg %abc123 %complete %full 2 t0)
   =/  one=reg:reg  (need (with-checkin:reg r 0 %fri 'admin:Sue' t1 |))
@@ -871,12 +957,17 @@
 ++  test-en-row-checked
   =/  p=person:reg  some-person
   =/  r0=reg:reg  (some-reg %abc123 %complete %full 2 t0)
-  =/  r=reg:reg  (need (with-checkin:reg r0 1 %sat 'admin:Sue' t1 |))
+  =/  r1=reg:reg  (need (with-checkin:reg r0 1 %sat 'admin:Sue' t1 |))
+  =/  r=reg:reg  (need (with-checkin:reg r1 0 %sat 'pilgrim' t2 |))
   =/  j=json  (en-row:reg r 15.000 0)
   =/  ck=json  (gj:reg j 'checked')
+  =/  me=json  (gj:reg j 'self')
   ;:  weld
     (expect-eq !>(`(unit @ud)`[~ 0]) !>((gn:reg ck 'fri')))
-    (expect-eq !>(`(unit @ud)`[~ 1]) !>((gn:reg ck 'sat')))
+    (expect-eq !>(`(unit @ud)`[~ 2]) !>((gn:reg ck 'sat')))
     (expect-eq !>(`(unit @ud)`[~ 0]) !>((gn:reg ck 'sun')))
+    ::  one of the two checked themselves in from their link
+    (expect-eq !>(`(unit @ud)`[~ 1]) !>((gn:reg me 'sat')))
+    (expect-eq !>(`(unit @ud)`[~ 0]) !>((gn:reg me 'fri')))
   ==
 --
