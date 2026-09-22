@@ -1,0 +1,938 @@
+% The Baby Steps Camino organizers' manual.
+% Build: xelatex manual.tex  (twice, for the contents page)
+\documentclass[12pt]{article}
+
+\usepackage{fontspec}
+\setmainfont{DejaVu Sans}[Scale=1.02]
+\newfontfamily\screenfont{DejaVu Sans}[Scale=0.98]
+\usepackage[letterpaper,top=1in,bottom=1in,left=1.25in,right=1.25in]{geometry}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{booktabs}
+% table columns that do not stretch their spaces
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\usepackage{hyperref}
+
+\definecolor{ink}{HTML}{1A1A1A}
+\definecolor{accent}{HTML}{0B5F91}
+\definecolor{softbg}{HTML}{EEF4F8}
+\definecolor{warnbg}{HTML}{FDF1E3}
+\definecolor{rule}{HTML}{C8D4DC}
+\color{ink}
+\hypersetup{colorlinks=true,linkcolor=accent,urlcolor=accent,pdftitle={Baby Steps Camino: the organizers' manual},pdfauthor={Baby Steps Camino}}
+
+% generous leading, no paragraph indents, space between paragraphs instead
+\linespread{1.22}\selectfont
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{9pt}
+\raggedright
+\raggedbottom
+
+% headings, without titlesec
+\makeatletter
+\renewcommand\section{\@startsection{section}{1}{0pt}%
+  {28pt plus 4pt minus 2pt}{10pt}%
+  {\normalfont\Large\bfseries\color{accent}}}
+\renewcommand\subsection{\@startsection{subsection}{2}{0pt}%
+  {20pt plus 3pt minus 2pt}{6pt}%
+  {\normalfont\large\bfseries\color{ink}}}
+\renewcommand\subsubsection{\@startsection{subsubsection}{3}{0pt}%
+  {14pt plus 2pt minus 1pt}{4pt}%
+  {\normalfont\normalsize\bfseries\color{ink}}}
+\makeatother
+
+% a boxed note. The optional argument is the background colour, the
+% required one the heading word. Built with a save box, because a
+% \colorbox argument cannot be split across \begin and \end.
+\newsavebox{\notebox}
+\newcommand{\notecolour}{softbg}
+\newenvironment{note}[2][softbg]
+  {\renewcommand{\notecolour}{#1}%
+   \par\medskip
+   \setlength{\fboxsep}{11pt}%
+   \begin{lrbox}{\notebox}%
+   \begin{minipage}{\dimexpr\linewidth-2\fboxsep\relax}%
+   \setlength{\parskip}{7pt}%
+   \textbf{#2}\par}
+  {\end{minipage}%
+   \end{lrbox}%
+   \noindent\expandafter\colorbox\expandafter{\notecolour}{\usebox{\notebox}}%
+   \par\medskip}
+
+% a screenshot with a line of explanation under it
+% Screenshots run wider than the text, into the margins, because the
+% program's own type is small and a manual is no use if it cannot be read.
+\newlength{\shotwidth}
+\setlength{\shotwidth}{\dimexpr\textwidth+1.2in\relax}
+\newcommand{\shot}[2]{%
+  \par\medskip\noindent
+  \makebox[\linewidth][c]{%
+    \begingroup\setlength{\fboxsep}{2pt}%
+    \fcolorbox{rule}{white}{\includegraphics[width=\dimexpr\shotwidth-2\fboxsep-2\fboxrule\relax]{#1}}%
+    \endgroup}%
+  \par\nopagebreak\smallskip\nopagebreak
+  \makebox[\linewidth][c]{\begin{minipage}{\shotwidth}\small\itshape #2\end{minipage}}%
+  \par\medskip}
+% a close-up of one control, at its own natural size
+\newcommand{\closeup}[3][\shotwidth]{%
+  \par\medskip\noindent
+  \makebox[\linewidth][c]{%
+    \begingroup\setlength{\fboxsep}{2pt}%
+    \fcolorbox{rule}{white}{\includegraphics[width=\dimexpr#1-2\fboxsep-2\fboxrule\relax]{#2}}%
+    \endgroup}%
+  \par\nopagebreak\smallskip\nopagebreak
+  \makebox[\linewidth][c]{\begin{minipage}{\shotwidth}\small\itshape #3\end{minipage}}%
+  \par\medskip}
+
+% two phone screens side by side
+\newcommand{\phonepair}[4]{%
+  \par\medskip\noindent
+  \makebox[\linewidth][c]{%
+    \begingroup\setlength{\fboxsep}{2pt}%
+    \fcolorbox{rule}{white}{\includegraphics[width=2.7in]{#1}}\hspace{0.45in}%
+    \fcolorbox{rule}{white}{\includegraphics[width=2.7in]{#3}}%
+    \endgroup}%
+  \par\nopagebreak\smallskip\nopagebreak
+  \makebox[\linewidth][c]{\begin{minipage}{2.7in}\small\itshape #2\end{minipage}%
+    \hspace{0.45in}\begin{minipage}{2.7in}\small\itshape #4\end{minipage}}%
+  \par\medskip}
+
+% a word as it appears on screen
+\newcommand{\btn}[1]{\textbf{#1}}
+\newcommand{\siteroot}{https://forgave-infect.nisfeb.com}
+\newcommand{\site}{\siteroot}
+
+\begin{document}
+
+% ---------------------------------------------------------------- cover
+\thispagestyle{empty}
+\vspace*{1.1in}
+{\fontsize{30}{36}\selectfont\bfseries\color{accent} Baby Steps Camino\par}
+\vspace{10pt}
+{\fontsize{22}{28}\selectfont The organizers' manual\par}
+\vspace{28pt}
+{\large How to run registration, the wait list, the money and the three
+days of the walk, using the Register program.\par}
+\vfill
+{\large
+Everything in this manual is done from a web page. You need no special
+software, only a computer or a phone and the address on the next page.\par}
+\vspace{18pt}
+{\small Written for the 2026 walk, December 4th, 5th and 6th.\par}
+\newpage
+
+% ---------------------------------------------------------------- contents
+\pagestyle{empty}
+{\Large\bfseries\color{accent} What is in this manual\par}
+\vspace{6pt}
+\begingroup
+\setlength{\parskip}{0pt}
+\renewcommand{\contentsname}{}
+\tableofcontents
+\endgroup
+\newpage
+
+\pagestyle{plain}
+\setcounter{page}{1}
+
+% ---------------------------------------------------------------- 1
+\section{Start here}
+
+Register is the program that takes sign-ups for the Baby Steps Camino
+and helps you run the weekend. It does five jobs.
+
+\begin{enumerate}[leftmargin=*,itemsep=6pt]
+\item It takes sign-ups from pilgrims on a public web page.
+\item It keeps the list of who is coming, and holds the wait list when a
+  track fills up.
+\item It keeps track of who has paid and who has signed the waiver.
+\item It gives you counts, reports and spreadsheets.
+\item On the three days of the walk it checks people in.
+\end{enumerate}
+
+\subsection{Who does what}
+
+\begin{tabularx}{\linewidth}{@{}L{1.5in}Y@{}}
+\toprule
+\textbf{A pilgrim} & Signs up on the public page. Needs no account and
+no password. Gets an email with a private link, and can change or
+cancel their own registration from it. \\[6pt]
+\textbf{You, an organizer} & Log in and use the backoffice: the roster,
+the money, the reports, the settings. \\[6pt]
+\textbf{A check-in volunteer} & On the three days, uses the check-in
+app on a phone to tick people off and hand out wristbands. \\
+\bottomrule
+\end{tabularx}
+
+\closeup[2.7in]{img/ov-pilgrim-landing.png}{What a pilgrim meets: the
+public page, on a telephone.}
+
+\subsection{The two addresses}
+
+There are two web pages, and it matters which one you are on.
+
+\begin{tabularx}{\linewidth}{@{}L{1.75in}Y@{}}
+\toprule
+\textbf{The public page} & \texttt{forgave-infect.nisfeb.com/apps/register/}
+\newline This is what pilgrims see. Anybody may open it. \\[8pt]
+\textbf{Your backoffice} & \texttt{forgave-infect.nisfeb.com/apps/register/admin}
+\newline This is yours. It asks for a password. \\
+\bottomrule
+\end{tabularx}
+
+Put the second address in your bookmarks. You will use it most days.
+
+\begin{note}{Good to know}
+If your addresses are different from the ones printed here, whoever set
+the program up will have given you the right ones. Everything else in
+this manual works the same way.
+\end{note}
+
+% ---------------------------------------------------------------- 2
+\section{Logging in, and putting your name in}
+
+\subsection{The password}
+
+All the organizers share one password. It is a string of four short
+words joined by dashes, like \texttt{lopdyt-monbyn-fabnyr-hasrev}. Ask
+whoever set the program up for it, and keep it somewhere safe.
+
+\begin{enumerate}[leftmargin=*,itemsep=6pt]
+\item Open \texttt{forgave-infect.nisfeb.com/apps/register/admin}
+\item If a login page appears, type the password and press the button.
+\item The roster appears. You stay logged in on that computer for about
+  a week, so you will not be asked again every day.
+\end{enumerate}
+
+\subsection{Your name}
+
+Because you all share one password, the program cannot tell which of
+you is which. So it asks you, once, on each computer or phone you use.
+
+Look at the top right of the screen. If it says \btn{Set your name},
+press it and type your first name.
+
+\closeup{img/cu-name.png}{The name box. It appears by itself the first
+time you try to change something.}
+
+From then on the top right says \btn{Acting as Susan}, and every change
+you make is signed with your name in that registration's history. If
+someone later asks who cancelled the Brennans, the answer is on the
+record.
+
+\begin{note}{Careful}
+The program remembers your name in that one web browser only. On a
+different computer, or on your phone, it will ask again. That is
+normal. Press the name at the top right any time to change it.
+\end{note}
+
+% ---------------------------------------------------------------- 3
+\section{The Roster: your everyday screen}
+
+The roster is the list of everyone who has signed up. It is the first
+thing you see, and most days it is the only screen you need.
+
+\shot{img/roster.png}{The whole roster screen. The names are links:
+press one to open that registration. The parts of it are shown close up
+on the next few pages.}
+
+\subsection{The row of buttons along the top}
+
+\closeup{img/cu-nav.png}{The row of buttons. It is the same on every
+screen.}
+
+Press any of them to change screens. \btn{Register} at the far left
+always brings you back to the roster.
+
+The small round dot beside your name is green when the page is
+listening for changes. If another organizer changes something while you
+are looking, your screen updates by itself within a few seconds. You
+never need to reload the page.
+
+\subsection{Segment: showing only part of the list}
+
+\closeup{img/cu-filter.png}{The three boxes that narrow the list, and
+the line of totals underneath.}
+
+The box marked \btn{Segment} narrows the list. It starts on
+\btn{registrations}, which means everyone who actually signed up: it
+leaves out abandoned sign-ups and cancellations.
+
+\begin{tabularx}{\linewidth}{@{}L{1.65in}Y@{}}
+\toprule
+\textbf{registrations} & Everyone real. Where you start. \\
+\textbf{everything} & Adds abandoned sign-ups and cancellations. \\
+\textbf{complete} & Paid and signed. Nothing left to do. \\
+\textbf{pending} & Still owes a waiver, a payment, or an assistance
+decision. \\
+\textbf{wait list} & Waiting for a spot. \\
+\textbf{financial assistance} & Asked for help with the fee. \\
+\textbf{unpaid} & Has not paid. \\
+\textbf{unsigned} & Has not signed the waiver. \\
+\textbf{drafts} & Started the form and never finished. Worth an email. \\
+\textbf{cancelled} & Cancelled. \\
+\textbf{Bambino only} & The Sunday-only track. \\
+\textbf{non-walkers} & Coming, but not walking. \\
+\textbf{NE Florida Order of Malta and volunteers} & Local members and
+volunteers. \\
+\textbf{exempt} & Marked as not counting against the caps. \\
+\textbf{admin adds} & Ones you added by hand. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Search}
+
+Type a name, an email address, a phone number or a parish into the
+\btn{Search} box. It looks for every word you type, in any order, so
+\texttt{mary smith} finds Smith, Mary. Punctuation does not matter:
+\texttt{9045551234} and \texttt{904-555-1234} both work.
+
+\subsection{The line under the boxes}
+
+Something like: \textit{212 of 325 pilgrims, 3 of 25 Bambino, 0 on the
+wait list, 7 drafts}.
+
+Read that first number carefully. It counts \emph{walkers against the
+cap}, not rows on the screen. It leaves out anyone who is not walking,
+anyone you marked exempt, and anyone you added yourself, because none of
+those count against the cap. So it will not match the number of lines
+you can count in the table, and that is correct.
+
+\subsection{The columns}
+
+\begin{tabularx}{\linewidth}{@{}L{1.35in}Y@{}}
+\toprule
+\textbf{Party} & Everyone in the registration, with the email address
+underneath. Press a name to open it. Press the email to write to them. \\
+\textbf{State} & Where they live. Useful for the local versus
+out-of-town question. \\
+\textbf{Status} & Where they are up to. See the table below. \\
+\textbf{Track} & \textit{full} is all three days. \textit{bambino} is
+Sunday only. \\
+\textbf{People} & How many are in the party, children included. \\
+\textbf{Walkers} & How many of them actually walk. \\
+\textbf{Created} & The day they signed up. \\
+\textbf{Fees} & What the party owes in total. \\
+\textbf{Paid} & How they paid, once they have. \\
+\textbf{Waiver} & Whether the waiver is signed. \\
+\textbf{Check-ins} & Ticks for the days of the walk they have arrived. \\
+\textbf{Flags} & Small labels: exempt, assist, admin, non-walker, K/D
+(Knight or Dame), vol (volunteer), refunded. \\
+\bottomrule
+\end{tabularx}
+
+Press any column heading to sort by it. Press it again to sort the
+other way.
+
+\subsection{What the statuses mean}
+
+This is the one piece of vocabulary worth learning. The words are the
+program's, and they are short, so here is what each one actually means.
+
+\closeup{img/cu-status.png}{The status column. On screen the
+words are in capitals; that is only styling.}
+
+\begin{tabularx}{\linewidth}{@{}L{1.35in}Y@{}}
+\toprule
+\textbf{draft} & They started the form and never finished. Nothing is
+held for them. They are worth an email. \\[6pt]
+\textbf{waitlist} & The track was full when they signed up. They have a
+place in the queue and nothing else. \\[6pt]
+\textbf{waiver} & \textbf{Needs to sign the waiver.} Their spots are
+held. \\[6pt]
+\textbf{payment} & \textbf{Needs to pay.} They have signed. Their spots
+are held. \\[6pt]
+\textbf{assistance} & They asked for help with the fee and are waiting
+for your decision. \\[6pt]
+\textbf{complete} & Signed and paid. Done. \\[6pt]
+\textbf{cancelled} & Cancelled, by them or by you. Their spots went
+back into the pool. You can put it back if it was a mistake. \\
+\bottomrule
+\end{tabularx}
+
+\begin{note}{Good to know}
+A spot is held for 48 hours from sign-up. If someone signs up and then
+never pays, after two days their spot quietly goes back to the pool, so
+an abandoned checkout does not keep a real pilgrim out. Their
+registration stays, and they can still finish.
+\end{note}
+
+\subsection{Writing to several people at once}
+
+The \btn{Copy 8 emails} button copies the email addresses of everyone
+currently shown. Choose a segment first, say \btn{drafts}, press the
+button, then paste into the To line of an email. That is how you chase
+the people who never finished.
+
+The number on the button can be smaller than the number of rows. A
+sign-up that left only a telephone number has no address to copy, and
+two people who typed the same address count once.
+
+% ---------------------------------------------------------------- 4
+\section{One registration}
+
+Press any name on the roster. You get the whole registration: their
+details on the left, and everything you can do about it on the right.
+
+\shot{img/ov-registration.png}{The top of a registration. Their details
+are a form you can change. Below it, and on a wide screen beside it,
+come the cards shown on the next page.}
+
+\subsection{Changing their details}
+
+The left side is a form: contact details, the people in the party, what
+each person is doing on each day, the parish, why they are walking, and
+a box for your own notes that pilgrims never see.
+
+Change what you need to, then press \btn{Save changes} at the bottom.
+
+\begin{note}{Careful}
+If you type something and then wander off to another screen without
+saving, the program stops you and asks whether you really mean to leave.
+Say no, then press \btn{Save changes}.
+\end{note}
+
+\subsection{The right-hand side}
+
+\subsubsection{Status}
+
+\closeup{img/reg-status.png}{The Status card.}
+
+The status badge, the track, how they signed up, the fees, when they
+signed up and when it last changed, and whether they are exempt from
+the caps.
+
+\subsubsection{Payment}
+
+\closeup{img/reg-payment.png}{The Payment card, on a party that has
+paid.}
+
+What they paid, how, when, and any reference. If they still owe, you
+get a \btn{Record this payment} form: choose \textit{check},
+\textit{cash} or \textit{other}, put in the amount, a reference such as
+a cheque number, and a note. That completes the registration.
+
+If a payment exists, \btn{Mark this payment refunded} flags it. The
+actual refund is done in Stripe; this only writes it on the record.
+
+\subsubsection{Waiver}
+
+\closeup{img/reg-waiver.png}{The Waiver card.}
+
+Whether they signed, how, and when. \btn{They signed on paper} records
+a paper waiver for somebody who could not sign online.
+
+\subsubsection{Actions}
+
+\closeup{img/reg-actions.png}{The Actions card. Which buttons appear
+depends on where the registration has got to.}
+
+Which buttons appear depends on the status.
+
+\begin{tabularx}{\linewidth}{@{}L{1.85in}Y@{}}
+\toprule
+\btn{Offer them a spot} & On a wait-listed party. Moves them into the
+queue to sign and pay. \\[6pt]
+\btn{Approve assistance} & Completes the registration with no payment. \\[6pt]
+\btn{Decline assistance} & Sends them to the payment step. \\[6pt]
+\btn{Cancel this registration} & For the whole party. Their spots go
+back. You are asked to confirm. \\[6pt]
+\btn{Put it back} & On a cancelled one. Returns it to exactly the
+status it had before. \\
+\bottomrule
+\end{tabularx}
+
+Under the actions there is a box to pick an email template and press
+\btn{Send this email again}.
+
+\begin{note}{Good to know: the clock}
+Times on these cards are shown in Greenwich time, which runs five hours
+ahead of Florida in December. A sign-up at eight in the evening
+therefore reads as the next day. Only the display is affected; the
+program itself knows which day is which. This is on the list to put
+right.
+\end{note}
+
+\subsubsection{Check-ins and History}
+
+Check-ins show who arrived on which day, at what time, and who ticked
+them off. \btn{Undo} takes one back.
+
+\closeup{img/reg-history.png}{The History. Newest at the top.}
+
+History is the whole story of the registration, newest first: every
+change, who made it and when. Nothing is ever lost. This is what to
+read when somebody asks what happened.
+
+% ---------------------------------------------------------------- 5
+\section{Adding a registration yourself}
+
+For someone who telephoned, sent a cheque, or turned up on the day.
+
+\shot{img/ov-add.png}{The Add screen. The same form a pilgrim fills in,
+plus a card for what you took from them.}
+
+\begin{enumerate}[leftmargin=*,itemsep=6pt]
+\item Press \btn{Add a registration} on the roster.
+\item Fill in the form the way the pilgrim would have.
+\item On the right, under \btn{What you took from them}, tick
+  \btn{Waiver signed on paper} if you have their signature on paper.
+\item Now choose how they paid and put in the amount. \textbf{The
+  payment boxes stay greyed out until the waiver tick is on}, because a
+  pilgrim signs before they pay.
+\item Press \btn{Add this registration}.
+\end{enumerate}
+
+\closeup{img/add-took.png}{What you took from them. The payment boxes
+wake up once the waiver is ticked.}
+
+The registration window and the caps do not apply here, because you
+have looked and decided. These come out of the pool of late places the
+organizers hold back.
+
+% ---------------------------------------------------------------- 6
+\section{The wait list}
+
+When a track fills up, the public page stops taking sign-ups for it and
+offers the wait list instead. A wait-listed party has a place in the
+queue and nothing else: no waiver, no payment.
+
+You decide who gets in. To offer somebody a spot:
+
+\begin{enumerate}[leftmargin=*,itemsep=6pt]
+\item Choose the \btn{wait list} segment on the roster.
+\item Open the party you want.
+\item Press \btn{Offer them a spot}.
+\end{enumerate}
+
+They move to the waiver step and their spots are held, whatever the
+cap, because you have looked. Their number in the queue is shown beside
+the status on the roster.
+
+\begin{note}{Good to know}
+Last year 50 to 60 people cancelled. Every cancellation frees spots,
+and the wait list is where you fill them. It is worth checking the wait
+list whenever a cancellation comes in.
+\end{note}
+
+% ---------------------------------------------------------------- 7
+\section{The event weekend}
+
+This is the part you will use on the three days themselves. There are
+three ways a pilgrim can be checked in, and they all end up in the same
+place.
+
+\begin{enumerate}[leftmargin=*,itemsep=6pt]
+\item \textbf{The pilgrim checks themselves in} from a link you email
+  them that morning. This is the main way.
+\item \textbf{A volunteer ticks them off} on a phone at the start line.
+\item \textbf{You tick them off} from the Today screen.
+\end{enumerate}
+
+\subsection{The Today screen}
+
+\shot{img/today.png}{The whole Today screen. Each part of it is shown
+close up below.}
+
+At the top: Friday, Saturday and Sunday. It opens on today if today is
+one of the three, so most of the time you need not touch it.
+
+\closeup{img/cu-count.png}{How the day is going, in one line.}
+
+Under that: \textit{2 of 8 expected Friday checked in, 25\%} and
+\textit{4 parties not here yet}. \textbf{Expected} means the people in
+complete parties who are walking that day or coming to that day's
+social. A Sunday-only family is not expected on Friday, and is not
+counted.
+
+\subsubsection{Emailing the day's check-in links}
+
+\closeup{img/cu-send.png}{The send box. Here the button is greyed out
+because today is not Friday.}
+
+Each morning of the walk, press \btn{Email Friday's check-in links}
+(the button names the day it will send). It goes to every complete
+party who is expected that day, has not been checked in yet, and has
+not already had that day's link. Press it again later in the morning to
+catch the ones added since. Nobody gets two.
+
+\begin{note}{Careful}
+The button only works on the day itself. Looking at Saturday's tab on a
+Friday, the button is greyed out and a second tick box appears: \btn{It
+is not Saturday yet. Send anyway}. That is deliberate. It stops a
+whole event's worth of emails going out a day early.
+\end{note}
+
+\subsubsection{The list}
+
+\btn{Show} starts on \btn{someone missing}, which is what you want while
+you are looking for people: a party stays on the list until the last of
+them has arrived. The other choices are \btn{nobody here yet},
+\btn{everyone here}, and \btn{everyone, any day}.
+
+\closeup{img/cu-partyrow.png}{One party on the list, with a button for
+the whole family and one for each person.}
+
+Each row shows the party, whether they get a wristband, and buttons to
+check them in. A circle means not arrived; a tick means arrived, with
+who ticked them off and at what time. \textit{themselves} means the
+pilgrim used their own link.
+
+\btn{Check in everyone} does the whole party at once. The individual
+names check in one person.
+
+\subsection{What the pilgrim sees}
+
+\phonepair{img/ov-pilgrim-checkin.png}{The pilgrim's own check-in link.
+A party of three, so there is a box for each person.}{img/ov-checkin-app.png}{The
+volunteers' app, on a phone at the start line.}
+
+Somebody walking alone gets one button, \btn{I'm here}. A family gets a
+box per person and one button, so a wife can check in before her
+husband parks the car. Anyone who arrives later can use the same link
+again.
+
+Before the day, the link says when check-in opens. After the walk, it
+says the Camino is over. A pilgrim who has not paid is told to see the
+organizers at the start.
+
+\begin{note}{Good to know}
+A pilgrim can only tick people \emph{in}. They cannot undo anyone.
+Taking a check-in back is yours and the volunteers' to do.
+\end{note}
+
+\subsection{The volunteers' phone app}
+
+The volunteers use a different address, ending in \texttt{/checkin} instead of \texttt{/admin}.
+They log in with the same password and put in their own first name, the
+same way you do.
+
+It is built for the beach. It works with no signal: the roster is kept
+on the phone, and taps wait in a queue and go up when the phone finds a
+signal again. The badge at the top says \textit{Synced} when everything
+is up, \textit{3 to send} when taps are waiting, and \textit{Offline}
+when the phone has no signal.
+
+One tap on a name checks a person in and answers the wristband
+question. \textbf{Wristband: give one} in green means they are paid and
+signed. \textbf{No wristband:} in red gives the reason, for instance
+\textit{unpaid} or \textit{waiver not signed}. The volunteer can still
+check them in, and the reason stays on the record for you to sort out.
+
+\begin{note}{Careful}
+Have each volunteer open the app, log in, and put their name in
+\emph{the day before}, at home, where there is a good signal. That way
+the phone already holds the roster when they get to the beach.
+\end{note}
+
+\subsection{Counts}
+
+The \btn{Counts} screen is where the actual head counts go: how many
+were at Mass, on the walk, at the social, on the bus, each day. Type
+the number, the time and a note, and press \btn{Save the counts}. These
+sit beside the planned numbers in Reports, so next year you know how
+many really came.
+
+\btn{Time} and \btn{Note} are ordinary boxes: write whatever is useful,
+such as \textit{just after eight}. A box left empty is not a zero, it
+means nobody filled it in, and Reports treats it that way.
+
+% ---------------------------------------------------------------- 8
+\section{Reports and spreadsheets}
+
+\shot{img/ov-reports.png}{The top of Reports. Everything here is worked
+out from the roster, so it is always current.}
+
+Reports has no buttons to press and changes nothing.
+
+\closeup{img/reports-caps.png}{How full the event is, against every cap.}
+
+It also shows:
+
+\begin{itemize}[leftmargin=*,itemsep=5pt]
+\item How full each track and each social is, against its cap.
+\item How many are in each status, and on each track.
+\item Payments, by method, with the amounts and any gifts. A refunded
+  payment is still counted in this total, so for the exact picture give
+  the treasurer the spreadsheet instead.
+\item What is still owed, and how many have not signed.
+\item Planned against actual, per day and per activity, with how many
+  checked in.
+\item How many Sunday walkers against the 350 the Shrine can feed.
+\item Where people come from, which parishes, and sign-ups per day.
+\end{itemize}
+
+\closeup{img/reports-owing.png}{What is still outstanding.}
+
+\subsection{The two spreadsheets}
+
+At the top of Reports are two links. Press one and your computer
+downloads a file you can open in Excel.
+
+\begin{tabularx}{\linewidth}{@{}L{1.5in}Y@{}}
+\toprule
+\textbf{people.csv} & One line per person. Use this for name badges,
+wristbands, bus lists and Mass counts. \\[6pt]
+\textbf{regs.csv} & One line per registration, with the money and the
+history. Use this for the treasurer. \\
+\bottomrule
+\end{tabularx}
+
+% ---------------------------------------------------------------- 9
+\section{Settings}
+
+\shot{img/ov-settings.png}{The top of Settings. Change what you need,
+then press \textnormal{\textbf{Save the settings}} at the very bottom.}
+
+This is where the event itself is described. Most of it is set once,
+before registration opens, and then left alone.
+
+\closeup{img/settings-event.png}{The event itself: its name, the clock
+setting, the three dates and the public address.}
+
+\closeup{img/settings-fees.png}{The fees. In dollars, not cents.}
+
+\closeup{img/settings-window.png}{The window: when sign-ups open, when
+they close, and the last moment a pilgrim may change their own.}
+
+\begin{tabularx}{\linewidth}{@{}L{1.85in}Y@{}}
+\toprule
+\textbf{Name} & What the event is called. \\[5pt]
+\textbf{Hours from UTC} & Leave it at $-5$. It tells the program what
+day it is in Florida, so check-in opens at the right hour. \\[5pt]
+\textbf{Days, one per line} & The three dates of the walk, earliest
+first, written year first: \texttt{2026-12-04}. \\[5pt]
+\textbf{Public URL} & The address pilgrims use. \\[5pt]
+\textbf{Fees} & In dollars. Per person, children included. \\[5pt]
+\textbf{Caps} & How many may sign up for each track and each social,
+and how many late places you hold back. The Shrine number is reported
+only, never enforced. \\[5pt]
+\textbf{Window} & \textbf{Opens} is when the public page starts taking
+sign-ups. \textbf{Closes} is when it stops. \textbf{Changes close} is
+the last moment a pilgrim may edit their own registration. These three
+show the time on \emph{your own computer}. If you are setting them up
+from another time zone, allow for it. \\[5pt]
+\textbf{Hold hours} & How long a spot is held for somebody who has not
+finished paying. 48 is the normal answer. \\[5pt]
+\textbf{Organizations} & The parishes and groups the sign-up form
+suggests. One per line. \\[5pt]
+\textbf{Providers} & Leave alone. See the box below. \\
+\bottomrule
+\end{tabularx}
+
+\begin{note}[warnbg]{Careful: rehearsal mode}
+While \textbf{Mode} says \textit{stub}, the program is in rehearsal: no
+email is really sent, and payments complete themselves without any
+money changing hands. You will see the word \textit{stub} in the Paid
+column and a line saying \textit{Rehearsal: no email leaves the ship}.
+That is correct for testing. Switching it to \textit{live} is not
+something to do on your own; ask whoever set the program up.
+\end{note}
+
+% ---------------------------------------------------------------- 10
+\section{The emails}
+
+\shot{img/ov-emails.png}{The Emails screen. One card per email the
+program sends.}
+
+Each email has a subject and a body you can edit. Press \btn{Save this
+email} on that card when you are done.
+
+The curly-bracket words, such as \verb|{{first}}| and \verb|{{link}}|,
+are filled in by the program when it sends: the pilgrim's first name,
+their private link, the total, and so on. The card lists which ones
+that email uses.
+
+\begin{note}{Careful}
+Do not delete a curly-bracket word. If you do, the program refuses the
+save and says \textit{Put these back before saving}, and shows you
+which. Put it back and save again.
+
+The refusal covers the whole card. If you improved the subject and then
+lost a placeholder in the body, both go back to how they were, so check
+the subject again before you save a second time.
+\end{note}
+
+You may move a curly-bracket word, put words around it, or use it
+twice. You simply may not lose one.
+
+Every other piece of writing that a pilgrim reads is edited on the
+public page itself, not here. See the next section.
+
+% ---------------------------------------------------------------- 11
+\section{Changing the words pilgrims read}
+
+Everything on the sign-up page, every heading, every label, every bit of
+help text, can be rewritten by you, in place, on the page itself.
+
+\begin{enumerate}[leftmargin=*,itemsep=6pt]
+\item Open the public page, \texttt{forgave-infect.nisfeb.com/apps/register/}, while you are logged
+  in.
+\item Press \btn{Edit text} at the top.
+\item Click any piece of writing and type over it.
+\item Click away. A tick appears when it is saved.
+\end{enumerate}
+
+A row of buttons appears, \btn{Show all steps}, with one for each page a
+pilgrim might see: the landing page, the form, the waiver step, the
+payment step, the wait list, and so on. Press one to see that page,
+filled with a made-up example, so you can edit its words without having
+to sign up yourself.
+
+\begin{note}{Careful}
+While \btn{Edit text} is on, nothing else on the page works: buttons do
+nothing and boxes cannot be typed in. That is on purpose, so you cannot
+accidentally sign yourself up while editing. Press \btn{Editing text}
+again to turn it off.
+\end{note}
+
+% ---------------------------------------------------------------- 12
+\section{Backup}
+
+\shot{img/ov-backup.png}{Backup. The downloads at the top, the restore
+below.}
+
+\subsection{Taking a backup}
+
+Press \btn{JSON bundle} or \btn{jam} and save the file somewhere safe:
+your own computer, and ideally a second place. Do this weekly once
+registration opens, and every evening during the walk.
+
+The \textbf{jam} is the emergency copy and the exact one. The
+\textbf{JSON bundle} holds the same information in a form a person can
+read. Both leave out passwords and keys.
+
+\subsection{Putting a backup back}
+
+\begin{enumerate}[leftmargin=*,itemsep=6pt]
+\item Press \btn{Choose file} and pick the backup.
+\item Press \btn{Read the file}. The program tells you what is in it:
+  how many registrations, the dates they cover, and how many of your
+  current ones it would overwrite. It changes nothing yet.
+\item If it looks right, press \btn{Restore} and confirm.
+\end{enumerate}
+
+\begin{note}[warnbg]{Careful}
+The tick box \btn{Delete every registration the file does not name} is
+for a true restore onto an empty system. Leave it \emph{off} unless you
+are certain. A restore also stamps every registration as changed now,
+which restarts the 48-hour hold on anyone who has not finished paying.
+\end{note}
+
+Do the three steps in one sitting. If you wander off to another screen,
+or somebody signs up while you are deciding, the program asks you to
+press \btn{Read the file} again before it will restore. That is on
+purpose: it will only restore onto the situation it showed you.
+
+% ---------------------------------------------------------------- 13
+\section{If something looks wrong}
+
+\begin{tabularx}{\linewidth}{@{}L{1.95in}Y@{}}
+\toprule
+\textbf{It asks me to log in again} & Normal after about a week, or on a
+new computer. Type the password again. \\[7pt]
+\textbf{The page says the ship would not take that change} & Something
+was refused. Look at the registration again: it will show what the
+program actually has. Then try once more. \\[7pt]
+\textbf{A name I know is registered does not come up in Search} & Check
+the Segment box. If it is on \btn{registrations}, a cancelled or
+abandoned one will not show. Choose \btn{everything}. \\[7pt]
+\textbf{The page is slow} & Give it a few seconds. Everything you press
+shows immediately and settles afterwards; you do not need to press
+twice. \\[7pt]
+\textbf{A pilgrim says their link does not work} & Open their
+registration and check the status. If they are cancelled, the link says
+so. Send them the right email again from the box under Actions. \\[7pt]
+\textbf{I cancelled the wrong party} & Open it and press \btn{Put it
+back}. It returns to exactly where it was. \\[7pt]
+\textbf{Two of us edited the same registration} & The last save wins.
+Read the History at the bottom: it shows both changes, with names and
+times. \\
+\bottomrule
+\end{tabularx}
+
+\begin{note}{Good to know}
+Nothing you do here is truly lost. Every registration keeps its whole
+history, and cancellations can be put back. If you are unsure, look at
+the History before you worry.
+\end{note}
+
+% ---------------------------------------------------------------- 14
+\section{Words this program uses}
+
+\begin{tabularx}{\linewidth}{@{}L{1.5in}Y@{}}
+\toprule
+\textbf{Backoffice} & Your side of the program, at the /admin address. \\
+\textbf{Bambino} & The Sunday-only track, the last 2.5 miles. \\
+\textbf{Cap} & The most people allowed on a track or at a social. \\
+\textbf{Complete} & Signed and paid. Nothing outstanding. \\
+\textbf{Draft} & A sign-up somebody started and never finished. \\
+\textbf{Exempt} & Marked as not counting against the caps. Used for
+local Order of Malta members and volunteers. \\
+\textbf{Full track} & All three days of the walk. \\
+\textbf{Hold} & The 48 hours a spot is kept for somebody who has signed
+up but not finished paying. \\
+\textbf{Party} & One registration, which may be one person or a whole
+family. \\
+\textbf{Rehearsal (stub)} & Practice mode: no real emails, no real
+money. \\
+\textbf{The ship} & The computer this program runs on. It shows up in a
+few messages. \\
+\textbf{Track} & Which walk they are on: full or Bambino. \\
+\textbf{Waiver} & The liability form every pilgrim signs. \\
+\textbf{Wristband} & What a checked-in pilgrim is given. Green means
+give one. \\
+\bottomrule
+\end{tabularx}
+
+% ---------------------------------------------------------------- 15
+\newpage
+\section*{The one-page reminder}
+\addcontentsline{toc}{section}{The one-page reminder}
+
+\textbf{Your address:} \texttt{forgave-infect.nisfeb.com/apps/register/admin}
+
+\textbf{Every day of registration}
+
+\begin{enumerate}[leftmargin=*,itemsep=4pt]
+\item Open the roster. Read the line under the boxes for the totals.
+\item Segment \btn{pending}: who still owes a waiver or a payment.
+\item Segment \btn{financial assistance}: decisions waiting for you.
+\item Segment \btn{drafts}: press \btn{Copy emails} and chase them.
+\item Segment \btn{wait list} when somebody cancels.
+\end{enumerate}
+
+\textbf{Every week}
+
+\begin{enumerate}[leftmargin=*,itemsep=4pt]
+\item \btn{Backup}, press \btn{jam}, save the file somewhere safe.
+\item \btn{Reports} for the totals and the money.
+\end{enumerate}
+
+\textbf{Each morning of the walk}
+
+\begin{enumerate}[leftmargin=*,itemsep=4pt]
+\item \btn{Today}. Check it is on the right day.
+\item Press the \btn{Email \ldots\ check-in links} button. It names the
+  day, so on Friday it reads \btn{Email Friday's check-in links}.
+\item Press it again mid-morning for anyone added since.
+\item Watch the percentage. Use \btn{Show: someone missing} to find who
+  is not here.
+\item Check people in by hand when their phone will not cooperate.
+\end{enumerate}
+
+\textbf{Each evening of the walk}
+
+\begin{enumerate}[leftmargin=*,itemsep=4pt]
+\item \btn{Counts}: put in the day's real head counts.
+\item \btn{Backup}: take a copy.
+\end{enumerate}
+
+\vfill
+{\small This manual describes Register version 13.\par}
+
+\end{document}
