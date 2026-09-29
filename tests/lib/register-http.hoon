@@ -7,6 +7,16 @@
     !>  'abcXYZ019-._~'
     !>  (url-encode:http 'abcXYZ019-._~')
 ::
+++  test-url-encode-edges
+  ::  both ends of all three ranges, and the bytes just outside them.
+  ::  A range that loses an end encodes a letter it should have passed.
+  ;:  weld
+    (expect-eq !>('azAZ09') !>((url-encode:http 'azAZ09')))
+    ::  '@' is 'A' - 1, '[' is 'Z' + 1, '`' is 'a' - 1, '{' is 'z' + 1,
+    ::  '/' is '0' - 1 and ':' is '9' + 1
+    (expect-eq !>('%40%5B%60%7B%2F%3A') !>((url-encode:http '@[`{/:')))
+  ==
+::
 ++  test-url-encode-space-and-amp
   %+  expect-eq
     !>  'a%20b%26c'

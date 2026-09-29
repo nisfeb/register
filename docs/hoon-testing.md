@@ -170,10 +170,34 @@ is one table test each.
 went on, which is what it is for; without it the run stops at the first
 one. A spin is not a verdict, so those 8 are unjudged.
 
+## The phase-2 pass, 2026-09-29
+
+`--since HEAD~1` over the phase-2 change: 21 mutants, 7 survived, 1 timed
+out. Two were real, both in `+url-encode`, and both the same shape: the
+suite's "plain" fixture was `abcXYZ019-._~`, which happens to contain
+neither `z` nor `A`, so a mutant could shrink the lower-case range at
+its top or the upper-case range at its bottom and no test noticed.
+`+test-url-encode-edges` now pins all six ends and the six bytes just
+outside them (`@ [ ` { / :`), and `+test-iso-bounds` does the same for
+`+de-iso`'s month, day and clock. That took the two arms from 7
+survivors to 1.
+
+**The one that remains is equivalent, and worth writing down.**
+`(lth h 24)` mutated to `lte` still rejects `2026-01-01T24:00:00Z`,
+because `+year` normalizes hour 24 into the next day and the arm's last
+line re-encodes the result and compares its first ten bytes with the
+input's. The date no longer matches, so the parse fails anyway. A bound
+standing behind a round-trip check cannot be killed by moving it; the
+check is the real guard.
+
+**`--since` was broken before this run.** `+touched_arms` unpacked a
+`LIBS` entry as a pair when entries have been triples for some time, so
+every `--since` died on the unpack. Fixed in the kit and re-vendored.
+
 ## What to do next, in order
 
 1. Start a fake ship, run `setup`, and take a baseline: `hoon-test.sh`
-   should exit 0 with 47 `OK` lines.
+   should exit 0 with 77 `OK` lines.
 2. Run the cheap mutation pass over the library and triage every
    survivor. Re-trace each one before writing a test: many are equivalent,
    and the playbook lists the usual kinds.

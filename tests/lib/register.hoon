@@ -152,6 +152,29 @@
     (expect-eq !>(`(unit @da)`~) !>((de-iso:reg '2026-02-30T00:00:00Z')))
     (expect-eq !>(`(unit @da)`~) !>((de-iso:reg 'yesterday')))
   ==
+::  +test-iso-bounds: each end of every field the parser checks, the
+::  last good value and the first bad one. Without the good end a
+::  mutant can tighten the bound and no test notices.
+++  test-iso-bounds
+  =/  ok   |=(t=@t ^-(? ?=(^ (de-iso:reg t))))
+  =/  bad  |=(t=@t ^-(? ?=(~ (de-iso:reg t))))
+  ;:  weld
+    ::  the month
+    (expect !>((ok '2026-01-15T00:00:00Z')))
+    (expect !>((ok '2026-12-15T00:00:00Z')))
+    (expect !>((bad '2026-00-15T00:00:00Z')))
+    (expect !>((bad '2026-13-15T00:00:00Z')))
+    ::  the day
+    (expect !>((ok '2026-01-01T00:00:00Z')))
+    (expect !>((ok '2026-01-31T00:00:00Z')))
+    (expect !>((bad '2026-01-00T00:00:00Z')))
+    (expect !>((bad '2026-01-32T00:00:00Z')))
+    ::  the clock
+    (expect !>((ok '2026-01-01T23:59:59Z')))
+    (expect !>((bad '2026-01-01T24:00:00Z')))
+    (expect !>((bad '2026-01-01T00:60:00Z')))
+    (expect !>((bad '2026-01-01T00:00:60Z')))
+  ==
 ::  ==  decoders
 ::
 ++  test-de-person
