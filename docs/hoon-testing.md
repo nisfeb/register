@@ -121,6 +121,43 @@ covers it.
 watch: register should park with the worker near 0% CPU, never spin.
 Measure from `/proc/<pid>/stat` deltas, not `ps %cpu`.
 
+## The first baseline and mutation run, 2026-09-29
+
+On `~feb`, against the library at version 14.
+
+**The baseline found three breaks in five seconds**, all of them in tests
+written while no ship was up to run them: a stored-shape head still
+reading `%2` after the change to `%3`, two arms reading `i.people.r`
+where the list's type is a fork so it could not compile, and the pinned
+CSV width, which really had changed from 45 columns to 48. The suite now
+runs green, 47 arms in about 4.5 seconds.
+
+**The cheap mutation pass** (`boundary,conjunct`, 94 sites, 145 mutants)
+came back 40 killed, 95 survived, 2 no-build, 8 timed out. The full log is
+`docs/mutation-2026-09-29.log`. Nothing here is triaged yet, and the
+playbook is clear that many survivors are equivalent rather than gaps.
+The clusters worth reading first:
+
+| arm | survivors | what the mutants drop |
+|---|---|---|
+| `+en-roster-person` | 6 | the day gate on Mass, the Holy Hour, the trolley and the Sunday distance |
+| `+planned` | 5 | the same gates in the day's counts |
+| `+de-iso` | 5 | the month, day and hour bounds |
+| `+is-email` | 4 | the parts of an address |
+| `+window-open` | 3 | each end of the registration window |
+| `+walks` | 3 | each day of the walk |
+
+The `+en-roster-person` and `+planned` clusters are one gap wearing two
+hats: **no test pins what each day's encoder shows on the other two
+days**, so dropping `=(%fri day)` from a Friday-only flag changes nothing
+any test reads. `+de-iso`'s five say no test parses a date in January, on
+the 31st, or at 23:59. Those are the two to close first, and closing them
+is one table test each.
+
+**8 mutants spun the ship.** `DOJO_PANE` typed the interrupt and the run
+went on, which is what it is for; without it the run stops at the first
+one. A spin is not a verdict, so those 8 are unjudged.
+
 ## What to do next, in order
 
 1. Start a fake ship, run `setup`, and take a baseline: `hoon-test.sh`

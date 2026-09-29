@@ -21,6 +21,14 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 header .brand { display: block; line-height: 0; }
 header .brand img { display: block; width: auto; height: 76px; }
 @media (max-width: 600px) { header .brand img { height: 58px; } }
+/* the event site's own navigation, so a pilgrim can get back to the
+   pages that sent them here. The site sets these in its meta face. */
+header nav.site { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1.15rem; flex: 1 1 auto; }
+header nav.site a { font-family: var(--meta); font-weight: 500; font-size: .82rem; letter-spacing: .04em;
+  color: var(--ink); text-decoration: none; white-space: nowrap; }
+header nav.site a:hover { color: var(--accent); }
+@media (max-width: 900px) { header nav.site { gap: .2rem .8rem; } header nav.site a { font-size: .75rem; } }
+@media (max-width: 560px) { header { flex-wrap: wrap; } header nav.site { order: 3; width: 100%; gap: .15rem .7rem; } }
 header .back { color: var(--accent); text-decoration: none; font-weight: 600; }
 main { max-width: 760px; margin: 0 auto; padding: 1.2rem 16px 3rem; }
 footer { max-width: 760px; margin: 0 auto; padding: 0 16px 2rem; font-size: .8rem; }

@@ -1,0 +1,143 @@
+[1/94] SURVIVED register:204 +de-iso gte->gth (3s)
+[2/94] killed   register:204 +de-iso lte->lth (3s)
+[3/94] timeout  register:205 +de-iso gte->gth (8s)
+[4/94] SURVIVED register:205 +de-iso lte->lth (6s)
+[5/94] SURVIVED register:206 +de-iso lth->lte (6s)
+[6/94] SURVIVED register:206 +de-iso lth->lte (6s)
+[7/94] SURVIVED register:206 +de-iso lth->lte (6s)
+[8/94] timeout  register:243 +ok-rid gte->gth (11s)
+[9/94] killed   register:243 +ok-rid lte->lth (6s)
+[10/94] timeout  register:243 +ok-rid gte->gth (11s)
+[11/94] timeout  register:243 +ok-rid lte->lth (11s)
+[12/94] SURVIVED register:309 +over-cap gth->gte (6s)
+[13/94] SURVIVED register:332 +is-email gth->gte (5s)
+[14/94] SURVIVED register:332 +is-email lth->lte (5s)
+[15/94] SURVIVED register:434 +de-input gth->gte (5s)
+[16/94] SURVIVED register:479 +window-open gte->gth (5s)
+[17/94] SURVIVED register:480 +window-open lth->lte (6s)
+[18/94] SURVIVED register:485 +changes-open lth->lte (6s)
+[19/94] killed   register:521 +counted lth->lte (6s)
+[20/94] SURVIVED register:549 +decide-submit lte->lth (5s)
+[21/94] killed   register:550 +decide-submit lte->lth (5s)
+[22/94] killed   register:573 +position-of lth->lte (5s)
+[23/94] killed   register:574 +position-of lth->lte (5s)
+[24/94] killed   register:582 +socials-ok gth->gte (5s)
+[25/94] killed   register:583 +socials-ok gth->gte (5s)
+[26/94] SURVIVED register:606 +note-hist gth->gte (7s)
+[27/94] SURVIVED register:1008 +with-checkin lth->lte (6s)
+[28/94] SURVIVED register:1487 +ring gth->gte (5s)
+[29/94] SURVIVED register:1522 +secret-key gte->gth (6s)
+[30/94] killed   register:479 +window-open ?& drop ?~(open.s & (gte now u.open.s)) (6s)
+[31/94] SURVIVED register:480 +window-open ?& drop ?~(close.s & (lth now u.close.s)) (6s)
+[32/94] timeout  register:243 +ok-rid |( drop &((gte c '0') (lte c '9')) (11s)
+[33/94] timeout  register:243 +ok-rid |( drop &((gte c 'a') (lte c 'f')) (11s)
+[34/94] SURVIVED register:243 +ok-rid &( drop (gte c '0') (6s)
+[35/94] killed   register:243 +ok-rid &( drop (lte c '9') (6s)
+[36/94] killed   register:243 +ok-rid &( drop (gte c 'a') (6s)
+[37/94] SURVIVED register:243 +ok-rid &( drop (lte c 'f') (7s)
+[38/94] killed   register:318 +str-field &( drop strict (5s)
+[39/94] killed   register:318 +str-field &( drop =('' v) (5s)
+[40/94] SURVIVED register:332 +is-email &( drop (gth u.dot 0) (5s)
+[41/94] SURVIVED register:332 +is-email &( drop (lth +(u.dot) (lent dom)) (5s)
+[42/94] killed   register:341 +de-contact &( drop strict (5s)
+[43/94] killed   register:341 +de-contact &( drop !(is-email p.em) (5s)
+[44/94] SURVIVED register:352 +de-contact &( drop !strict (5s)
+[45/94] SURVIVED register:352 +de-contact &( drop =('' p.em) (5s)
+[46/94] killed   register:352 +de-contact &( drop =('' p.ph) (6s)
+[47/94] SURVIVED register:433 +de-input &( drop strict (7s)
+[48/94] killed   register:433 +de-input &( drop ?=(~ raw) (6s)
+[49/94] SURVIVED register:494 +walks |( drop fri.days.p (6s)
+[50/94] SURVIVED register:494 +walks |( drop sat.days.p (6s)
+[51/94] SURVIVED register:494 +walks |( drop sun.days.p (6s)
+[52/94] killed   register:521 +counted |( drop =(%admin source.r) (6s)
+[53/94] killed   register:521 +counted |( drop (lth now (add updated.r hold.s)) (6s)
+[54/94] SURVIVED register:574 +position-of &( drop =(created.o created.r) (6s)
+[55/94] killed   register:574 +position-of &( drop (lth id.o id.r) (6s)
+[56/94] SURVIVED register:836 +en-plan &( drop sun.days.p (6s)
+[57/94] SURVIVED register:836 +en-plan &( drop sun-ten.p (6s)
+[58/94] SURVIVED register:918 +there-that-day |( drop (on-day day p) (6s)
+[59/94] SURVIVED register:918 +there-that-day |( drop (social-day day p) (6s)
+[60/94] killed   register:924 +checkin-expected |( drop (on-day day p) (6s)
+[61/94] SURVIVED register:924 +checkin-expected |( drop (social-day day p) (6s)
+[62/94] killed   register:1028 +wristband |( drop =(%completed status.waiver.r) (6s)
+[63/94] killed   register:1028 +wristband |( drop =(%paper method.waiver.r) (6s)
+[64/94] killed   register:1029 +wristband &( drop =(%complete status.r) (6s)
+[65/94] killed   register:1029 +wristband &( drop signed (6s)
+[66/94] killed   register:1054 +en-roster-person &( drop =(%sun day) (6s)
+[67/94] SURVIVED register:1054 +en-roster-person &( drop trolley.p (6s)
+[68/94] killed   register:1056 +en-roster-person &( drop =(%fri day) (6s)
+[69/94] SURVIVED register:1056 +en-roster-person &( drop mass-fri.p (6s)
+[70/94] SURVIVED register:1057 +en-roster-person &( drop =(%fri day) (6s)
+[71/94] SURVIVED register:1057 +en-roster-person &( drop holy-hour.p (6s)
+[72/94] killed   register:1059 +en-roster-person &( drop =(%sun day) (6s)
+[73/94] SURVIVED register:1059 +en-roster-person &( drop sun.days.p (6s)
+[74/94] SURVIVED register:1059 +en-roster-person &( drop sun-ten.p (6s)
+[75/94] SURVIVED register:1106 +planned &( drop =(%fri day) (6s)
+[76/94] killed   register:1106 +planned &( drop holy-hour.p (6s)
+[77/94] killed   register:1109 +planned &( drop =(%sun day) (6s)
+[78/94] killed   register:1109 +planned &( drop trolley.p (6s)
+[79/94] SURVIVED register:1110 +planned &( drop =(%sun day) (6s)
+[80/94] SURVIVED register:1110 +planned &( drop sun.days.p (6s)
+[81/94] killed   register:1110 +planned &( drop sun-ten.p (6s)
+[82/94] SURVIVED register:1111 +planned &( drop =(%sun day) (6s)
+[83/94] SURVIVED register:1111 +planned &( drop sun.days.p (6s)
+[84/94] killed   register:1111 +planned &( drop !sun-ten.p (5s)
+[85/94] killed   register:1255 +de-reg-full |( drop =('' pr) (6s)
+[86/94] timeout  register:1255 +de-reg-full |( drop (one-of pr statuses) (11s)
+[87/94] killed   register:1303 +csv-cell ?|( drop =(c ',') (6s)
+[88/94] killed   register:1303 +csv-cell ?|( drop =(c '"') (7s)
+[89/94] killed   register:1303 +csv-cell ?|( drop =(c 10) (6s)
+[90/94] SURVIVED register:1303 +csv-cell ?|( drop =(c 13) (6s)
+[91/94] SURVIVED register:1522 +secret-key &( drop (gte n 4) (6s)
+[92/94] killed   register:1522 +secret-key &( drop =("_key" (slag (sub n 4) tap)) (6s)
+[93/94] killed   register:1534 +mask &( drop (secret-key k) (6s)
+[94/94] no-build register:1534 +mask &( drop ?=([%s *] v) (3s)
+
+SURVIVED: 47  killed: 39  no-build: 1  timeout: 7
+SURVIVED  register:204  +de-iso  gte->gth
+SURVIVED  register:205  +de-iso  lte->lth
+SURVIVED  register:206  +de-iso  lth->lte
+SURVIVED  register:206  +de-iso  lth->lte
+SURVIVED  register:206  +de-iso  lth->lte
+SURVIVED  register:309  +over-cap  gth->gte
+SURVIVED  register:332  +is-email  gth->gte
+SURVIVED  register:332  +is-email  lth->lte
+SURVIVED  register:434  +de-input  gth->gte
+SURVIVED  register:479  +window-open  gte->gth
+SURVIVED  register:480  +window-open  lth->lte
+SURVIVED  register:485  +changes-open  lth->lte
+SURVIVED  register:549  +decide-submit  lte->lth
+SURVIVED  register:606  +note-hist  gth->gte
+SURVIVED  register:1008  +with-checkin  lth->lte
+SURVIVED  register:1487  +ring  gth->gte
+SURVIVED  register:1522  +secret-key  gte->gth
+SURVIVED  register:480  +window-open  ?& drop ?~(close.s & (lth now u.close.s))
+SURVIVED  register:243  +ok-rid  &( drop (gte c '0')
+SURVIVED  register:243  +ok-rid  &( drop (lte c 'f')
+SURVIVED  register:332  +is-email  &( drop (gth u.dot 0)
+SURVIVED  register:332  +is-email  &( drop (lth +(u.dot) (lent dom))
+SURVIVED  register:352  +de-contact  &( drop !strict
+SURVIVED  register:352  +de-contact  &( drop =('' p.em)
+SURVIVED  register:433  +de-input  &( drop strict
+SURVIVED  register:494  +walks  |( drop fri.days.p
+SURVIVED  register:494  +walks  |( drop sat.days.p
+SURVIVED  register:494  +walks  |( drop sun.days.p
+SURVIVED  register:574  +position-of  &( drop =(created.o created.r)
+SURVIVED  register:836  +en-plan  &( drop sun.days.p
+SURVIVED  register:836  +en-plan  &( drop sun-ten.p
+SURVIVED  register:918  +there-that-day  |( drop (on-day day p)
+SURVIVED  register:918  +there-that-day  |( drop (social-day day p)
+SURVIVED  register:924  +checkin-expected  |( drop (social-day day p)
+SURVIVED  register:1054  +en-roster-person  &( drop trolley.p
+SURVIVED  register:1056  +en-roster-person  &( drop mass-fri.p
+SURVIVED  register:1057  +en-roster-person  &( drop =(%fri day)
+SURVIVED  register:1057  +en-roster-person  &( drop holy-hour.p
+SURVIVED  register:1059  +en-roster-person  &( drop sun.days.p
+SURVIVED  register:1059  +en-roster-person  &( drop sun-ten.p
+SURVIVED  register:1106  +planned  &( drop =(%fri day)
+SURVIVED  register:1110  +planned  &( drop =(%sun day)
+SURVIVED  register:1110  +planned  &( drop sun.days.p
+SURVIVED  register:1111  +planned  &( drop =(%sun day)
+SURVIVED  register:1111  +planned  &( drop sun.days.p
+SURVIVED  register:1303  +csv-cell  ?|( drop =(c 13)
+SURVIVED  register:1522  +secret-key  &( drop (gte n 4)
