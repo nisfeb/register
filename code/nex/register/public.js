@@ -109,16 +109,24 @@
     if (q.mass_fri) fri.push('Mass');
     if (q.holy_hour) fri.push('Holy Hour');
     if (fri.length) out.push('Friday ' + joinWords(fri) + '.');
+    var mass = [];
+    if (q.mass_sat) mass.push('Saturday');
+    if (q.mass_sun) mass.push('Sunday');
+    if (mass.length) out.push('Mass on ' + joinWords(mass) + '.');
     var soc = [];
     if (q.social_fri) soc.push(w.social_fri || VENUES.social_fri);
     if (q.social_sat) soc.push(w.social_sat || VENUES.social_sat);
     if (soc.length) out.push((soc.length > 1 ? 'Socials at ' : 'Social at ') + joinWords(soc) + '.');
-    if (q.bus) out.push('Needs the bus.');
+    var rides = [];
+    if (q.bus) rides.push('the bus');
+    if (q.trolley) rides.push('the trolley on Sunday');
+    if (rides.length) out.push('Needs ' + joinWords(rides) + '.');
     return out.join(' ');
   }
   // what one person copies from another when their weekend follows the
   // first person's: the choices, and nothing that is theirs alone
-  var CHOICES = ['days', 'sun_ten', 'social_fri', 'social_sat', 'mass_fri', 'holy_hour', 'bus'];
+  var CHOICES = ['days', 'sun_ten', 'social_fri', 'social_sat',
+    'mass_fri', 'mass_sat', 'mass_sun', 'holy_hour', 'bus', 'trolley'];
   function copyChoices(from, to) {
     var out = JSON.parse(JSON.stringify(to || {}));
     CHOICES.forEach(function (k) {
@@ -154,7 +162,9 @@
   function blankPerson(track) {
     return { first: '', last: '', child: false, days: { fri: false, sat: false, sun: false },
       sun_ten: track !== 'bambino',
-      social_fri: false, social_sat: false, mass_fri: false, holy_hour: false, bus: false,
+      social_fri: false, social_sat: false,
+      mass_fri: false, mass_sat: false, mass_sun: false,
+      holy_hour: false, bus: false, trolley: false,
       first_bsc: false, knight_dame: false, volunteer: false };
   }
   function blankModel(track) {
@@ -342,6 +352,23 @@
     return track === 'bambino' ? status.counts.bambino >= status.caps.bambino : status.counts.full >= status.caps.full;
   }
   function trackWords(track) { return t(track === 'bambino' ? 'track.bambino' : 'track.full'); }
+  // whole days from now until sign-ups close, rounded up, so the last
+  // day reads as one day left rather than none
+  function daysUntil(then, now) {
+    var a = Date.parse(String(then || '')), b = Date.parse(String(now || ''));
+    if (isNaN(a) || isNaN(b)) return null;
+    return Math.ceil((a - b) / 86400000);
+  }
+  // under the Save button: how long the pilgrim has left
+  function closesLine() {
+    var left = daysUntil(getPath(status, 'window.close'), status.now);
+    if (left === null) return '';
+    var key = left > 1 ? 'manage.closes_in' : left === 1 ? 'manage.closes_tomorrow'
+      : left === 0 ? 'manage.closes_today' : 'manage.closed_already';
+    return '<p class="help closes">' + tx(key, {
+      days: left, cutoff: dateWords(getPath(status, 'window.change_cutoff'))
+    }) + '</p>';
+  }
   // the short venue names the weekend summary reads, out of the copy, so
   // an organizer who moves a social moves the summary with it
   function venueWords() {
@@ -488,14 +515,23 @@
           socialRow(k + 'social_fri', 'form.social_fri', p.social_fri, 'social_fri')
         : '<p class="closed">' + tx('form.friday.closed') + '</p>');
       out += group(tx('form.saturday.title'), p.days.sat
-        ? socialRow(k + 'social_sat', 'form.social_sat', p.social_sat, 'social_sat')
+        ? check(k + 'mass_sat', 'form.mass_sat', p.mass_sat) +
+          socialRow(k + 'social_sat', 'form.social_sat', p.social_sat, 'social_sat')
         : '<p class="closed">' + tx('form.saturday.closed') + '</p>');
+      out += group(tx('form.sunday.title'), p.days.sun
+        ? check(k + 'mass_sun', 'form.mass_sun', p.mass_sun) +
+          check(k + 'trolley', 'form.trolley', p.trolley)
+        : '<p class="closed">' + tx('form.sunday.closed') + '</p>');
     } else {
       // the Bambino weekend is the Sunday walk and the socials, which
       // are open to everyone who comes
       out += group(tx('form.days'), check(k + 'days.sun', 'form.sun.bambino', p.days.sun));
+      out += group(tx('form.sunday.title'),
+        check(k + 'mass_sun', 'form.mass_sun', p.mass_sun) +
+        check(k + 'trolley', 'form.trolley', p.trolley));
       out += group(tx('form.also.title'),
         check(k + 'mass_fri', 'form.mass_fri', p.mass_fri) +
+        check(k + 'mass_sat', 'form.mass_sat', p.mass_sat) +
         check(k + 'holy_hour', 'form.holy_hour', p.holy_hour) +
         socialRow(k + 'social_fri', 'form.social_fri', p.social_fri, 'social_fri') +
         socialRow(k + 'social_sat', 'form.social_sat', p.social_sat, 'social_sat'));
@@ -564,7 +600,17 @@
     // 2. who is coming
     out += '<h2>' + tx('form.people.title') + '</h2><p class="help">' + tx('form.people.help') + '</p>';
     m.people.forEach(function (p, i) { out += person(p, i, m); });
-    if (m.people.length < status.caps.party) out += '<button type="button" class="btn quiet small" data-act="add">' + tx('form.add_person') + '</button>';
+    // A pilgrim editing their registration cannot add somebody once the
+    // track is full: the ship refuses it with "no room for the added
+    // people", and there is no sense letting them type a whole person
+    // in first. A new party that does not fit is still offered the wait
+    // list, so this holds on the manage page alone.
+    var noRoom = mode === 'manage' && trackFull(m.track);
+    if (noRoom) {
+      out += '<p class="help">' + tx('manage.full', { track: trackWords(m.track) }) + '</p>';
+    } else if (m.people.length < status.caps.party) {
+      out += '<button type="button" class="btn quiet small" data-act="add">' + tx('form.add_person') + '</button>';
+    }
     // 3. why are you walking
     var why = '<textarea data-k="why" aria-label="' + esc(t('form.why')) + '">' + esc(m.why) + '</textarea>';
     out += '<div class="card"><h2>' + tx('form.why') + '</h2><p class="help">' + tx('form.why.help') + '</p>' + why;
@@ -583,6 +629,7 @@
         tx(full ? 'form.submit.waitlist' : 'form.submit') + '</button>';
     }
     out += '<span id="save-status" class="status"></span></div>';
+    if (mode === 'manage') out += closesLine();
     if (mode !== 'manage') {
       out += '<p class="help room">' + tx(trackFull(m.track) ? 'form.submit.full' : 'form.submit.room',
         { track: trackWords(m.track) }) + '</p>';
@@ -739,6 +786,8 @@
     var m = blankModel(track);
     m.people[0].days.sun = true;
     m.people[0].mass_fri = true;
+    m.people[0].mass_sun = true;
+    m.people[0].trolley = true;
     if (track !== 'full') return m;
     m.people.push(blankPerson(track));
     m.people[0].first = 'Ana';
@@ -1129,7 +1178,7 @@
     setPath(model, k, val);
     // a change to the first person's weekend follows through to everyone
     // still copying it
-    if (/^people\.0\.(days\.|sun_ten$|social_|mass_fri$|holy_hour$|bus$)/.test(k)) {
+    if (/^people\.0\.(days\.|sun_ten$|social_|mass_|holy_hour$|bus$|trolley$)/.test(k)) {
       model.people = syncSame(model.people, sameAs);
     }
     // a day opens or closes that day's group, so it re-renders; a name

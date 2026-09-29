@@ -19,8 +19,11 @@
       social-fri=?
       social-sat=?
       mass-fri=?
+      mass-sat=?
+      mass-sun=?
       holy-hour=?
-      bus=?
+      bus=?                                     ::  the motorcoach, every day
+      trolley=?                                 ::  the Sunday trolley, a separate ride
       first-bsc=?
       knight-dame=?
       volunteer=?
@@ -67,6 +70,50 @@
       exempt=?                                  ::  an organizer's mark: outside the track caps
       prior=@tas                                ::  the status a cancel left, for reinstate
   ==
+::  +$person-2: the person before Mass on Saturday and Sunday and the
+::  trolley. Both older registration shapes hold these, so the reader
+::  keeps the type rather than clamming old grubs against the new one.
+::
++$  person-2
+  $:  first=@t
+      last=@t
+      child=?
+      =days
+      sun-ten=?
+      social-fri=?
+      social-sat=?
+      mass-fri=?
+      holy-hour=?
+      bus=?
+      first-bsc=?
+      knight-dame=?
+      volunteer=?
+      checkins=(map @tas checkin)
+  ==
+::  +$reg-2: the shape before the person grew. +read-reg lifts it.
+::
++$  reg-2
+  $:  id=@ta
+      status=@tas
+      track=@tas
+      source=@tas
+      created=@da
+      updated=@da
+      =contact
+      org=@t
+      why=@t
+      assistance=?
+      together=?
+      people=(list person-2)
+      =payment
+      =waiver
+      token=@t
+      position=@ud
+      notes=@t
+      history=(list step)
+      exempt=?
+      prior=@tas
+  ==
 ::  +$reg-1: the shape before exempt and prior. +read-reg lifts it.
 ::
 +$  reg-1
@@ -81,7 +128,7 @@
       why=@t
       assistance=?
       together=?
-      people=(list person)
+      people=(list person-2)
       =payment
       =waiver
       token=@t
@@ -92,7 +139,8 @@
 ::  what the grub holds: a version head, so a later shape is told apart
 ::  by the reader instead of clamming by luck
 ::
-+$  stored-reg    [%2 =reg]
++$  stored-reg    [%3 =reg]
++$  stored-reg-2  [%2 old=reg-2]
 +$  stored-reg-1  [%1 old=reg-1]
 ::  +$bundle: a whole backup. Every registration entire, with its token,
 ::  and the three documents as they stand.
@@ -325,8 +373,11 @@
       (gb jon 'social_fri')
       (gb jon 'social_sat')
       (gb jon 'mass_fri')
+      (gb jon 'mass_sat')
+      (gb jon 'mass_sun')
       (gb jon 'holy_hour')
       (gb jon 'bus')
+      (gb jon 'trolley')
       (gb jon 'first_bsc')
       (gb jon 'knight_dame')
       (gb jon 'volunteer')
@@ -358,8 +409,11 @@
     social-fri  social-fri.lead
     social-sat  social-sat.lead
     mass-fri    mass-fri.lead
+    mass-sat    mass-sat.lead
+    mass-sun    mass-sun.lead
     holy-hour   holy-hour.lead
     bus         bus.lead
+    trolley     trolley.lead
   ==
 ::  +de-input: the form. strict is a submit or an edit; a draft is not.
 ::
@@ -603,8 +657,11 @@
       ['social_fri' b+social-fri.p]
       ['social_sat' b+social-sat.p]
       ['mass_fri' b+mass-fri.p]
+      ['mass_sat' b+mass-sat.p]
+      ['mass_sun' b+mass-sun.p]
       ['holy_hour' b+holy-hour.p]
       ['bus' b+bus.p]
+      ['trolley' b+trolley.p]
       ['first_bsc' b+first-bsc.p]
       ['knight_dame' b+knight-dame.p]
       ['volunteer' b+volunteer.p]
@@ -780,8 +837,11 @@
       ['social_fri' (many |=(p=person social-fri.p))]
       ['social_sat' (many |=(p=person social-sat.p))]
       ['mass_fri' (many |=(p=person mass-fri.p))]
+      ['mass_sat' (many |=(p=person mass-sat.p))]
+      ['mass_sun' (many |=(p=person mass-sun.p))]
       ['holy_hour' (many |=(p=person holy-hour.p))]
       ['bus' (many |=(p=person bus.p))]
+      ['trolley' (many |=(p=person trolley.p))]
       ['first_bsc' (many |=(p=person first-bsc.p))]
       ['children' (many |=(p=person child.p))]
       ['knight_dame' (many |=(p=person knight-dame.p))]
@@ -907,6 +967,16 @@
     %sat  sat.days.p
     %sun  sun.days.p
   ==
+::  +mass-day: is this person at Mass that day? Each day has its own.
+::
+++  mass-day
+  |=  [day=@tas p=person]
+  ^-  ?
+  ?+  day  |
+    %fri  mass-fri.p
+    %sat  mass-sat.p
+    %sun  mass-sun.p
+  ==
 ::  +social-day: the social that day. Sunday has none.
 ::
 ++  social-day
@@ -981,6 +1051,8 @@
       ['child' b+child.p]
       ['walks' [%b (on-day day p)]]
       ['bus' b+bus.p]
+      ['trolley' [%b &(=(%sun day) trolley.p)]]
+      ['mass' [%b (mass-day day p)]]
       ['mass_fri' [%b &(=(%fri day) mass-fri.p)]]
       ['holy_hour' [%b &(=(%fri day) holy-hour.p)]]
       ['social' [%b (social-day day p)]]
@@ -1030,27 +1102,48 @@
   =/  many  |=(f=$-(person ?) ^-(json (en-num (lent (skim folk f)))))
   %-  pairs:enjs:format
   :~  ['walk' (many |=(p=person (on-day day p)))]
-      ['mass' (many |=(p=person &(=(%fri day) mass-fri.p)))]
+      ['mass' (many |=(p=person (mass-day day p)))]
       ['holy_hour' (many |=(p=person &(=(%fri day) holy-hour.p)))]
       ['social' (many |=(p=person (social-day day p)))]
       ['bus' (many |=(p=person bus.p))]
+      ['trolley' (many |=(p=person &(=(%sun day) trolley.p)))]
       ['sun_ten' (many |=(p=person &(=(%sun day) sun.days.p sun-ten.p)))]
       ['sun_short' (many |=(p=person &(=(%sun day) sun.days.p !sun-ten.p)))]
       ['checked' (en-num (lent (skim all |=(p=person (~(has by checkins.p) day)))))]
   ==
 ::  +read-reg: the shape ladder. Newest first; anything else is ~.
 ::
+++  lift-person
+  |=  o=person-2
+  ^-  person
+  :*  first.o  last.o  child.o  days.o  sun-ten.o
+      social-fri.o  social-sat.o
+      mass-fri.o  |  |
+      holy-hour.o  bus.o  |
+      first-bsc.o  knight-dame.o  volunteer.o  checkins.o
+  ==
 ++  read-reg
   |=  n=*
   ^-  (unit reg)
-  =/  v2=(unit stored-reg)  (mole |.(;;(stored-reg n)))
-  ?^  v2  `reg.u.v2
+  =/  v3=(unit stored-reg)  (mole |.(;;(stored-reg n)))
+  ?^  v3  `reg.u.v3
+  =/  v2=(unit stored-reg-2)  (mole |.(;;(stored-reg-2 n)))
+  ?^  v2
+    =/  o=reg-2  old.u.v2
+    :-  ~
+    :*  id.o  status.o  track.o  source.o  created.o  updated.o
+        contact.o  org.o  why.o  assistance.o  together.o
+        (turn people.o lift-person)
+        payment.o  waiver.o  token.o  position.o  notes.o  history.o
+        exempt.o  prior.o
+    ==
   =/  v1=(unit stored-reg-1)  (mole |.(;;(stored-reg-1 n)))
   ?^  v1
     =/  o=reg-1  old.u.v1
     :-  ~
     :*  id.o  status.o  track.o  source.o  created.o  updated.o
-        contact.o  org.o  why.o  assistance.o  together.o  people.o
+        contact.o  org.o  why.o  assistance.o  together.o
+        (turn people.o lift-person)
         payment.o  waiver.o  token.o  position.o  notes.o  history.o
         |  %$
     ==
@@ -1088,8 +1181,11 @@
       (gb jon 'social_fri')
       (gb jon 'social_sat')
       (gb jon 'mass_fri')
+      (gb jon 'mass_sat')
+      (gb jon 'mass_sun')
       (gb jon 'holy_hour')
       (gb jon 'bus')
+      (gb jon 'trolley')
       (gb jon 'first_bsc')
       (gb jon 'knight_dame')
       (gb jon 'volunteer')
@@ -1245,8 +1341,8 @@
 ++  person-header
   ^-  (list @t)
   :~  'first'  'last'  'child'  'fri'  'sat'  'sun'  'sun_ten'
-      'social_fri'  'social_sat'  'mass_fri'  'holy_hour'  'bus'
-      'first_bsc'  'knight_dame'  'volunteer'
+      'social_fri'  'social_sat'  'mass_fri'  'mass_sat'  'mass_sun'
+      'holy_hour'  'bus'  'trolley'  'first_bsc'  'knight_dame'  'volunteer'
       'checkin_fri'  'checkin_sat'  'checkin_sun'
   ==
 ++  csv-people-header  ^-((list @t) (weld party-header person-header))
@@ -1275,7 +1371,8 @@
   ^-  (list @t)
   :~  first.p  last.p  (yn child.p)  (yn fri.days.p)  (yn sat.days.p)
       (yn sun.days.p)  (yn sun-ten.p)  (yn social-fri.p)  (yn social-sat.p)
-      (yn mass-fri.p)  (yn holy-hour.p)  (yn bus.p)  (yn first-bsc.p)
+      (yn mass-fri.p)  (yn mass-sat.p)  (yn mass-sun.p)
+      (yn holy-hour.p)  (yn bus.p)  (yn trolley.p)  (yn first-bsc.p)
       (yn knight-dame.p)  (yn volunteer.p)
       (checkin-cell p %fri)  (checkin-cell p %sat)  (checkin-cell p %sun)
   ==
@@ -1570,6 +1667,11 @@
       ['form.friday.title' s+'Friday']
       ['form.friday.closed' s+'Check Friday to see Friday\'s events']
       ['form.mass_fri' s+'8:00am Mass at St. Paul\'s, Jacksonville Beach']
+      ['form.mass_sat' s+'8:00am Mass at Our Lady Star of the Sea, Ponte Vedra Beach']
+      ['form.mass_sun' s+'Mass at the Shrine of Our Lady of La Leche']
+      ['form.sunday.title' s+'Sunday']
+      ['form.sunday.closed' s+'Check Sunday to see Sunday\'s events']
+      ['form.trolley' s+'Needs a seat on the trolley on Sunday']
       ['form.holy_hour' s+'Holy Hour: Adoration and Benediction, 1:50pm']
       ['form.social_fri' s+'Pilgrim social at [Ajua Mexican Kitchen](https://ajuajax.com/), 3pm']
       ['form.social_fri.short' s+'Ajua']
@@ -1644,6 +1746,11 @@
       ['manage.cancel' s+'Cancel the whole registration']
       ['manage.cancel.confirm' s+'Cancel this registration for everyone in the party? Your spots are released and this cannot be undone.']
       ['manage.closed' s+'Changes are closed. Contact us at register@babystepscamino.com.']
+      ['manage.full' s+'The {{track}} is full, so nobody can be added to this registration. Write to us and we will see what we can do.']
+      ['manage.closes_in' s+'Registration closes in {{days}} days.']
+      ['manage.closes_tomorrow' s+'Registration closes tomorrow.']
+      ['manage.closes_today' s+'Registration closes today.']
+      ['manage.closed_already' s+'Registration has closed. You can still change this registration until {{cutoff}}.']
       ['manage.pay_more' s+'Your changes raise the fee by {{diff}}. Pay the difference to keep them.']
       ['stub.banner' s+'Rehearsal mode: signing and payment complete themselves and no email is sent.']
       ['checkin.title' s+'Check in']
