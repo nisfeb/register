@@ -40,6 +40,7 @@
 /&  checkin-js    checkin.js
 /&  sw-js         sw.js
 /&  manifest-json  manifest.json
+/&  logo      logo.png
 /&  icon-192  icon-192.png
 /&  icon-512  icon-512.png
 =<  ^-  nexus:nexus
@@ -51,7 +52,7 @@
         %-  pairs:enjs:format
         :~  title+s+'Register'
             info+s+'Baby Steps Camino sign-up and backoffice'
-            color+s+'#0b7fc2'
+            color+s+'#b70000'
             image+s+'/grubbery/tiles/icon/register'
             href+s+'/apps/register/'
         ==
@@ -74,6 +75,7 @@
           [%over %& [/ %'checkin.js'] [[/ %mime] checkin-js]]
           [%over %& [/ %'sw.js'] [[/ %mime] sw-js]]
           [%over %& [/ %'manifest.json'] [[/ %mime] manifest-json]]
+          [%over %& [/ %'logo.png'] [[/ %mime] logo]]
           [%over %& [/ %'icon-192.png'] [[/ %mime] icon-192]]
           [%over %& [/ %'icon-512.png'] [[/ %mime] icon-512]]
           [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
@@ -522,8 +524,8 @@
   ^-  form:m
   =/  road=road:tarball  (rf up /regs id.r)
   ?.  fresh
-    (over:io road [[/register %reg] `stored-reg:reg`[%2 r]])
-  ;<  *  bind:m  (make-gained-soft:io road |+[[[/register %reg] `stored-reg:reg`[%2 r]] ~])
+    (over:io road [[/register %reg] `stored-reg:reg`[%3 r]])
+  ;<  *  bind:m  (make-gained-soft:io road |+[[[/register %reg] `stored-reg:reg`[%3 r]] ~])
   (pure:m ~)
 ::  +poke-writer: one op to /main.sig from a request fiber
 ::
@@ -696,6 +698,9 @@
     ::  directory, and no-cache so a new worker reaches the phone
     %^  serve-asset  eyre-id  %'sw.js'
     ['text/javascript; charset=utf-8' 'no-cache' ~[['service-worker-allowed' '/apps/register/']]]
+  ::  the event's own logo, served to anyone: the pilgrim's page wears it
+  ?:  &(=('GET' meth) ?=([%'logo.png' ~] suffix))
+    (serve-asset eyre-id %'logo.png' 'image/png' 'public, max-age=86400' ~)
   ?:  &(=('GET' meth) ?=([%'icon-192.png' ~] suffix))
     (serve-asset eyre-id %'icon-192.png' 'image/png' 'public, max-age=86400' ~)
   ?:  &(=('GET' meth) ?=([%'icon-512.png' ~] suffix))

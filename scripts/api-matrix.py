@@ -80,7 +80,9 @@ def settle():
 
 def person(first, last, **kw):
     p = {'first': first, 'last': last, 'child': False, 'days': {'fri': True, 'sat': True, 'sun': True}, 'sun_ten': True,
-         'social_fri': False, 'social_sat': False, 'mass_fri': False, 'holy_hour': False, 'bus': False,
+         'social_fri': False, 'social_sat': False,
+         'mass_fri': False, 'mass_sat': False, 'mass_sun': False,
+         'holy_hour': False, 'bus': False, 'trolley': False,
          'first_bsc': True, 'knight_dame': False, 'volunteer': False}
     p.update(kw)
     return p

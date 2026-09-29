@@ -152,9 +152,13 @@ ok('the search matches the rid', page.matches(list[0], 'aaa'));
 ok('an empty search matches everything', page.matches(list[0], '') && page.matches(list[1], ''));
 
 // ---- the day's tags and the counts grid ----
-const p = { walks: true, bus: true, mass_fri: true, holy_hour: false, social: true, sun_ten: true, child: false };
+const p = { walks: true, bus: true, mass: true, holy_hour: false, social: true, sun_ten: true, child: false };
 ok('Friday tags the walk, the bus, Mass and the social',
   page.tags(p, 'fri').join(',') === 'walk,bus,Mass,social');
+ok('the trolley is tagged beside the bus when the day has one',
+  page.tags(Object.assign({}, p, { trolley: true }), 'sun').join(',') === '10 mi,bus,trolley,Mass,social');
+ok('a day with no Mass for this person does not tag one',
+  page.tags(Object.assign({}, p, { mass: false }), 'fri').join(',') === 'walk,bus,social');
 ok('Sunday tags the distance instead of the walk', page.tags(p, 'sun')[0] === '10 mi');
 ok('the short Sunday walk says so',
   page.tags(Object.assign({}, p, { sun_ten: false }), 'sun')[0] === '2.5 mi');
@@ -398,12 +402,22 @@ ok('nothing ticked copies nothing', pub.syncSame([lead, second], [])[1] === seco
 // ---- one person's weekend, in words ----
 const walker = (over) => Object.assign({ first: 'Ana', last: 'Silva', child: false,
   days: { fri: false, sat: false, sun: false }, sun_ten: false, social_fri: false,
-  social_sat: false, mass_fri: false, holy_hour: false, bus: false }, over || {});
+  social_sat: false, mass_fri: false, mass_sat: false, mass_sun: false,
+  holy_hour: false, bus: false, trolley: false }, over || {});
 ok('the whole weekend reads as one sentence each',
   pub.weekendWords(walker({ days: { fri: true, sat: true, sun: true }, sun_ten: true,
     mass_fri: true, holy_hour: true, social_fri: true, social_sat: true, bus: true }), 'full') ===
   'Walking Friday, Saturday and Sunday, the 10 miles on Sunday. Friday Mass and Holy Hour. ' +
   'Socials at Ajua and Pusser\'s. Needs the bus.');
+ok('Mass on the other two days is its own sentence',
+  pub.weekendWords(walker({ days: { fri: false, sat: true, sun: true }, mass_sat: true, mass_sun: true }), 'full') ===
+  'Walking Saturday and Sunday, the last 2.5 miles on Sunday. Mass on Saturday and Sunday.');
+ok('the trolley is named beside the bus',
+  pub.weekendWords(walker({ days: { sun: true }, bus: true, trolley: true }), 'full') ===
+  'Walking Sunday, the last 2.5 miles on Sunday. Needs the bus and the trolley on Sunday.');
+ok('the trolley alone reads on its own',
+  pub.weekendWords(walker({ days: { sun: true }, trolley: true }), 'bambino') ===
+  'Walking the last 2.5 miles on Sunday. Needs the trolley on Sunday.');
 ok('one day alone is one clause',
   pub.weekendWords(walker({ days: { fri: false, sat: true, sun: false } }), 'full') ===
   'Walking Saturday.');

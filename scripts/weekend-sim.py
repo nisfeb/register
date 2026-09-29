@@ -59,7 +59,9 @@ def settle():
 
 def person(first, last, fri=True, sat=True, sun=True, social_fri=False, social_sat=False):
     return {'first': first, 'last': last, 'child': False, 'days': {'fri': fri, 'sat': sat, 'sun': sun}, 'sun_ten': True,
-            'social_fri': social_fri, 'social_sat': social_sat, 'mass_fri': False, 'holy_hour': False, 'bus': False,
+            'social_fri': social_fri, 'social_sat': social_sat,
+            'mass_fri': False, 'mass_sat': False, 'mass_sun': False,
+            'holy_hour': False, 'bus': False, 'trolley': False,
             'first_bsc': True, 'knight_dame': False, 'volunteer': False}
 
 

@@ -21,7 +21,8 @@ const who = (first, last, o = {}) => ({
   first, last, child: !!o.child,
   days: { fri: o.fri !== false, sat: o.sat !== false, sun: o.sun !== false },
   sun_ten: o.sun_ten !== false, social_fri: !!o.social_fri, social_sat: !!o.social_sat,
-  mass_fri: !!o.mass_fri, holy_hour: !!o.holy_hour, bus: !!o.bus,
+  mass_fri: !!o.mass_fri, mass_sat: !!o.mass_sat, mass_sun: !!o.mass_sun,
+  holy_hour: !!o.holy_hour, bus: !!o.bus, trolley: !!o.trolley,
   first_bsc: !!o.first_bsc, knight_dame: !!o.knight_dame, volunteer: !!o.volunteer,
 });
 const party = (track, mail, people, o = {}) => ({

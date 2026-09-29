@@ -32,7 +32,8 @@ const j = async (res) => { try { return await res.json(); } catch (e) { return {
 const post = (path, body, own) => fetch(API + path, { method: 'POST', headers: own ? hdr : { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
 const put = (path, body) => fetch(API + path, { method: 'PUT', headers: hdr, body: JSON.stringify(body) });
 const person = (first, last) => ({ first, last, child: false, days: { fri: true, sat: true, sun: true }, sun_ten: true,
-  social_fri: false, social_sat: false, mass_fri: false, holy_hour: false, bus: false, first_bsc: true, knight_dame: false, volunteer: false });
+  social_fri: false, social_sat: false, mass_fri: false, mass_sat: false, mass_sun: false,
+  holy_hour: false, bus: false, trolley: false, first_bsc: true, knight_dame: false, volunteer: false });
 const party = (mail, people) => ({ track: 'full', contact: { email: mail, phone: '904 555 0100', street: '1 Beach Rd', city: 'Jacksonville Beach', state: 'FL', zip: '32250' },
   org: '', why: 'click', assistance: false, together: false, people });
 

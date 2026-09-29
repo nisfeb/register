@@ -107,7 +107,8 @@
     var out = [];
     if (p.walks) out.push(day === 'sun' ? (p.sun_ten ? '10 mi' : '2.5 mi') : 'walk');
     if (p.bus) out.push('bus');
-    if (p.mass_fri) out.push('Mass');
+    if (p.trolley) out.push('trolley');
+    if (p.mass) out.push('Mass');
     if (p.holy_hour) out.push('Holy Hour');
     if (p.social) out.push('social');
     if (p.child) out.push('child');
