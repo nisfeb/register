@@ -7,7 +7,7 @@
   "scope": "/apps/register/",
   "display": "standalone",
   "orientation": "portrait",
-  "theme_color": "#0b7fc2",
+  "theme_color": "#b70000",
   "background_color": "#ffffff",
   "icons": [
     {"src": "/apps/register/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},

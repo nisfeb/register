@@ -2,7 +2,7 @@
    for a phone held in the sun. The palette is the public page's. */
 :root {
   --bg: #ffffff; --ink: #1a1a1a; --muted: #5c5c5c; --line: #d8d8d8; --soft: #f2f2f2;
-  --accent: #0b7fc2; --accent-ink: #ffffff; --accent-soft: #e6f4fc;
+  --accent: #b70000; --accent-ink: #ffffff; --accent-soft: #fdeaea;
   --bad: #b3261e; --bad-soft: #fdecea; --good: #1c6b20; --good-soft: #e7f4e7;
   --warn: #8a6100; --warn-soft: #fff4d6;
   --body: "Open Sans", system-ui, -apple-system, "Segoe UI", sans-serif;

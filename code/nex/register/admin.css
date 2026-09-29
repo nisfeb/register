@@ -2,7 +2,7 @@
    type scale, and tables instead of cards wherever a table will do. */
 :root {
   --bg: #ffffff; --ink: #272727; --muted: #6b6b6b; --line: #e4e4e4; --soft: #f6f6f6;
-  --accent: #0b7fc2; --accent-ink: #ffffff; --accent-soft: #e6f4fc; --bad: #b3261e; --good: #2e7d32;
+  --accent: #b70000; --accent-ink: #ffffff; --accent-soft: #fdeaea; --bad: #b3261e; --good: #2e7d32;
   --warn: #8a6100;
   --body: "Open Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --head: "Poppins", "Open Sans", system-ui, sans-serif;
