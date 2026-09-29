@@ -572,7 +572,7 @@
       out += box(k + 'social_fri', 'Friday social', p.social_fri) + box(k + 'social_sat', 'Saturday social', p.social_sat) +
         box(k + 'mass_fri', 'Friday Mass', p.mass_fri) + box(k + 'mass_sat', 'Saturday Mass', p.mass_sat) +
         box(k + 'mass_sun', 'Sunday Mass', p.mass_sun) + box(k + 'holy_hour', 'Holy Hour', p.holy_hour) +
-        box(k + 'bus', 'Bus', p.bus) + box(k + 'trolley', 'Trolley on Sunday', p.trolley);
+        box(k + 'bus', 'Bus', p.bus) + box(k + 'trolley', 'Sunday trolley (Shrine to the Cathedral and back)', p.trolley);
     }
     out += box(k + 'first_bsc', 'First Baby Steps Camino', p.first_bsc) +
       box(k + 'knight_dame', 'Knight or Dame', p.knight_dame) + box(k + 'volunteer', 'Volunteering', p.volunteer);
@@ -1279,14 +1279,11 @@
       field('mail.from', 'Mail from', getPath(s, 'mail.from')) +
       field('mail.resend_key', 'Resend key', getPath(s, 'mail.resend_key'), 'password') +
       field('stripe.secret_key', 'Stripe secret key', getPath(s, 'stripe.secret_key'), 'password') +
-      '<div class="row">' +
-      field('docusign.integration_key', 'DocuSign integration key', getPath(s, 'docusign.integration_key'), 'password') +
-      field('docusign.secret', 'DocuSign secret', getPath(s, 'docusign.secret'), 'password') + '</div><div class="row">' +
-      field('docusign.account_id', 'DocuSign account id', getPath(s, 'docusign.account_id')) +
-      field('docusign.template_id', 'DocuSign template id', getPath(s, 'docusign.template_id')) + '</div><div class="row">' +
-      field('docusign.base_uri', 'DocuSign base URI', getPath(s, 'docusign.base_uri')) +
-      field('docusign.auth_host', 'DocuSign auth host', getPath(s, 'docusign.auth_host')) + '</div>' +
-      '<p class="help">A key shown as four stars is stored. Leave it alone to keep it.</p></div>';
+      '<p class="help">A key shown as four stars is stored. Leave it alone to keep it. ' +
+      'In <b>stub</b> mode the ship takes registrations but no money and sends no mail; ' +
+      'in <b>live</b> mode it charges cards through Stripe and mails through Resend.</p>' +
+      '<p class="actions"><button type="button" class="btn quiet small" data-act="stripe-check">Check the Stripe key</button> ' +
+      '<span id="stripe-check"></span></p></div>';
     return out + '<div class="actions"><button type="button" class="btn" data-act="save-settings">Save the settings</button></div>';
   }
   function backupView() {
@@ -1812,6 +1809,22 @@
           render(emailsView());
           say(bad.join('; '));
         });
+      });
+    }
+    if (a === 'stripe-check') {
+      return act(function () {
+        var out = document.getElementById('stripe-check');
+        if (out) out.textContent = 'asking Stripe...';
+        var freeChk = spin(el);
+        read('/stripe-check').then(function (d) {
+          freeChk();
+          if (!out) return;
+          if (!d.set) { out.textContent = 'No key is stored.'; return; }
+          if (!d.ok) { out.textContent = 'Stripe would not answer (status ' + d.status + '). Check the key.'; return; }
+          out.textContent = d.livemode
+            ? 'This is a LIVE key: real cards will be charged.'
+            : 'This is a test key: no real money moves.';
+        }).catch(function (e) { freeChk(); if (out) out.textContent = e.message; });
       });
     }
     if (a === 'save-settings') {

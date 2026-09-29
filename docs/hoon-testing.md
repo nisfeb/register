@@ -43,13 +43,19 @@ scripts/hoon-test-kit/hoon-mutate.py <pier> --since HEAD~1     # only what a cha
 
 ## How register is configured
 
-`DIALECT` stays at its clay default. `code/lib/register.hoon` is
+`DIALECT` stays at its clay default. All four of register's libraries are
 import-free by design, with no `/<` and no `/&`, so none of the kit's
-grubbery translation applies to it and the suite's `/+ *test, reg=register`
-resolves the ordinary way. The whole config is the desk name, the one
-library, and the tests directory.
+grubbery translation applies to them and the suite's
+`/+ *test, reg=register` resolves the ordinary way. The whole config is
+the desk name, the libraries, and the tests directory.
 
-The suite is 47 arms over a 1,802-line library.
+The suite is 75 arms over four libraries: `register.hoon` (the event and
+its rules), and phase 2's `register-http.hoon` (percent-encoding and form
+bodies), `register-stripe.hoon` (the Checkout calls, built and read) and
+`register-mail.hoon` (the Resend send). The three new ones are pure text
+in and pure text out, which is the whole reason they are libraries: an
+outbound call is untestable, but everything that decides what goes out
+and what comes back is not.
 
 **The nexus is not under test.** `code/nex/register/app.hoon` is 1,940
 lines and nothing in it is reached by a unit test today; the HTTP gate
@@ -124,6 +130,12 @@ Measure from `/proc/<pid>/stat` deltas, not `ps %cpu`.
 ## The first baseline and mutation run, 2026-09-29
 
 On `~feb`, against the library at version 14.
+
+**A note on wet gates and narrowed lists.** `+site-url` first read the
+last character of the public url with `(snag n raw)` after `?~ raw`.
+That does not compile: `snag`, `scag` and `rear` are wet and rebind the
+list to its own tail, which a `?~`-narrowed non-empty type refuses with
+`mull-grow` / `nest-fail`. Test the length instead of narrowing.
 
 **The baseline found three breaks in five seconds**, all of them in tests
 written while no ship was up to run them: a stored-shape head still

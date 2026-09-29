@@ -118,6 +118,24 @@ textarea { min-height: 5.5rem; resize: vertical; }
 .error { background: #fdecea; color: var(--bad); padding: .6rem .8rem; border-radius: 6px; margin: .8rem 0; }
 .ok { color: var(--good); }
 
+/* the pilgrim's agreement: a dialog whose terms scroll, over a scrim.
+   The button under it stays shut until the text has been read to its
+   end and the box is ticked. */
+.scrim { position: fixed; inset: 0; background: rgba(13,13,13,.55); z-index: 40;
+  display: flex; align-items: center; justify-content: center; padding: 16px; }
+.modal { background: var(--bg); border-radius: 10px; padding: 1.2rem 1.3rem;
+  width: min(44rem, 100%); max-height: min(44rem, 92vh); overflow: auto;
+  display: flex; flex-direction: column; }
+.modal h2 { margin-top: 0; }
+.modal .terms { border: 1px solid var(--line); border-radius: 8px; padding: .9rem 1rem;
+  overflow-y: auto; max-height: 22rem; min-height: 8rem; background: var(--soft);
+  font-size: .95rem; margin: .4rem 0 .8rem; }
+.modal .terms:focus { outline: 2px solid var(--accent); }
+.modal .terms p { margin: 0 0 .8rem; }
+.modal .terms p:last-child { margin-bottom: 0; }
+.modal .actions { margin-top: .4rem; }
+@media (max-width: 600px) { .modal .terms { max-height: 48vh; } }
+
 /* the wait a person can see: a bar across the top while any fetch is in
    flight, and a spinner in the button that started one */
 .busy { position: fixed; top: 0; left: 0; right: 0; height: 3px; background: var(--accent-soft); overflow: hidden; z-index: 20; }
@@ -153,3 +171,11 @@ body.editing .btn, body.editing .check, body.editing a.btn, body.editing .remove
 /* the check-in link: one big button for a hand holding a phone and a child */
 .btn.big { font-size: 1.2rem; padding: 1rem 1.6rem; width: 100%; text-align: center; }
 .done { font-weight: 600; font-size: 1.1rem; }
+
+/* the payment step's amount chooser */
+.picks { border: 1px solid var(--line); border-radius: 8px; padding: .9rem 1rem; margin: 1.2rem 0; }
+.picks > p:first-child { margin: 0 0 .5rem; font-weight: 600; }
+#amount-box { margin: .6rem 0 0 1.7rem; }
+#amount-box label { display: inline-flex; align-items: baseline; gap: .25rem; font-weight: 600; }
+#amount-box input { width: 7rem; }
+#amount-box .note { margin: .4rem 0 0; color: var(--muted); font-size: .85rem; font-weight: 400; }

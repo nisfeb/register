@@ -1,5 +1,16 @@
 # Register Phase 2: the waiver in the app, Stripe, and Resend
 
+> **Built and proved on the comet, 2026-09-29, as version 15.** A
+> registration was carried end to end in live mode: submitted, the
+> waiver adopted with its text hash, paid with 4242 4242 4242 4242
+> through Stripe Checkout, and the confirmation sent by Resend. A second
+> run paid $150 against a $75 fee and the ship recorded
+> `amount 7500, gift 7500`. The webhook is idempotent and answers 200 to
+> a duplicate, to an event it does not care about and to junk. Two
+> things are the organizers' to finish, not the code's: the Resend
+> sending domain is unverified (see `docs/providers.md`), and the Stripe
+> key on the comet is a test key, which the new key check confirms.
+
 sneagan, 2026-09-29: "begin phase 2, except that instead of docusign we
 will have a scrollable modal with a checkbox saying I have read and
 agree.... and a button saying 'adopt and sign' which records their

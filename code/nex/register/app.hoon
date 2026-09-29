@@ -28,6 +28,9 @@
 ::  for the owner's. A foreign ship is refused at the top of +apply.
 ::
 /<  reg   /lib/register.hoon
+/<  hut     /lib/register-http.hoon
+/<  stripe  /lib/register-stripe.hoon
+/<  resend  /lib/register-mail.hoon
 /&  icon  icon.svg
 /&  public-html  public.html
 /&  public-css   public.css
@@ -136,6 +139,8 @@
       :-  %a
       :~  (line '/sys/bowl.sig' 'read the clock and the name of this ship')
           (line '/sys/eyre/' 'serve the sign-up page, the backoffice and the check-in app at /apps/register')
+          (line '/sys/iris/' 'ask Stripe to take a payment and Resend to send a pilgrim their link. Refuse this and the app stays in stub mode: it takes registrations but no money and sends no mail')
+          (line '/sys/behn/' 'give up on a call to Stripe or Resend after two minutes instead of waiting forever. Refuse this and an outbound call can leave a pilgrim on a spinner')
       ==
       :-  'peek'
       :-  %a
@@ -464,7 +469,7 @@
   ::  would store the empty string over a string somebody reads
   ?.  ?=([%s *] vj)  (refuse 'set-copy-key' 'value: a string is required')
   =/  val=@t  p.vj
-  ?:  (over-cap:reg val max-copy:reg)  (refuse 'set-copy-key' 'value: too long')
+  ?:  (over-cap:reg val (copy-cap:reg key))  (refuse 'set-copy-key' 'value: too long')
   ;<  raw-cur=json  bind:m  (read-json (rf 0 / %'copy.json'))
   ?.  ?=([%o *] raw-cur)  (refuse 'set-copy-key' 'copy: an object is required')
   ::  the strings a release added are filled in here, so the first edit
@@ -529,6 +534,83 @@
   (pure:m ~)
 ::  +poke-writer: one op to /main.sig from a request fiber
 ::
+::  +mail-link: the one link a template carries. A manage link is a
+::  password, so it is built here and never written to the ring.
+::
+++  mail-link
+  |=  [site=@t tpl=@t r=reg:reg]
+  ^-  @t
+  =/  route=@t
+    ?:  =('checkin' tpl)  'checkin'
+    ?:  ?|(=('promoted' tpl) =('assistance_declined' tpl) =('reminder' tpl))  'next'
+    'manage'
+  (rap 3 ~[site '/apps/register/#' route '/' id.r '/' token.r])
+::  +mail-vars: what every template may name. A template that does not
+::  use one simply never mentions it.
+::
+++  mail-vars
+  |=  [r=reg:reg posn=@ud day=@t]
+  ^-  (list [@t @t])
+  :~  ['first' ?~(people.r '' first.i.people.r)]
+      ['position' (crip (a-co:co posn))]
+      ['day' day]
+      ['email' email.contact.r]
+  ==
+::  +try-send: the Resend call itself, or nothing when the app is in
+::  stub mode. Its own arm so both answers have the one type: a fork
+::  between two differently-typed fibers will not compile.
+::
+++  try-send
+  |=  [live=? key=@t from=@t to=@t subject=@t text=@t]
+  =/  m  (fiber:fiber:nexus ,[ok=? why=@t])
+  ^-  form:m
+  ?.  live  (pure:m [& ''])
+  ;<  res=[status=@ud body=@t]  bind:m
+    %+  fetch  %mail
+    :^  %'POST'  api:resend  (headers:resend key)
+    `(as-octs:mimes:html (send-body:resend from to subject text))
+  =/  sent=(unit @t)  (read-send:resend status.res body.res)
+  (pure:m ?^(sent [& ''] [| (why-not:resend status.res body.res)]))
+::  +send-mail: one template to one registration.
+::
+::  In stub mode, with no Resend key, or with no address, it writes the
+::  ring note it has always written and sends nothing, so the gate and
+::  the rehearsals are unchanged. When it does send, the ring still
+::  holds only the template, the recipient's registration and the
+::  subject: never the body, because the body carries the link.
+::
+++  send-mail
+  |=  [r=reg:reg tpl=@t mark=@t vars=(list [@t @t]) by=@t]
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
+  ;<  raw-cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
+  =/  cj=json  (with-starter:reg raw-cj)
+  =/  s=settings:reg  (de-settings:reg sj)
+  =/  mj=json  (gj:reg sj 'mail')
+  =/  key=@t  (gs:reg mj 'resend_key')
+  =/  from=@t  (gs:reg mj 'from')
+  =/  to=@t  email.contact.r
+  =/  site=@t  (site-url sj)
+  =/  all=(list [@t @t])
+    (weld vars `(list [@t @t])`~[['site' site] ['link' (mail-link site tpl r)]])
+  =/  raws=@t  (gs:reg cj (rap 3 ~['email.' tpl '.subject']))
+  =/  rawb=@t  (gs:reg cj (rap 3 ~['email.' tpl '.body']))
+  =/  subj=@t
+    ?:  =('' raws)  (rap 3 ~['no copy for email.' tpl '.subject'])
+    (fill:reg raws all)
+  =/  live=?  ?&(=(%live mode.s) !=('' key) !=('' from) !=('' to))
+  ;<  got=[ok=? why=@t]  bind:m
+    (try-send live key from to subj (fill:reg rawb all))
+  =/  ok=?  ok.got
+  =/  note=json
+    %-  pairs:enjs:format
+    :~  ['op' s+'note']  ['what' s+mark]  ['ok' b+ok]
+        ['why' s+?:(ok subj (rap 3 ~['not sent (' why.got '): ' subj]))]
+        ['by' s+?:(live 'mail' 'stub')]  ['rid' s+id.r]
+    ==
+  ;<  *  bind:m  (poke-writer note)
+  (pure:m ok)
 ++  poke-writer
   |=  jon=json
   =/  m  (fiber:fiber:nexus ,(unit tang))
@@ -681,8 +763,19 @@
   ?:  &(=('POST' meth) ?=([%api %reg @ %checkin ~] suffix))      (serve-self-checkin eyre-id s2 tok jon)
   ?:  &(=('POST' meth) ?=([%api %reg @ %edit ~] suffix))         (serve-edit eyre-id s2 tok jon 'pilgrim')
   ?:  &(=('POST' meth) ?=([%api %reg @ %cancel ~] suffix))       (serve-cancel eyre-id s2 tok jon 'pilgrim')
-  ?:  &(=('POST' meth) ?=([%api %reg @ %sign ~] suffix))         (serve-sign eyre-id s2 tok)
-  ?:  &(=('POST' meth) ?=([%api %reg @ %pay ~] suffix))          (serve-pay eyre-id s2 tok)
+  ?:  &(=('POST' meth) ?=([%api %reg @ %sign ~] suffix))         (serve-sign eyre-id s2 tok jon)
+  ?:  &(=('POST' meth) ?=([%api %reg @ %pay ~] suffix))          (serve-pay eyre-id s2 tok jon)
+  ::  where Stripe sends the pilgrim back, and where it tells the ship
+  ::  the same thing a second time. Neither is trusted: both take only
+  ::  a session id and ask Stripe itself what happened.
+  ?:  &(=('GET' meth) ?=([%pay %return ~] suffix))
+    %:  serve-pay-return
+      eyre-id
+      (fall (get-key:kv:html-utils 'rid' args) '')
+      tok
+      (fall (get-key:kv:html-utils 'sid' args) '')
+    ==
+  ?:  &(=('POST' meth) ?=([%hooks %stripe ~] suffix))            (serve-stripe-hook eyre-id ?~(body.request.req '' q.u.body.request.req))
   ?:  &(=('POST' meth) ?=([%api %resend-link ~] suffix))         (serve-resend eyre-id jon)
   ::  the PWA assets, served WITHOUT the cookie on purpose. A browser
   ::  fetches a manifest, an icon and a service worker uncredentialed:
@@ -725,6 +818,7 @@
   ?:  &(=('GET' meth) ?=([%api %admin %reg @ ~] suffix))         (own (serve-admin-reg eyre-id s3))
   ?:  &(=('POST' meth) ?=([%api %admin %reg @ ~] suffix))        (own (act (serve-admin-act eyre-id s3 jon admin-by)))
   ?:  &(=('GET' meth) ?=([%api %admin %settings ~] suffix))      (own (serve-settings eyre-id))
+  ?:  &(=('GET' meth) ?=([%api %admin %'stripe-check' ~] suffix))  (own (serve-stripe-check eyre-id))
   ?:  &(=('PUT' meth) ?=([%api %admin %settings ~] suffix))      (own (act (serve-set-settings eyre-id jon admin-by)))
   ?:  &(=('GET' meth) ?=([%api %admin %copy ~] suffix))          (own (serve-doc eyre-id %'copy.json'))
   ?:  &(=('PUT' meth) ?=([%api %admin %copy ~] suffix))          (own (act (serve-set-doc eyre-id 'set-copy' jon admin-by)))
@@ -832,22 +926,15 @@
   ;<  err=(unit tang)  bind:m  (poke-writer pk)
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   =/  posn=@ud  ?:(=(%waitlist to) +(waitlist.c) 0)
-  ::  the stub email: only the subject, so no {{link}} body reaches the ring
-  ;<  ~  bind:m
-    ?.  =(%waitlist to)  (pure:m ~)
-    ;<  cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
-    =/  who=@t  ?~(people.p.got '' first.i.people.p.got)
-    =/  subj=@t
-      %+  fill:reg  (gs:reg cj 'email.waitlist.subject')
-      ~[['first' who] ['position' (crip (a-co:co posn))]]
-    ;<  *  bind:m
-      %-  poke-writer
-      %-  pairs:enjs:format
-      :~  ['op' s+'note']  ['what' s+'email.waitlist']  ['ok' b+&]
-          ['why' s+subj]  ['by' s+'stub']  ['rid' s+rid]
-      ==
-    (pure:m ~)
   =/  probe=reg:reg  (new-reg:reg rid token %web p.got now)
+  ::  the wait list is the only submit that mails: a held registration
+  ::  is still on the page, at its next step
+  ;<  *  bind:m
+    ?.  =(%waitlist to)  (pure:m ~)
+    ;<  cur=(unit reg:reg)  bind:m  (find-reg 1 `@ta`rid)
+    ?~  cur  (pure:m ~)
+    ;<  *  bind:m  (send-mail u.cur 'waitlist' 'email.waitlist' (mail-vars u.cur posn '') 'pilgrim')
+    (pure:m ~)
   %^  send-json  eyre-id  200
   %-  pairs:enjs:format
   :~  ['rid' s+rid]
@@ -941,6 +1028,7 @@
     ==
   ;<  err=(unit tang)  bind:m  (poke-writer pk)
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  ;<  *  bind:m  (send-mail u.cur 'cancelled' 'email.cancelled' (mail-vars u.cur 0 '') by)
   (send-ok eyre-id)
 ::  +lapse-to-waitlist: a hold that aged out while the track filled.
 ::  The route reads the tree, decides, and tells the writer where the
@@ -968,7 +1056,7 @@
 ::  live branch is phase 2.
 ::
 ++  serve-sign
-  |=  [eyre-id=@ta rid=@t tok=@t]
+  |=  [eyre-id=@ta rid=@t tok=@t jon=json]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  cur=(unit reg:reg)  bind:m  (with-reg eyre-id rid tok)
@@ -979,21 +1067,107 @@
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
   ?.  (room-for:reg s regs u.cur now)
     (lapse-to-waitlist eyre-id s regs u.cur now)
-  ?:  =(%live mode.s)  (send-err eyre-id 501 'signing is not configured yet')
-  =/  to=@tas  (after-waiver:reg u.cur)
+  ::  Stub mode signs for the pilgrim, as it always has, so the gate and
+  ::  a rehearsal never open the dialog. Live, the pilgrim adopts the
+  ::  terms themselves: the page sends back the hash of the text it
+  ::  showed, and this refuses a hash that is not the text the ship now
+  ::  holds, because the words are an organizer's to edit at any moment.
+  =/  live=?  =(%live mode.s)
+  ;<  hash=@t  bind:m  ?.(live (pure:(fiber:fiber:nexus ,@t) '') waiver-hash)
+  ?:  live
+    ?.  (gb:reg jon 'agreed')
+      (send-err eyre-id 400 'agreed: the terms must be agreed to')
+    =/  saw=@t  (gs:reg jon 'text_hash')
+    ?.  =(saw hash)
+      %^  send-json  eyre-id  409
+      (pairs:enjs:format ~[['error' s+'the terms changed'] ['code' s+'stale']])
+    (finish-waiver eyre-id u.cur %adopt hash 'adopted the waiver')
+  (finish-waiver eyre-id u.cur %stub '' 'signed the waiver (stub)')
+::  +waiver-hash: the fingerprint of the terms as the ship holds them
+::
+++  waiver-hash
+  =/  m  (fiber:fiber:nexus ,@t)
+  ^-  form:m
+  ;<  raw-cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
+  =/  cj=json  (with-starter:reg raw-cj)
+  (pure:m (hash-text:reg (gs:reg cj 'waiver.text')))
+::  +finish-waiver: the one place the waiver is recorded and the
+::  registration moves on, whichever way it was signed
+::
+++  finish-waiver
+  |=  [eyre-id=@ta r=reg:reg method=@tas envelope=@t what=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  to=@tas  (after-waiver:reg r)
   =/  pk=json
     %-  pairs:enjs:format
-    :~  ['op' s+'advance']  ['rid' s+id.u.cur]  ['to' s+to]  ['by' s+'pilgrim']
-        ['what' s+'signed the waiver (stub)']
-        ['waiver' (pairs:enjs:format ~[['method' s+'stub'] ['envelope' s+''] ['status' s+'completed']])]
+    :~  ['op' s+'advance']  ['rid' s+id.r]  ['to' s+to]  ['by' s+'pilgrim']
+        ['what' s+what]
+        :-  'waiver'
+        %-  pairs:enjs:format
+        ~[['method' s+method] ['envelope' s+envelope] ['status' s+'completed']]
     ==
   ;<  err=(unit tang)  bind:m  (poke-writer pk)
-  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  ?^  err  (send-err eyre-id 503 'the ship is recovering; try again')
   (send-json eyre-id 200 (pairs:enjs:format ~[['next' s+to]]))
-::  +serve-pay: the payment step, the same way
+::  +fetch: one outbound request, with a deadline.
+::
+::  Both the request and the timer are soft on purpose. A ship whose
+::  weir refuses /sys/iris/ or /sys/behn/ vetoes the poke, and the veto
+::  arrives here as an input: this arm answers [0 ''] and the caller
+::  tells the pilgrim the provider is unreachable. It never spins and it
+::  never crashes the fiber, which is the rule the rest of the app keeps.
+::
+++  fetch
+  |=  [wire=@ta =request:http]
+  =/  m  (fiber:fiber:nexus ,[status=@ud body=@t])
+  ^-  form:m
+  ;<  t0=@da  bind:m  get-time:io
+  ;<  ~  bind:m  (send-request:io request)
+  ;<  ~  bind:m  (set-timer:io /[wire] (add t0 ~m2))
+  ;<  r=(unit client-response:iris)  bind:m
+    |=  input:fiber:nexus
+    :+  ~  q.state
+    ?+  in  [%skip ~]
+        ~  [%wait ~]
+        [~ %veto *]  [%done ~]
+        [~ %poke * *]
+      ?:  =([/ %timer-wake] p.sage.u.in)
+        ?.(=(/[wire] !<(path q.sage.u.in)) [%skip ~] [%done ~])
+      ?.  =([/ %http-response] p.sage.u.in)  [%skip ~]
+      =/  resp=client-response:iris  !<(client-response:iris q.sage.u.in)
+      ?:(?=(%cancel -.resp) [%done ~] [%done `resp])
+    ==
+  ;<  ~  bind:m  (cancel-timer:io /[wire])
+  ?~  r  (pure:m [0 ''])
+  ?.  ?=(%finished -.u.r)  (pure:m [0 ''])
+  =/  body=@t  ?~(full-file.u.r '' q.data.u.full-file.u.r)
+  (pure:m [status-code.response-header.u.r body])
+::  +site-url: where this app answers from, with no trailing slash.
+::  Every emailed link and every Stripe return is built from it, so a
+::  wrong one here sends pilgrims to a dead domain.
+::
+++  site-url
+  |=  sj=json
+  ^-  @t
+  ::  raw is deliberately NOT narrowed with ?~: +rear and +scag are wet
+  ::  and rebind the list to its own tail, which a narrowed type refuses
+  =/  raw=tape  (trip (gs:reg sj 'public_url'))
+  =/  n=@ud  (lent raw)
+  ?:  =(0 n)  ''
+  ?:(=('/' (rear raw)) (crip (scag (dec n) raw)) (crip raw))
+::  +unix-secs: what Stripe means by a time
+::
+++  unix-secs  |=(t=@da ^-(@ud (div (sub t ~1970.1.1) ~s1)))
+::  +stripe-key: the secret key, or '' when the organizers have not set one
+::
+++  stripe-key  |=(sj=json ^-(@t (gs:reg (gj:reg sj 'stripe') 'secret_key')))
+::  +serve-pay: the payment step. In stub mode the ship marks it paid
+::  itself; in live mode it opens a Stripe Checkout session and hands
+::  the page the url to send the pilgrim to.
 ::
 ++  serve-pay
-  |=  [eyre-id=@ta rid=@t tok=@t]
+  |=  [eyre-id=@ta rid=@t tok=@t jon=json]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  cur=(unit reg:reg)  bind:m  (with-reg eyre-id rid tok)
@@ -1005,8 +1179,9 @@
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
   ?.  (room-for:reg s regs u.cur now)
     (lapse-to-waitlist eyre-id s regs u.cur now)
-  ?:  =(%live mode.s)  (send-err eyre-id 501 'payment is not configured yet')
   =/  fees=@ud  (fees-total:reg s u.cur)
+  ?:  =(%live mode.s)
+    (start-checkout eyre-id u.cur fees (fall (gn:reg jon 'amount') fees) now)
   =/  pk=json
     %-  pairs:enjs:format
     :~  ['op' s+'advance']  ['rid' s+id.u.cur]  ['to' s+'complete']  ['by' s+'pilgrim']
@@ -1018,7 +1193,140 @@
     ==
   ;<  err=(unit tang)  bind:m  (poke-writer pk)
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  ;<  *  bind:m
+    (send-mail u.cur 'confirmation' 'email.confirmation' (mail-vars u.cur 0 '') 'pilgrim')
   (send-json eyre-id 200 (pairs:enjs:format ~[['next' s+'complete']]))
+::  +start-checkout: the Stripe Checkout session. Anything the pilgrim
+::  pays above the registration fee is a second line item, so the gift
+::  and the fee stay apart in Stripe's own reporting as well as here.
+::
+++  start-checkout
+  |=  [eyre-id=@ta r=reg:reg fees=@ud amount=@ud now=@da]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?:  (lth amount fees)  (send-err eyre-id 400 'amount: below the registration fee')
+  ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
+  =/  key=@t  (stripe-key sj)
+  ?:  =('' key)  (send-err eyre-id 503 'no Stripe key is set: tell the organizers')
+  =/  site=@t  (site-url sj)
+  ?:  =('' site)  (send-err eyre-id 503 'no public url is set: tell the organizers')
+  =/  gift=@ud  (sub amount fees)
+  =/  lines=(list [name=@t cents=@ud])
+    ;:  weld
+      ~[['Baby Steps Camino registration' fees]]
+      ?:(=(0 gift) ~ ~[['Gift to the Baby Steps Camino' gift]])
+    ==
+  =/  back=@t  (rap 3 ~[site '/apps/register/pay/return?rid=' id.r '&t=' token.r '&sid={CHECKOUT_SESSION_ID}'])
+  =/  quit=@t  (rap 3 ~[site '/apps/register/#next/' id.r '/' token.r])
+  =/  body=@t
+    %-  form-body:hut
+    %-  checkout-body:stripe
+    [id.r email.contact.r lines back quit (add (unix-secs now) 3.600)]
+  ;<  res=[status=@ud body=@t]  bind:m
+    %+  fetch  %stripe
+    :^  %'POST'  (cat 3 api:stripe '/checkout/sessions')  (headers:stripe key)
+    `(as-octs:mimes:html body)
+  ?.  =(200 status.res)
+    (send-err eyre-id 502 'Stripe would not open a payment page; try again in a minute')
+  =/  got  (read-session:stripe body.res)
+  ?~  got  (send-err eyre-id 502 'Stripe answered something this app could not read')
+  ?:  =('' url.u.got)  (send-err eyre-id 502 'Stripe sent no payment page')
+  (send-json eyre-id 200 (pairs:enjs:format ~[['url' s+url.u.got]]))
+::  +settle-session: what a paid session does to a registration. Called
+::  from the pilgrim's return and from the webhook, and safe to run
+::  twice: a registration already past the payment step is left alone.
+::
+++  settle-session
+  |=  [sid=@t rid=@t]
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ?:  =('' sid)  (pure:m |)
+  ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
+  =/  key=@t  (stripe-key sj)
+  ?:  =('' key)  (pure:m |)
+  ;<  res=[status=@ud body=@t]  bind:m
+    %+  fetch  %stripe
+    [%'GET' (rap 3 ~[api:stripe '/checkout/sessions/' sid]) (headers:stripe key) ~]
+  ?.  =(200 status.res)  (pure:m |)
+  =/  got  (read-session:stripe body.res)
+  ?~  got  (pure:m |)
+  ?.  paid.u.got  (pure:m |)
+  ::  only Stripe says whose registration this was
+  ?:  =('' rid.u.got)  (pure:m |)
+  ?:  &(!=('' rid) !=(rid rid.u.got))  (pure:m |)
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 1 ?:((ok-rid:reg rid.u.got) `@ta`rid.u.got %$))
+  ?~  cur  (pure:m |)
+  ?.  =(%payment status.u.cur)  (pure:m |)
+  ;<  s=settings:reg  bind:m  (read-settings 1)
+  =/  fees=@ud  (fees-total:reg s u.cur)
+  =/  gift=@ud  ?:((gth total.u.got fees) (sub total.u.got fees) 0)
+  =/  pk=json
+    %-  pairs:enjs:format
+    :~  ['op' s+'advance']  ['rid' s+id.u.cur]  ['to' s+'complete']  ['by' s+'pilgrim']
+        ['what' s+'paid by card']
+        :-  'payment'
+        %-  pairs:enjs:format
+        :~  ['method' s+'stripe']  ['amount' (en-num:reg (sub total.u.got gift))]
+            ['gift' (en-num:reg gift)]  ['ref' s+id.u.got]
+        ==
+    ==
+  ;<  err=(unit tang)  bind:m  (poke-writer pk)
+  ?^  err  (pure:m |)
+  ;<  *  bind:m
+    (send-mail u.cur 'confirmation' 'email.confirmation' (mail-vars u.cur 0 '') 'pilgrim')
+  (pure:m &)
+::  +serve-pay-return: where Stripe sends the pilgrim back. The query
+::  string is not believed: the session id in it is only a question to
+::  ask Stripe. Either way the pilgrim lands back on their own page.
+::
+++  serve-pay-return
+  |=  [eyre-id=@ta rid=@t tok=@t sid=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cur=(unit reg:reg)  bind:m  (with-reg eyre-id rid tok)
+  ?~  cur  (send-err eyre-id 404 'no such registration')
+  ;<  *  bind:m  (settle-session sid rid)
+  ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
+  =/  heads=(list [@t @t])
+    ~[['location' (rap 3 ~[(site-url sj) '/apps/register/#next/' rid '/' tok])]]
+  (send-simple:srv eyre-id [[302 heads] ~])
+::  +serve-stripe-hook: the same settlement, asked for by Stripe rather
+::  than by the pilgrim's browser, for the pilgrim who closed the tab.
+::  The body is read for one thing only, the session id, so there is
+::  nothing in it worth signing. It always answers 200, so Stripe stops.
+::
+++  serve-stripe-hook
+  |=  [eyre-id=@ta body=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  sid=(unit @t)  (webhook-sid:stripe body)
+  ;<  *  bind:m
+    ?~  sid  (pure:m ~)
+    ;<  *  bind:m  (settle-session u.sid '')
+    (pure:m ~)
+  (send-ok eyre-id)
+::  +serve-stripe-check: whether the stored key is a test key or a live
+::  one. The ship masks the key on read and must, so this is the only
+::  way an organizer can tell which one they pasted in.
+::
+++  serve-stripe-check
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
+  =/  key=@t  (stripe-key sj)
+  ?:  =('' key)  (send-json eyre-id 200 (pairs:enjs:format ~[['set' b+|]]))
+  ;<  res=[status=@ud body=@t]  bind:m
+    %+  fetch  %stripe
+    [%'GET' (cat 3 api:stripe '/balance') (headers:stripe key) ~]
+  =/  live=(unit ?)  (read-livemode:stripe body.res)
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['set' b+&]
+      ['status' (en-num:reg status.res)]
+      ['ok' b+?=(^ live)]
+      ['livemode' ?~(live ~ b+u.live)]
+  ==
 ::  +serve-resend: the manage link to an address that has a registration.
 ::  Answers the same whether or not one exists. Phase 2 sends the mail;
 ::  here the outcome is noted in the ring.
@@ -1031,12 +1339,16 @@
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
   =/  hit=(unit reg:reg)  (dup-of regs email '')
   ;<  *  bind:m
-    %-  poke-writer
-    %-  pairs:enjs:format
-    :~  ['op' s+'note']  ['what' s+'resend-link']  ['ok' b+?=(^ hit)]
-        ['why' s+?~(hit 'no active registration' 'stub: not sent')]
-        ['by' s+'pilgrim']  ['rid' s+?~(hit '' id.u.hit)]
-    ==
+    ?~  hit
+      ;<  *  bind:m
+        %-  poke-writer
+        %-  pairs:enjs:format
+        :~  ['op' s+'note']  ['what' s+'resend-link']  ['ok' b+|]
+            ['why' s+'no active registration']  ['by' s+'pilgrim']  ['rid' s+'']
+        ==
+      (pure:m ~)
+    ;<  *  bind:m  (send-mail u.hit 'manage' 'email.manage' (mail-vars u.hit 0 '') 'pilgrim')
+    (pure:m ~)
   (send-ok eyre-id)
 ::  ==  the owner's routes
 ::
@@ -1129,6 +1441,22 @@
   ?~  pk  (send-err eyre-id 400 'op: not an organizer op this ship knows')
   ;<  err=(unit tang)  bind:m  (poke-writer u.pk)
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  ::  the four organizer ops the pilgrim hears about. The rest are
+  ::  bookkeeping and send nothing.
+  =/  tpl=@t
+    ?:  =('promote' op)  'promoted'
+    ?:  =('assist' op)  ?:((gb:reg jon 'approve') 'assistance_approved' 'assistance_declined')
+    ?:  =('pay' op)  'confirmation'
+    ''
+  ;<  *  bind:m
+    ?:  =('' tpl)  (pure:m ~)
+    ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
+    ;<  *  bind:m
+      %-  send-mail
+      :^  r  tpl  (cat 3 'email.' tpl)
+      :-  (mail-vars r (position-of:reg regs r) '')
+      by
+    (pure:m ~)
   (send-ok eyre-id)
 ++  serve-doc
   |=  [eyre-id=@ta name=@ta]
@@ -1181,7 +1509,7 @@
   ::  would store the empty string over a string a pilgrim reads
   ?.  ?=([%s *] vj)  (send-err eyre-id 400 'value: a string is required')
   =/  val=@t  p.vj
-  ?:  (over-cap:reg val max-copy:reg)  (send-err eyre-id 400 'value: too long')
+  ?:  (over-cap:reg val (copy-cap:reg key))  (send-err eyre-id 400 'value: too long')
   ;<  raw-cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
   =/  cj=json  (with-starter:reg raw-cj)
   ?.  (has-key:reg cj key)  (send-err eyre-id 400 'key: not in copy')
@@ -1743,7 +2071,6 @@
   ;<  raw-cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
   =/  cj=json  (with-starter:reg raw-cj)
-  =/  raw=@t  (gs:reg cj 'email.checkin.subject')
   =/  day-word=@t  ?+(u.want 'Friday' %sat 'Saturday', %sun 'Sunday')
   =/  due=(list reg:reg)
     %+  skim  (sort regs by-last)
@@ -1756,32 +2083,26 @@
     !(lien history.r |=(st=step:reg =(mark what.st)))
   =/  batch=(list reg:reg)  (scag 100 due)
   =/  left=@ud  (sub (lent due) (lent batch))
-  =/  subj=@t
-    ?:  =('' raw)  'no copy for email.checkin.subject'
-    (fill:reg raw ~[['day' day-word]])
-  ;<  sent=@ud  bind:m  (mail-each batch mark subj by 0)
+  ;<  sent=@ud  bind:m  (mail-each batch mark day-word by 0)
   %^  send-json  eyre-id  200
   (pairs:enjs:format ~[['sent' (en-num:reg sent)] ['remaining' (en-num:reg left)]])
 ::  +mail-each: one recipient at a time: the ring note that stands in
 ::  for the send, then the history line
 ::
 ++  mail-each
-  |=  [batch=(list reg:reg) mark=@t subj=@t by=@t sent=@ud]
+  |=  [batch=(list reg:reg) mark=@t day=@t by=@t sent=@ud]
   =/  m  (fiber:fiber:nexus ,@ud)
   ^-  form:m
   ?~  batch  (pure:m sent)
   =/  r=reg:reg  i.batch
-  =/  note=json
-    %-  pairs:enjs:format
-    :~  ['op' s+'note']  ['what' s+mark]  ['ok' b+&]
-        ['why' s+subj]  ['by' s+'stub']  ['rid' s+id.r]
-    ==
-  ;<  err=(unit tang)  bind:m  (poke-writer note)
-  ?^  err  (mail-each t.batch mark subj by sent)
+  ;<  ok=?  bind:m  (send-mail r 'checkin' mark (mail-vars r 0 day) by)
+  ::  a send that did not go out gets no history line, so the next
+  ::  press of the button picks it up again
+  ?.  ok  (mail-each t.batch mark day by sent)
   =/  line=json
     (pairs:enjs:format ~[['op' s+'mail-sent'] ['rid' s+id.r] ['what' s+mark] ['by' s+by]])
   ;<  err2=(unit tang)  bind:m  (poke-writer line)
-  (mail-each t.batch mark subj by ?^(err2 sent +(sent)))
+  (mail-each t.batch mark day by ?^(err2 sent +(sent)))
 ++  serve-checkin-roster
   |=  [eyre-id=@ta day=@t]
   =/  m  (fiber:fiber:nexus ,~)
@@ -1917,18 +2238,12 @@
   =/  mark=@t  ?:(=('checkin' tpl) (cat 3 'email.checkin.' (need today)) (rap 3 'email.' tpl ~))
   =/  cj=json  (with-starter:reg raw-cj)
   =/  raw=@t  (gs:reg cj (rap 3 'email.' tpl '.subject' ~))
-  =/  who=@t  ?~(people.r '' first.i.people.r)
-  =/  posn=@t  (crip (a-co:co (position-of:reg regs r)))
+  =/  vars=(list [@t @t])  (mail-vars r (position-of:reg regs r) day-word)
   =/  subj=@t
     ?:  =('' raw)  (rap 3 'no copy for email.' tpl '.subject' ~)
-    (fill:reg raw ~[['first' who] ['position' posn] ['day' day-word]])
-  =/  pk=json
-    %-  pairs:enjs:format
-    :~  ['op' s+'note']  ['what' s+mark]  ['ok' b+&]
-        ['why' s+subj]  ['by' s+'stub']  ['rid' s+id.r]
-    ==
-  ;<  err=(unit tang)  bind:m  (poke-writer pk)
-  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+    (fill:reg raw vars)
+  ;<  ok=?  bind:m  (send-mail r tpl mark vars 'admin')
+  ?.  ok  (send-err eyre-id 502 'the mail did not go out; try again in a minute')
   ::  a check-in link sent by hand counts as sent, so the morning press
   ::  does not send it again
   ;<  err2=(unit tang)  bind:m

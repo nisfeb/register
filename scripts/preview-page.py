@@ -8,7 +8,7 @@ can be judged without a ship running.
 The copy comes out of +starter-copy in the library, so the page shows the
 real words. Nothing here talks to a ship and nothing can be submitted:
 this is for looking at the styling, not for testing the flow."""
-import http.server, json, os, sys
+import http.server, json, os, re, sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB = REPO + '/code/nex/register'
@@ -30,17 +30,25 @@ for line in hoon[start:end].splitlines():
         continue
     copy[key] = val.replace("\\'", "'")
 
+# +starter-waiver is built from paragraphs rather than typed as one cord,
+# so the line parser above cannot see it. Read the arm and join its parts.
+m = re.search(r"\+\+  starter-waiver\b(.*?)\n  ==", hoon, re.S)
+if m:
+    parts = re.findall(r"'((?:[^'\\]|\\.)*)'", m.group(1))
+    copy['waiver.text'] = '\n\n'.join(x.replace("\\'", "'") for x in parts if len(x) > 40)
+
 STATUS = {
-    'open': True, 'changes_open': True, 'owner': False, 'mode': 'stub',
+    'open': True, 'changes_open': True, 'owner': True, 'mode': 'stub',
     'now': '2026-09-29T15:00:00Z',
     'event': {'name': 'Baby Steps Camino 2026', 'days': ['2026-12-04', '2026-12-05', '2026-12-06']},
-    'fees': {'full': 7500, 'bambino': 2500},
+    'fees': {'full': 7500, 'bambino': 2500, 'suggested_full': 15000},
     'counts': {'full': 212, 'bambino': 4, 'social_fri': 60, 'social_sat': 40, 'late': 0, 'waitlist': 0},
     'caps': {'full': 325, 'bambino': 25, 'social_fri': 300, 'social_sat': 200, 'late_adds': 50, 'party': 12},
     'window': {'open': '2026-10-01T04:00:00Z', 'close': '2026-11-25T05:00:00Z',
                'change_cutoff': '2026-12-04T05:00:00Z'},
     'orgs': ['Order of Malta', "St. Paul's, Jacksonville Beach"],
     'copy': copy,
+    'waiver_hash': '0xdead.beef',
 }
 
 class H(http.server.SimpleHTTPRequestHandler):

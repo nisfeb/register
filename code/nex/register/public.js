@@ -119,7 +119,7 @@
     if (soc.length) out.push((soc.length > 1 ? 'Socials at ' : 'Social at ') + joinWords(soc) + '.');
     var rides = [];
     if (q.bus) rides.push('the bus');
-    if (q.trolley) rides.push('the trolley on Sunday');
+    if (q.trolley) rides.push('the Sunday trolley to the Cathedral and back');
     if (rides.length) out.push('Needs ' + joinWords(rides) + '.');
     return out.join(' ');
   }
@@ -240,7 +240,8 @@
   var STEPS = [['landing', 'Landing'], ['form', 'Form (full)'], ['bambino', 'Form (Bambino)'],
     ['waiver', 'Waiver step'], ['payment', 'Payment step'], ['assistance', 'Assistance'],
     ['waitlist', 'Wait list'], ['complete', 'Complete'], ['cancelled', 'Cancelled'],
-    ['manage', 'Manage'], ['checkin', 'Check-in'], ['notyet', 'Not open yet'], ['closed', 'Closed'], ['soldout', 'Sold out'],
+    ['manage', 'Manage'], ['agreement', 'The agreement'], ['checkin', 'Check-in'],
+    ['notyet', 'Not open yet'], ['closed', 'Closed'], ['soldout', 'Sold out'],
     ['other', 'Other strings']];
   // the strings no fixture puts on screen as a span of their own: a
   // status line, a dialog, what an error says, the few that only show
@@ -252,7 +253,8 @@
     'form.fees.full', 'form.fees.bambino', 'form.fees.child',
     'form.social_fri.short', 'form.social_sat.short',
     'track.full', 'track.bambino',
-    'next.payment.spots', 'next.payment.body.one', 'next.draft.title', 'next.draft.body',
+    'next.payment.spots', 'next.payment.body.one', 'next.payment.too_low',
+    'next.draft.title', 'next.draft.body',
     'manage.closed', 'manage.pay_more', 'manage.cancel.confirm', 'stub.banner',
     'checkin.early', 'checkin.over', 'checkin.gone', 'checkin.solo.body', 'checkin.solo.button',
     'checkin.done', 'checkin.nobody'];
@@ -643,11 +645,28 @@
     var spots = people.length === 1 ? '' : t('next.payment.spots', { n: people.length });
     function block(key, vars) { return '<h1>' + tx('next.' + key + '.title') + '</h1><p>' + tx('next.' + key + '.body', vars) + '</p>'; }
     var lapsed = r.lapsed && (s === 'waiver' || s === 'payment') ? '<p class="muted">' + tx('next.lapsed') + '</p>' : '';
-    if (s === 'waiver') out = block('waiver', { names: names }) + lapsed + '<button type="button" class="btn" data-act="sign">' + tx('next.waiver.button') + '</button>';
+    if (s === 'waiver') {
+      out = block('waiver', { names: names }) + lapsed +
+        '<button type="button" class="btn" data-act="waiver-open">' + tx('waiver.open') + '</button>';
+    }
     else if (s === 'payment') {
+      // the fee is the floor; anything above it is a gift, and the ship
+      // records the two apart. The suggested figure is per pilgrim.
+      var sug = Number((status.fees || {}).suggested_full || 0) * (people.length || 1);
+      function amt(val, id, key, vars) {
+        return '<label class="check"><input type="radio" name="amount" value="' + val + '" data-amount="' + id + '"' +
+          (id === 'fee' ? ' checked' : '') + '><span>' + tx(key, vars) + '</span></label>';
+      }
       out = '<h1>' + tx('next.payment.title') + '</h1><p>' +
         tx(spots ? 'next.payment.body' : 'next.payment.body.one',
           { spots: spots, names: names, total: money(r.fees) }) + '</p>' + lapsed +
+        '<div class="picks"><p>' + tx('next.payment.choose') + '</p>' +
+        amt(r.fees, 'fee', 'next.payment.minimum', { total: money(r.fees) }) +
+        (sug > r.fees ? amt(sug, 'suggested', 'next.payment.suggested', { total: money(sug) }) : '') +
+        amt('custom', 'custom', 'next.payment.custom') +
+        '<div id="amount-box" hidden><label>$<input type="number" id="amount-dollars" min="' +
+        Math.ceil(r.fees / 100) + '" step="1" value="' + Math.ceil(r.fees / 100) + '"></label>' +
+        '<p class="note">' + tx('next.payment.custom_help') + '</p></div></div>' +
         '<button type="button" class="btn" data-act="pay">' + tx('next.payment.button', { total: money(r.fees) }) + '</button>';
     }
     else if (s === 'assistance') out = block('assistance');
@@ -664,6 +683,64 @@
     else if (s === 'cancelled') out = block('cancelled');
     else out = block('draft');
     return '<div id="error"></div>' + out;
+  }
+
+  // ---- the pilgrim's agreement ----
+  // The terms are a copy value, so an organizer owns the words. The
+  // button stays shut until the box is ticked AND the text has been
+  // scrolled to its end: nobody adopts terms this page never showed
+  // them. What the ship records is the fingerprint of the exact text
+  // rendered here, which /api/status hands over as waiver_hash.
+  function paragraphs(text) {
+    return String(text === undefined || text === null ? '' : text)
+      .split(/\n\s*\n/)
+      .map(function (p) { return p.trim(); })
+      .filter(Boolean)
+      .map(function (p) { return '<p>' + links(esc(p)) + '</p>'; })
+      .join('');
+  }
+  function waiverDialog(r) {
+    var people = r.people || [];
+    var names = joinWords(people.map(function (p, i) { return who(p, i); }));
+    return '<div class="scrim" id="waiver-scrim">' +
+      '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="waiver-h">' +
+      '<h2 id="waiver-h">' + tx('waiver.title') + '</h2>' +
+      '<p class="help">' + tx('waiver.intro', { names: names }) + '</p>' +
+      '<div class="terms" id="waiver-terms" tabindex="0">' + paragraphs(raw('waiver.text')) + '</div>' +
+      '<label class="check"><input type="checkbox" id="waiver-agree" disabled>' +
+      '<span>' + tx('waiver.agree') + '</span></label>' +
+      '<p class="help" id="waiver-note">' + tx('waiver.scroll') + '</p>' +
+      '<div id="waiver-error"></div>' +
+      '<div class="actions">' +
+      '<button type="button" class="btn" id="waiver-adopt" disabled data-act="waiver-adopt">' + tx('waiver.adopt') + '</button>' +
+      '<button type="button" class="btn quiet" data-act="waiver-close">' + tx('waiver.close') + '</button>' +
+      '</div></div></div>';
+  }
+  // the box wakes when the text has been read to its end, and the
+  // button when the box is ticked
+  function waiverWatch() {
+    var terms = document.getElementById('waiver-terms');
+    var box = document.getElementById('waiver-agree');
+    var btn = document.getElementById('waiver-adopt');
+    var note = document.getElementById('waiver-note');
+    if (!terms || !box || !btn) return;
+    var read = false;
+    function atEnd() {
+      return terms.scrollTop + terms.clientHeight >= terms.scrollHeight - 4;
+    }
+    function settle() {
+      if (!read && atEnd()) {
+        read = true;
+        box.disabled = false;
+        if (note) note.textContent = '';
+      }
+      btn.disabled = !(read && box.checked);
+    }
+    terms.addEventListener('scroll', settle);
+    box.addEventListener('change', settle);
+    // a short agreement may already be wholly on screen
+    settle();
+    terms.focus();
   }
 
   // ---- the check-in link, on the day ----
@@ -843,6 +920,9 @@
         model = fixtureModel('full');
         sameAs = fixtureSame(model);
         out = form(model);
+      } else if (name === 'agreement') {
+        mode = 'next';
+        out = nextStep(fixtureReg('waiver')) + waiverDialog(fixtureReg('waiver'));
       } else if (name === 'checkin') {
         mode = 'checkin';
         out = checkinPage(checkinFixture());
@@ -864,6 +944,9 @@
     stepsEl.innerHTML = stepsHtml();
     if (!name) return route();
     render(previewHtml(name));
+    // a preview that draws the agreement gets its reading gate too, so
+    // the organizer sees it behave the way a pilgrim will
+    if (document.getElementById('waiver-terms')) waiverWatch();
   }
   stepsEl.addEventListener('click', function (ev) {
     var b = ev.target.closest ? ev.target.closest('button[data-step]') : null;
@@ -1254,10 +1337,40 @@
         showError(e.message);
       });
     }
+    else if (act2 === 'waiver-open') {
+      var host = document.createElement('div');
+      host.innerHTML = waiverDialog(lastReg || { people: [] });
+      document.body.appendChild(host.firstChild);
+      waiverWatch();
+    }
+    else if (act2 === 'waiver-close') { closeWaiver(); }
+    else if (act2 === 'waiver-adopt') {
+      var freeAdopt = spin(el);
+      leaving = 'waiver';
+      post('/reg/' + rid + '/sign?t=' + encodeURIComponent(token),
+           { agreed: true, text_hash: status.waiver_hash }).then(function (d) {
+        closeWaiver();
+        if (d.next && lastReg) fresh = Object.assign({}, lastReg, { status: d.next, lapsed: false });
+        route();
+      }).catch(function (e) {
+        freeAdopt();
+        leaving = null;
+        var box = document.getElementById('waiver-error');
+        var msg = e.code === 'stale' ? t('waiver.stale') : e.message;
+        if (box) box.innerHTML = '<div class="error">' + esc(msg) + '</div>';
+        else showError(msg);
+      });
+    }
     else if (act2 === 'sign' || act2 === 'pay') {
+      var body = {};
+      if (act2 === 'pay') {
+        var chosen = payAmount();
+        if (chosen === null) return showError(t('next.payment.too_low'));
+        body.amount = chosen;
+      }
       var freeStep = spin(el);
       leaving = act2 === 'sign' ? 'waiver' : 'payment';
-      post('/reg/' + rid + '/' + act2 + '?t=' + encodeURIComponent(token), {}).then(function (d) {
+      post('/reg/' + rid + '/' + act2 + '?t=' + encodeURIComponent(token), body).then(function (d) {
         if (d.url) { location.href = d.url; return; }
         // the ship named the step it moved to, so it paints now
         if (d.next && lastReg) fresh = Object.assign({}, lastReg, { status: d.next, lapsed: false });
@@ -1276,6 +1389,35 @@
         .catch(function (e) { freeResend(); showError(e.message); });
     }
   });
+  // what the payment step's radios add up to, in cents, or null when
+  // the typed amount is under the fee
+  function payAmount() {
+    var picked = document.querySelector('input[name="amount"]:checked');
+    if (!picked) return undefined;
+    if (picked.value !== 'custom') return Number(picked.value);
+    var box = document.getElementById('amount-dollars');
+    var cents = Math.round(Number(box && box.value) * 100);
+    var floor = Math.round(Number(box && box.min) * 100);
+    if (!(cents >= floor)) return null;
+    return cents;
+  }
+  document.addEventListener('change', function (ev) {
+    var n = ev.target;
+    if (!n || n.name !== 'amount') return;
+    var box = document.getElementById('amount-box');
+    if (box) box.hidden = n.value !== 'custom';
+    showError('');
+    var btn = document.querySelector('[data-act="pay"]');
+    if (btn && n.value !== 'custom') btn.textContent = fill(raw('next.payment.button'), { total: money(Number(n.value)) });
+  });
+  function closeWaiver() {
+    var scrim = document.getElementById('waiver-scrim');
+    if (scrim && scrim.parentNode) scrim.parentNode.removeChild(scrim);
+  }
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') closeWaiver();
+  });
+  window.addEventListener('hashchange', function () { closeWaiver(); });
   window.addEventListener('hashchange', route);
   window.addEventListener('beforeunload', function () { if (dirty) save(); });
   drawEdit();

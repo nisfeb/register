@@ -40,7 +40,7 @@
       note=@t
   ==
 +$  waiver
-  $:  method=@tas                               ::  %none %docusign %paper %stub
+  $:  method=@tas                               ::  %none %adopt %paper %stub %docusign
       envelope=@t
       status=@tas                               ::  %none %sent %completed %declined
       at=(unit @da)
@@ -150,7 +150,7 @@
 ::  organizations, the provider credentials) stays JSON.
 ::
 +$  settings
-  $:  fees=[full=@ud bambino=@ud]
+  $:  fees=[full=@ud bambino=@ud suggested=@ud]
       caps=[full=@ud bambino=@ud social-fri=@ud social-sat=@ud late=@ud]
       hold=@dr
       open=(unit @da)
@@ -177,6 +177,15 @@
 ++  max-history  200
 ++  max-log      2.000
 ++  max-copy     4.000
+++  max-waiver   20.000
+::  +copy-cap: how long one copy string may be. The waiver is the terms
+::  themselves, so it gets room; everything else is a line or a short
+::  paragraph a pilgrim reads on a page.
+::
+++  copy-cap
+  |=  key=@t
+  ^-  @ud
+  ?:(=('waiver.text' key) max-waiver max-copy)
 ::  ==  time
 ::
 ::  +de-iso: "2026-09-16T22:05:00Z" (a fraction is allowed and dropped,
@@ -209,6 +218,38 @@
   =/  when=@da  (year [[& y] mo d h mi s ~])
   ?.  =((end [3 10] (en-iso when)) (end [3 10] t))  ~
   `when
+::  +hash-text: the fingerprint of a string, for a record that must say
+::  WHICH words somebody agreed to. The waiver's text is a copy value an
+::  organizer may edit; the adoption stores this, so a later reader can
+::  tell whether the terms have moved since.
+::
+::  +nl: one newline. A Hoon cord literal cannot hold an escape for it,
+::  so any stored text with paragraphs is built rather than typed.
+::
+++  nl  `@t`10
+::  +starter-waiver: the terms a fresh ship starts with. They are a
+::  placeholder with the right shape, not legal advice: the organizers
+::  paste their own wording over them with Edit text, and the adoption
+::  records the fingerprint of whatever text was actually shown.
+::
+++  starter-waiver
+  ^-  json
+  :-  %s
+  %+  rap  3
+  :~  'REPLACE THIS WITH THE WAIVER THE ORGANIZERS USE. Open the registration page as the owner, press Edit text, and paste the agreed wording here.'
+      nl  nl
+      'The Baby Steps Camino is a walk of about ten miles a day along a public beach, in December, in weather nobody controls. I understand that walking it carries risks, including injury from the terrain, the water, the weather and the traffic at road crossings, and I accept those risks for myself and for everyone in my party, children included.'
+      nl  nl
+      'I release the Sovereign Military Hospitaller Order of Saint John of Jerusalem of Rhodes and of Malta, American Association, its members and its volunteers from any claim arising out of my taking part, except for their own gross negligence.'
+      nl  nl
+      'I confirm that everyone in my party is fit to walk the distance they have signed up for, and that a child in my party walks in my care. I will follow the directions of the organizers and the volunteers on the day.'
+      nl  nl
+      'I agree that photographs taken during the pilgrimage may be used by the organizers.'
+  ==
+++  hash-text
+  |=  t=@t
+  ^-  @t
+  (scot %ux (shax t))
 ::  +en-iso: a @da to "2026-09-16T22:05:00Z", whole seconds
 ::
 ++  en-iso
@@ -459,6 +500,7 @@
   =/  offset=@sd  (fall (gsd (gj jon 'event') 'utc_offset_hours') -5)
   :*  :*  (fall (gn fj 'full') 7.500)
           (fall (gn fj 'bambino') 2.500)
+          (fall (gn fj 'suggested_full') 15.000)
       ==
       :*  (fall (gn cj 'full') 325)
           (fall (gn cj 'bambino') 25)
@@ -1217,7 +1259,7 @@
   |=  jon=json
   ^-  (each waiver @t)
   =/  meth=@t  (gs jon 'method')
-  ?.  (one-of meth ~['none' 'docusign' 'paper' 'stub'])
+  ?.  (one-of meth ~['none' 'adopt' 'docusign' 'paper' 'stub'])
     [%| (rap 3 'waiver method ' meth ' is not one the ship writes' ~)]
   =/  st=@t  (gs jon 'status')
   ?.  (one-of st ~['none' 'sent' 'completed' 'declined'])
@@ -1570,6 +1612,7 @@
       :-  'fees'
       %-  pairs:enjs:format
       :~  ['full' (en-num full.fees.s)]  ['bambino' (en-num bambino.fees.s)]
+          ['suggested_full' (en-num suggested.fees.s)]
       ==
       ['open' b+(window-open s now)]
       ['changes_open' b+(changes-open s now)]
@@ -1579,6 +1622,9 @@
       ['mode' s+mode.s]
       ['now' (en-time now)]
       ['owner' b+owner]
+      ::  the fingerprint of the terms as they stand, so the page can send
+      ::  back which words the pilgrim was actually shown
+      ['waiver_hash' s+(hash-text (gs cj 'waiver.text'))]
   ==
 ::  ==  the starter documents
 ::
@@ -1591,7 +1637,11 @@
           ['days' a+~[s+'2026-12-04' s+'2026-12-05' s+'2026-12-06']]
           ['utc_offset_hours' n+'-5']
       ==
-      ['fees' (pairs:enjs:format ~[['full' (en-num 7.500)] ['bambino' (en-num 2.500)]])]
+      :-  'fees'
+      %-  pairs:enjs:format
+      :~  ['full' (en-num 7.500)]  ['bambino' (en-num 2.500)]
+          ['suggested_full' (en-num 15.000)]
+      ==
       :-  'caps'
       %-  pairs:enjs:format
       :~  ['full' (en-num 325)]  ['bambino' (en-num 25)]  ['social_fri' (en-num 300)]
@@ -1608,12 +1658,6 @@
       ['public_url' s+'https://register.babystepscamino.com']
       ['mail' (pairs:enjs:format ~[['from' s+'Baby Steps Camino <register@babystepscamino.com>'] ['resend_key' s+'']])]
       ['stripe' (pairs:enjs:format ~[['secret_key' s+'']])]
-      :-  'docusign'
-      %-  pairs:enjs:format
-      :~  ['integration_key' s+'']  ['secret' s+'']  ['account_id' s+'']
-          ['base_uri' s+'https://demo.docusign.net']  ['auth_host' s+'https://account-d.docusign.com']
-          ['template_id' s+'']
-      ==
       ['providers' (pairs:enjs:format ~[['mode' s+'stub']])]
   ==
 ::  +starter-copy: every string a pilgrim reads, at its default. An
@@ -1668,10 +1712,10 @@
       ['form.friday.closed' s+'Check Friday to see Friday\'s events']
       ['form.mass_fri' s+'8:00am Mass at St. Paul\'s, Jacksonville Beach']
       ['form.mass_sat' s+'8:00am Mass at Our Lady Star of the Sea, Ponte Vedra Beach']
-      ['form.mass_sun' s+'Mass at the Shrine of Our Lady of La Leche']
+      ['form.mass_sun' s+'Mass at the Cathedral Basilica of St. Augustine']
       ['form.sunday.title' s+'Sunday']
       ['form.sunday.closed' s+'Check Sunday to see Sunday\'s events']
-      ['form.trolley' s+'Needs a seat on the trolley on Sunday']
+      ['form.trolley' s+'Needs a seat on the Sunday trolley: the Shrine to Mass at the Cathedral and back to the Shrine']
       ['form.holy_hour' s+'Holy Hour: Adoration and Benediction, 1:50pm']
       ['form.social_fri' s+'Pilgrim social at [Ajua Mexican Kitchen](https://ajuajax.com/), 3pm']
       ['form.social_fri.short' s+'Ajua']
@@ -1729,6 +1773,12 @@
       ['next.payment.body.one' s+'Your spot is held. Registration fee for {{names}}: {{total}}.']
       ['next.payment.spots' s+'{{n}} spots']
       ['next.payment.button' s+'Pay {{total}}']
+      ['next.payment.choose' s+'How much would you like to pay?']
+      ['next.payment.minimum' s+'The registration fee: {{total}}']
+      ['next.payment.suggested' s+'The full cost of one pilgrim\'s weekend: {{total}}. The fee covers only part of it.']
+      ['next.payment.custom' s+'Another amount']
+      ['next.payment.custom_help' s+'Anything above the registration fee is recorded as a gift to the Baby Steps Camino.']
+      ['next.payment.too_low' s+'The amount cannot be less than the registration fee.']
       ['next.assistance.title' s+'Your request is with the organizers']
       ['next.assistance.body' s+'Your waiver is signed. The organizers read every request for assistance, and we will email you as soon as yours is decided.']
       ['next.lapsed' s+'Your spots were held for 48 hours and that time has passed. You can still go on. If the track filled in the meantime we will offer you the wait list.']
@@ -1746,6 +1796,15 @@
       ['manage.cancel' s+'Cancel the whole registration']
       ['manage.cancel.confirm' s+'Cancel this registration for everyone in the party? Your spots are released and this cannot be undone.']
       ['manage.closed' s+'Changes are closed. Contact us at register@babystepscamino.com.']
+      ['waiver.title' s+'The pilgrim\'s agreement']
+      ['waiver.intro' s+'Please read this in full. You are agreeing for yourself and for everyone in your party: {{names}}.']
+      ['waiver.text' starter-waiver]
+      ['waiver.agree' s+'I have read and agree to the terms above, for myself and for everyone in my party.']
+      ['waiver.adopt' s+'Adopt and sign']
+      ['waiver.scroll' s+'Read to the end to continue.']
+      ['waiver.close' s+'Close']
+      ['waiver.open' s+'Read and sign the agreement']
+      ['waiver.stale' s+'The terms changed while you were reading. Reload the page and read them again.']
       ['manage.full' s+'The {{track}} is full, so nobody can be added to this registration. Write to us and we will see what we can do.']
       ['manage.closes_in' s+'Registration closes in {{days}} days.']
       ['manage.closes_tomorrow' s+'Registration closes tomorrow.']

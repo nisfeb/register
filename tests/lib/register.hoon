@@ -895,6 +895,35 @@
     (expect !>((gb:reg (at-n folk 1) 'trolley')))
     (expect !>(!(gb:reg (at-n (ga:reg (en-roster-row:reg r %fri) 'people') 1) 'trolley')))
   ==
+::  +test-waiver-text: the terms, their fingerprint, and the room they
+::  are allowed. The adoption records the fingerprint, so it has to move
+::  when the words move and hold still when they do not.
+++  test-waiver-text
+  =/  c=json  starter-copy:reg
+  =/  text=@t  (gs:reg c 'waiver.text')
+  =/  h=@t  (hash-text:reg text)
+  ;:  weld
+    ::  the starter terms are there, in paragraphs, and say to replace them
+    (expect !>(!=('' text)))
+    (expect !>((gth (met 3 text) 400)))
+    (expect !>(!=(~ (find "REPLACE THIS" (trip text)))))
+    (expect !>(!=(~ (find ~[10 10] (trip text)))))
+    ::  the same words hash the same, a changed word does not
+    (expect-eq !>(h) !>((hash-text:reg text)))
+    (expect !>(!=(h (hash-text:reg (cat 3 text ' ')))))
+    (expect !>(!=((hash-text:reg 'a') (hash-text:reg 'b'))))
+    ::  the terms get room that a one-line string does not
+    (expect-eq !>(20.000) !>((copy-cap:reg 'waiver.text')))
+    (expect-eq !>(4.000) !>((copy-cap:reg 'landing.title')))
+    ::  and the words a pilgrim presses are there
+    (expect !>(!=('' (gs:reg c 'waiver.agree'))))
+    (expect !>(!=('' (gs:reg c 'waiver.adopt'))))
+    (expect !>(!=('' (gs:reg c 'waiver.scroll'))))
+    (expect !>(!=('' (gs:reg c 'waiver.stale'))))
+    ::  an adopted waiver reads back, and a method nobody knows does not
+    (expect !>(?=([%& *] (de-waiver:reg (jo '{"method": "adopt", "envelope": "0x1", "status": "completed"}')))))
+    (expect !>(?=([%| *] (de-waiver:reg (jo '{"method": "smoke", "status": "completed"}')))))
+  ==
 ++  test-checkin-counts
   =/  p=person:reg  some-person
   =/  kid=person:reg  p(first 'Bo', child &, days [| | &], sun-ten |, social-fri |, social-sat |, mass-fri |, bus |)
