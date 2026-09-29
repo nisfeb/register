@@ -46,12 +46,32 @@
   extra
 ++  st  (de-settings:reg starter-settings:reg)
 ::  +old-reg: the shape a %1 grub holds, built out of the new one
+::  +drop-person: a person as the older grubs hold one, without Mass on
+::  Saturday and Sunday and without the trolley
+++  drop-person
+  |=  p=person:reg
+  ^-  person-2:reg
+  :*  first.p  last.p  child.p  days.p  sun-ten.p
+      social-fri.p  social-sat.p  mass-fri.p  holy-hour.p  bus.p
+      first-bsc.p  knight-dame.p  volunteer.p  checkins.p
+  ==
 ++  old-reg
   ^-  reg-1:reg
   =/  r=reg:reg  (some-reg %abc123 %complete %full 2 t0)
   :*  id.r  status.r  track.r  source.r  created.r  updated.r
-      contact.r  org.r  why.r  assistance.r  together.r  people.r
+      contact.r  org.r  why.r  assistance.r  together.r
+      (turn people.r drop-person)
       payment.r  waiver.r  token.r  position.r  notes.r  history.r
+  ==
+::  +old-reg-2: the shape before the person grew
+++  old-reg-2
+  ^-  reg-2:reg
+  =/  r=reg:reg  (some-reg %abc123 %complete %full 2 t0)
+  :*  id.r  status.r  track.r  source.r  created.r  updated.r
+      contact.r  org.r  why.r  assistance.r  together.r
+      (turn people.r drop-person)
+      payment.r  waiver.r  token.r  position.r  notes.r  history.r
+      &  %payment
   ==
 ++  count-commas
   |=  t=@t
@@ -516,9 +536,35 @@
     (expect-eq !>('abc123') !>(id.r))
     (expect-eq !>(%complete) !>(status.r))
     (expect-eq !>(2) !>((lent people.r)))
-    ::  a %1 grub reads as %2 with the new fields at their defaults
+    ::  a %1 grub reads as the newest shape with every field the later
+    ::  versions added at its default
     (expect !>(!exempt.r))
     (expect !>(=(%$ prior.r)))
+    (expect !>(!mass-sat.i.people.r))
+    (expect !>(!mass-sun.i.people.r))
+    (expect !>(!trolley.i.people.r))
+    ::  and what it did carry is untouched
+    (expect !>(mass-fri.i.people.r))
+    (expect !>(bus.i.people.r))
+  ==
+::  +test-read-reg-2: the shape before the person grew, lifted
+++  test-read-reg-2
+  =/  o=reg-2:reg  old-reg-2
+  =/  got=(unit reg:reg)  (read-reg:reg `stored-reg-2:reg`[%2 o])
+  ?>  ?=(^ got)
+  =/  r=reg:reg  u.got
+  ;:  weld
+    (expect-eq !>('abc123') !>(id.r))
+    (expect-eq !>(2) !>((lent people.r)))
+    ::  what %2 already knew is carried, including the organizer's marks
+    (expect !>(exempt.r))
+    (expect-eq !>(%payment) !>(prior.r))
+    (expect !>(mass-fri.i.people.r))
+    (expect-eq !>('Ana') !>(first.i.people.r))
+    ::  and the three the person gained are false
+    (expect !>(!mass-sat.i.people.r))
+    (expect !>(!mass-sun.i.people.r))
+    (expect !>(!trolley.i.people.r))
   ==
 ::  ==  exempt and reinstate
 ::
@@ -806,6 +852,36 @@
   ==
 ::  +test-checkin-counts: the day view's percentage counts only complete
 ::  parties, and only the people who are there that day
+::  +test-mass-and-trolley: Mass belongs to its own day and the trolley
+::  to Sunday, for both tracks
+++  test-mass-and-trolley
+  =/  p=person:reg  some-person
+  =/  sunday=person:reg  p(first 'Eve', days [| | &], mass-fri |, mass-sun &, trolley &)
+  =/  base=reg:reg  (some-reg %abc123 %complete %full 2 t0)
+  =/  r=reg:reg  base(people ~[p(mass-sat &, mass-sun &) sunday])
+  =/  fri=json  (planned:reg ~[r] %fri)
+  =/  sat=json  (planned:reg ~[r] %sat)
+  =/  sun=json  (planned:reg ~[r] %sun)
+  =/  n  |=([j=json k=@t] ^-((unit @ud) (gn:reg j k)))
+  =/  row=json  (en-roster-row:reg r %sun)
+  =/  folk=(list json)  (ga:reg row 'people')
+  ;:  weld
+    ::  one at Friday Mass, one at Saturday's, both on Sunday
+    (expect-eq !>(`(unit @ud)`[~ 1]) !>((n fri 'mass')))
+    (expect-eq !>(`(unit @ud)`[~ 1]) !>((n sat 'mass')))
+    (expect-eq !>(`(unit @ud)`[~ 2]) !>((n sun 'mass')))
+    ::  the trolley is counted on Sunday and on no other day
+    (expect-eq !>(`(unit @ud)`[~ 1]) !>((n sun 'trolley')))
+    (expect-eq !>(`(unit @ud)`[~ 0]) !>((n fri 'trolley')))
+    (expect-eq !>(`(unit @ud)`[~ 0]) !>((n sat 'trolley')))
+    ::  +mass-day answers for the day it is asked about
+    (expect !>((mass-day:reg %sun sunday)))
+    (expect !>(!(mass-day:reg %fri sunday)))
+    ::  the volunteers' card carries that day's Mass and the trolley
+    (expect !>((gb:reg (at-n folk 1) 'mass')))
+    (expect !>((gb:reg (at-n folk 1) 'trolley')))
+    (expect !>(!(gb:reg (at-n (ga:reg (en-roster-row:reg r %fri) 'people') 1) 'trolley')))
+  ==
 ++  test-checkin-counts
   =/  p=person:reg  some-person
   =/  kid=person:reg  p(first 'Bo', child &, days [| | &], sun-ten |, social-fri |, social-sat |, mass-fri |, bus |)
@@ -942,6 +1018,9 @@
     ::  two walkers on Friday: the wait listed party plans nothing
     (expect-eq !>(`(unit @ud)`[~ 2]) !>((n fri 'walk')))
     (expect-eq !>(`(unit @ud)`[~ 1]) !>((n fri 'mass')))
+    ::  each day counts its own Mass, and the trolley is Sunday's alone
+    (expect-eq !>(`(unit @ud)`[~ 0]) !>((n sun 'mass')))
+    (expect-eq !>(`(unit @ud)`[~ 0]) !>((n fri 'trolley')))
     (expect-eq !>(`(unit @ud)`[~ 0]) !>((n fri 'holy_hour')))
     (expect-eq !>(`(unit @ud)`[~ 1]) !>((n fri 'social')))
     (expect-eq !>(`(unit @ud)`[~ 1]) !>((n fri 'bus')))
