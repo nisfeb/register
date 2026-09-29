@@ -13,7 +13,7 @@
     'assistance_declined', 'reminder', 'cancelled', 'checkin'];
   var DAYS = [['fri', 'Friday'], ['sat', 'Saturday'], ['sun', 'Sunday']];
   var ACTS = [['walk', 'Walk'], ['mass', 'Mass'], ['holy_hour', 'Holy Hour'],
-    ['social', 'Social'], ['bus', 'Bus']];
+    ['social', 'Social'], ['bus', 'Bus'], ['trolley', 'Trolley']];
   var SUN_ACTS = [['sun_ten', '10 mile start'], ['sun_short', '2.5 mile start']];
   var SEGMENTS = [['active', 'registrations'], ['all', 'everything'], ['complete', 'complete'], ['pending', 'pending'],
     ['waitlist', 'wait list'], ['assistance', 'financial assistance'], ['unpaid', 'unpaid'],
@@ -254,11 +254,58 @@
     return r.status === 'draft' && !!live[String(r.email || '').trim().toLowerCase()];
   }
 
+  // What a Save on the settings screen sends the ship.
+  //
+  // The screen shows the fees in dollars while the document holds cents,
+  // and it used to convert the document's own cents as if they were the
+  // dollars on screen. A save that left the fee boxes alone therefore
+  // multiplied both fees by a hundred, and two saves reached $75,000.
+  // So a typed dollar amount lands in `fees_dollars` and nothing but a
+  // typed one is ever converted.
+  //
+  // The same rule for the plain numbers: an empty box means the person
+  // cleared it or never touched it, and neither is a request to set a
+  // cap, a hold or a time zone to zero.
+  var MONEY = ['full', 'bambino'];
+  var WHOLE = ['caps.full', 'caps.bambino', 'caps.social_fri', 'caps.social_sat',
+    'caps.late_adds', 'caps.sunday', 'hold_hours'];
+  function blank(v) { return v === '' || v === undefined || v === null; }
+  function settingsBody(doc, was, toIso) {
+    var iso = toIso || fromLocal;
+    var old = was || doc || {};
+    var out = JSON.parse(JSON.stringify(doc || {}));
+    var typed = out.fees_dollars || {};
+    delete out.fees_dollars;
+    MONEY.forEach(function (k) {
+      if (blank(typed[k])) return;
+      setPath(out, 'fees.' + k, Math.round((Number(typed[k]) || 0) * 100));
+    });
+    WHOLE.forEach(function (k) {
+      var v = getPath(doc, k);
+      setPath(out, k, blank(v) ? (Number(getPath(old, k)) || 0) : (Number(v) || 0));
+    });
+    var off = getPath(doc, 'event.utc_offset_hours');
+    var oldOff = getPath(old, 'event.utc_offset_hours');
+    setPath(out, 'event.utc_offset_hours',
+      blank(off) ? (blank(oldOff) ? -5 : Math.round(Number(oldOff) || 0)) : Math.round(Number(off) || 0));
+    ['window.open', 'window.close', 'window.change_cutoff'].forEach(function (k) {
+      var v = getPath(doc, k);
+      setPath(out, k, blank(v) ? (getPath(old, k) || '') : iso(v));
+    });
+    var days = getPath(doc, 'event.days');
+    setPath(out, 'event.days', (typeof days === 'string' ? days.split('\n') : days || [])
+      .map(function (x) { return String(x).trim(); }).filter(Boolean));
+    out.orgs = (typeof doc.orgs === 'string' ? doc.orgs.split('\n') : doc.orgs || [])
+      .map(function (x) { return String(x).trim(); }).filter(Boolean);
+    return out;
+  }
+
   var pure = {
     esc: esc, money: money, varsOf: varsOf, missingVars: missingVars, mailGroups: mailGroups,
     ageText: ageText, patchReg: patchReg, settled: settled, patchRow: patchRow,
     verdict: verdict, addedText: addedText, HOLD: HOLD,
     emailsOf: emailsOf, matches: matches, liveEmails: liveEmails, superseded: superseded,
+    settingsBody: settingsBody,
   };
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; }
   if (typeof document === 'undefined') { return; }
@@ -281,6 +328,7 @@
   var lastHash = location.hash, restoring = false;
   var routeGen = 0, lastRev = null, refreshTimer = null;
   var copyWas = null;         // the email templates as the ship last gave them
+  var settingsWas = null;     // the settings as the ship last gave them, for the boxes left blank
   var waitingOn = null;       // the op the page painted and the ship has not confirmed
   var rosterAge = '';         // how old the roster on screen is, when it came from this browser
   var busy = 0;               // how many fetches are in flight
@@ -461,7 +509,9 @@
   function blankPerson() {
     return {
       first: '', last: '', child: false, days: { fri: false, sat: false, sun: false }, sun_ten: false,
-      social_fri: false, social_sat: false, mass_fri: false, holy_hour: false, bus: false,
+      social_fri: false, social_sat: false,
+      mass_fri: false, mass_sat: false, mass_sun: false,
+      holy_hour: false, bus: false, trolley: false,
       first_bsc: false, knight_dame: false, volunteer: false
     };
   }
@@ -520,8 +570,9 @@
         out += box(k + 'days.sun', 'Sunday', p.days.sun);
       }
       out += box(k + 'social_fri', 'Friday social', p.social_fri) + box(k + 'social_sat', 'Saturday social', p.social_sat) +
-        box(k + 'mass_fri', 'Friday Mass', p.mass_fri) + box(k + 'holy_hour', 'Holy Hour', p.holy_hour) +
-        box(k + 'bus', 'Bus', p.bus);
+        box(k + 'mass_fri', 'Friday Mass', p.mass_fri) + box(k + 'mass_sat', 'Saturday Mass', p.mass_sat) +
+        box(k + 'mass_sun', 'Sunday Mass', p.mass_sun) + box(k + 'holy_hour', 'Holy Hour', p.holy_hour) +
+        box(k + 'bus', 'Bus', p.bus) + box(k + 'trolley', 'Trolley on Sunday', p.trolley);
     }
     out += box(k + 'first_bsc', 'First Baby Steps Camino', p.first_bsc) +
       box(k + 'knight_dame', 'Knight or Dame', p.knight_dame) + box(k + 'volunteer', 'Volunteering', p.volunteer);
@@ -798,7 +849,9 @@
 
   // ---- reports ----
   function planned(list) {
-    var keys = ['fri', 'sat', 'sun', 'sun_ten', 'social_fri', 'social_sat', 'mass_fri', 'holy_hour', 'bus', 'first_bsc', 'children', 'knight_dame', 'volunteer'];
+    var keys = ['fri', 'sat', 'sun', 'sun_ten', 'social_fri', 'social_sat',
+      'mass_fri', 'mass_sat', 'mass_sun', 'holy_hour', 'bus', 'trolley',
+      'first_bsc', 'children', 'knight_dame', 'volunteer'];
     var sum = { people: 0, walkers: 0 };
     keys.forEach(function (k) { sum[k] = 0; });
     list.forEach(function (r) {
@@ -894,9 +947,9 @@
     var counted = all.filter(function (r) { return r.status !== 'draft'; });
     var cd = countsDoc || {};
     var plans = {
-      fri: { walk: plan.fri, mass: plan.mass_fri, holy_hour: plan.holy_hour, social: plan.social_fri, bus: plan.bus },
-      sat: { walk: plan.sat, mass: 0, holy_hour: 0, social: plan.social_sat, bus: plan.bus },
-      sun: { walk: plan.sun, mass: 0, holy_hour: 0, social: 0, bus: plan.bus }
+      fri: { walk: plan.fri, mass: plan.mass_fri, holy_hour: plan.holy_hour, social: plan.social_fri, bus: plan.bus, trolley: 0 },
+      sat: { walk: plan.sat, mass: plan.mass_sat, holy_hour: 0, social: plan.social_sat, bus: plan.bus, trolley: 0 },
+      sun: { walk: plan.sun, mass: plan.mass_sun, holy_hour: 0, social: 0, bus: plan.bus, trolley: plan.trolley }
     };
     out += '<h2>Planned and actual, per day</h2><table><thead><tr><th>Day</th>' +
       ACTS.map(function (a) { return '<th class="num">' + esc(a[1]) + '</th>'; }).join('') +
@@ -1193,9 +1246,16 @@
       '<p class="help">-5 in December for Florida. The ship uses it to know which event day it is.</p>' +
       '<label>Days, one per line<textarea data-k="event.days">' + esc((getPath(s, 'event.days') || []).join('\n')) + '</textarea></label>' +
       field('public_url', 'Public URL', s.public_url) + '</div>';
+    // the boxes are in dollars and write to fees_dollars; the document
+    // keeps the ship's cents until a Save converts what was typed
+    var dollars = function (k) {
+      var typed = getPath(s, 'fees_dollars.' + k);
+      if (!blank(typed)) return typed;
+      return ((Number(getPath(s, 'fees.' + k)) || 0) / 100).toFixed(2);
+    };
     out += '<div class="card"><h3>Fees, in dollars</h3><div class="row">' +
-      field('fees.full', 'Full track', ((Number(getPath(s, 'fees.full')) || 0) / 100).toFixed(2), 'number', ' step="0.01"') +
-      field('fees.bambino', 'Bambino', ((Number(getPath(s, 'fees.bambino')) || 0) / 100).toFixed(2), 'number', ' step="0.01"') +
+      field('fees_dollars.full', 'Full track', dollars('full'), 'number', ' step="0.01"') +
+      field('fees_dollars.bambino', 'Bambino', dollars('bambino'), 'number', ' step="0.01"') +
       '</div></div>';
     out += '<div class="card"><h3>Caps</h3><div class="row3">' +
       field('caps.full', 'Full track', getPath(s, 'caps.full'), 'number') +
@@ -1278,7 +1338,11 @@
   }
   function needSettings() {
     if (settingsDoc) return Promise.resolve(settingsDoc);
-    return read('/settings').then(function (d) { settingsDoc = d; return d; });
+    return read('/settings').then(function (d) {
+      settingsDoc = d;
+      settingsWas = JSON.parse(JSON.stringify(d));
+      return d;
+    });
   }
   // the whole roster is one big read, so a view that already has it in
   // memory works from that. The beacon and the minute timer drop it.
@@ -1424,7 +1488,11 @@
       });
     } else if (r.name === 'settings') {
       if (!settingsDoc) paint(loading());
-      p = read('/settings').then(function (d) { settingsDoc = d; paint(settingsView()); });
+      p = read('/settings').then(function (d) {
+        settingsDoc = d;
+        settingsWas = JSON.parse(JSON.stringify(d));
+        paint(settingsView());
+      });
     } else if (r.name === 'backup') {
       p = Promise.resolve().then(function () { paint(backupView()); });
     } else {
@@ -1749,20 +1817,7 @@
     if (a === 'save-settings') {
       return act(function () {
         dirty = false;
-        var doc = JSON.parse(JSON.stringify(settingsDoc));
-        ['fees.full', 'fees.bambino'].forEach(function (k) { setPath(doc, k, cents(getPath(settingsDoc, k))); });
-        ['caps.full', 'caps.bambino', 'caps.social_fri', 'caps.social_sat', 'caps.late_adds', 'caps.sunday', 'hold_hours']
-          .forEach(function (k) { setPath(doc, k, Number(getPath(settingsDoc, k)) || 0); });
-        // a blank offset means Eastern, not Greenwich
-        var off = getPath(settingsDoc, 'event.utc_offset_hours');
-        setPath(doc, 'event.utc_offset_hours', off === '' || off === undefined || off === null ? -5 : Math.round(Number(off) || 0));
-        ['window.open', 'window.close', 'window.change_cutoff']
-          .forEach(function (k) { setPath(doc, k, fromLocal(getPath(settingsDoc, k))); });
-        var days = getPath(settingsDoc, 'event.days');
-        setPath(doc, 'event.days', (typeof days === 'string' ? days.split('\n') : days || [])
-          .map(function (s) { return String(s).trim(); }).filter(Boolean));
-        doc.orgs = (typeof settingsDoc.orgs === 'string' ? settingsDoc.orgs.split('\n') : settingsDoc.orgs || [])
-          .map(function (s) { return String(s).trim(); }).filter(Boolean);
+        var doc = settingsBody(settingsDoc, settingsWas);
         var freeSet = spin(el);
         say('Settings saved.', true);
         write('/settings', doc, 'PUT').then(function () {
