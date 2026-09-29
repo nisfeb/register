@@ -46,6 +46,14 @@
   extra
 ++  st  (de-settings:reg starter-settings:reg)
 ::  +old-reg: the shape a %1 grub holds, built out of the new one
+::  +first-of: the first person of a party, for a test that reads a field
+::  of it. A bare i.people.r will not compile: the list's type is a fork
+::  until something proves it is not empty.
+++  first-of
+  |=  people=(list person:reg)
+  ^-  person:reg
+  ?>  ?=(^ people)
+  i.people
 ::  +drop-person: a person as the older grubs hold one, without Mass on
 ::  Saturday and Sunday and without the trolley
 ++  drop-person
@@ -350,7 +358,7 @@
 ++  test-read-reg
   =/  r=reg:reg  (some-reg %abc123 %complete %full 2 t0)
   ;:  weld
-    (expect-eq !>(`(unit reg:reg)`[~ r]) !>((read-reg:reg `stored-reg:reg`[%2 r])))
+    (expect-eq !>(`(unit reg:reg)`[~ r]) !>((read-reg:reg `stored-reg:reg`[%3 r])))
     (expect-eq !>(`(unit reg:reg)`~) !>((read-reg:reg [%9 'garbage'])))
     (expect-eq !>(`(unit reg:reg)`~) !>((read-reg:reg 42)))
   ==
@@ -532,6 +540,7 @@
   =/  got=(unit reg:reg)  (read-reg:reg `stored-reg-1:reg`[%1 o])
   ?>  ?=(^ got)
   =/  r=reg:reg  u.got
+  =/  one=person:reg  (first-of people.r)
   ;:  weld
     (expect-eq !>('abc123') !>(id.r))
     (expect-eq !>(%complete) !>(status.r))
@@ -540,12 +549,12 @@
     ::  versions added at its default
     (expect !>(!exempt.r))
     (expect !>(=(%$ prior.r)))
-    (expect !>(!mass-sat.i.people.r))
-    (expect !>(!mass-sun.i.people.r))
-    (expect !>(!trolley.i.people.r))
+    (expect !>(!mass-sat.one))
+    (expect !>(!mass-sun.one))
+    (expect !>(!trolley.one))
     ::  and what it did carry is untouched
-    (expect !>(mass-fri.i.people.r))
-    (expect !>(bus.i.people.r))
+    (expect !>(mass-fri.one))
+    (expect !>(bus.one))
   ==
 ::  +test-read-reg-2: the shape before the person grew, lifted
 ++  test-read-reg-2
@@ -553,18 +562,19 @@
   =/  got=(unit reg:reg)  (read-reg:reg `stored-reg-2:reg`[%2 o])
   ?>  ?=(^ got)
   =/  r=reg:reg  u.got
+  =/  one=person:reg  (first-of people.r)
   ;:  weld
     (expect-eq !>('abc123') !>(id.r))
     (expect-eq !>(2) !>((lent people.r)))
     ::  what %2 already knew is carried, including the organizer's marks
     (expect !>(exempt.r))
     (expect-eq !>(%payment) !>(prior.r))
-    (expect !>(mass-fri.i.people.r))
-    (expect-eq !>('Ana') !>(first.i.people.r))
+    (expect !>(mass-fri.one))
+    (expect-eq !>('Ana') !>(first.one))
     ::  and the three the person gained are false
-    (expect !>(!mass-sat.i.people.r))
-    (expect !>(!mass-sun.i.people.r))
-    (expect !>(!trolley.i.people.r))
+    (expect !>(!mass-sat.one))
+    (expect !>(!mass-sun.one))
+    (expect !>(!trolley.one))
   ==
 ::  ==  exempt and reinstate
 ::
@@ -634,7 +644,10 @@
   ;:  weld
     ::  the header and one row per person
     (expect-eq !>(4) !>((lent ppl)))
-    (expect-eq !>(45) !>(hp))
+    ::  the width is pinned on purpose: a spreadsheet somebody built on
+    ::  last year's export breaks when a column appears. 48 since Mass on
+    ::  Saturday and Sunday and the trolley were added.
+    (expect-eq !>(48) !>(hp))
     ::  every row carries the header's column count
     (expect !>((levy `(list @t)`t.ppl |=(l=@t =(hp (count-commas l))))))
     ::  the header and one row per registration
