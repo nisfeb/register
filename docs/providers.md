@@ -183,27 +183,123 @@ Adding one means touching all three; the test is what catches forgetting.
 An organizer may add a variable to a template but may not lose one that
 is already there — the save is refused and names it.
 
-## The address suggestions
+## The address suggestions, and why they are gone
 
-The street box asks the ship, and the ship asks
-[Photon](https://photon.komoot.io), the OpenStreetMap geocoder built for
-typing into. There is no key, no account and no bill.
+For a few hours the street box asked the ship, and the ship asked
+[Photon](https://photon.komoot.io), the OpenStreetMap geocoder. It was
+removed on 2026-09-30, the day it shipped: the suggestions were wrong
+often enough to confuse the people filling the form, which is worse than
+no suggestions at all.
 
-**It suggests street names and never house numbers.** Asked for "1220
-Penman Rd", Photon answers "1220 East 3rd Avenue, Mount Dora": it matches
-the number against some other street and offers it with every appearance
-of confidence. An address that is wrong and looks right is worse than no
-suggestion, so the house number is whatever the pilgrim typed, and
-picking a suggestion only fills the street, the town, the state and the
-ZIP around it.
+Kept from that work, because it stands on its own: the **state is a
+dropdown**, storing the two-letter code.
 
-If Photon is down or slow the box is just a box: the route gives up after
-ten seconds and answers an empty list, and the form works as it always
-did.
+If it is ever tried again, the two things that made it hard are worth
+knowing before starting. **Photon invents house numbers** — asked for
+"1220 Penman Rd" it answers "1220 East 3rd Avenue, Mount Dora", matching
+the number against a different street and offering it with every
+appearance of confidence. Suggesting street names only was the way round
+that, and it still was not good enough. And **iris will not carry a
+space in a url**, which is documented in `docs/hoon-testing.md` and cost
+an hour on its own.
 
-The route is public, and it is the only one that turns an inbound request
-into an outbound one, so it shuts itself when there is nothing to fill
-in: once the sign-up window and the change deadline have both passed it
-answers an empty list without asking anybody. Otherwise the app would
-stand open as a proxy to somebody else's free service for the rest of the
-year.
+A paid provider with an address-completion product would not have either
+problem. That is a question of a billing account, not of code.
+
+## Upgrading a ship the organizers have been editing
+
+Every string a pilgrim reads lives in `copy.json`, and organizers edit
+them in place on the page. **A release never overwrites them.** The
+nexus lays `copy.json` with `%fall`, which writes only when the document
+is absent, and `+with-starter` unions the library's defaults *under*
+what is stored: a stored string always wins, and a string a release adds
+appears with its default. The same holds for `settings.json`, the
+registrations and the counts.
+
+Two consequences worth knowing:
+
+- A ship that has been running keeps its edits across the upgrade. On
+  the comet at version 15 those were six: the trademark symbols in
+  `landing.title`, `landing.full.title` and `landing.bambino.title`, the
+  reworded `landing.full.blurb` and `landing.full.who`, and the
+  non-refundable note on `manage.cancel`.
+- **Changing a default in `+starter-copy` does not reach a ship that
+  already stores that key.** If the wording of an existing string has to
+  change everywhere, an organizer edits it on the page, or it goes out
+  by `POST /api/admin/copy/set` with the key and the new value. Only
+  genuinely new keys arrive from a release.
+- **A key the code retires is dropped**, not carried for ever. Nothing
+  renders a retired string, so nobody could reach it to correct it, and
+  it would sit in the document looking like one that matters.
+  `+with-starter` answers the code's key list with the stored values
+  laid over it, so `next.waiver.button` went away when the waiver step
+  stopped using it. This only ever removes keys the code no longer knows;
+  an edit to a string still in use is never touched.
+
+Take a backup before any upgrade anyway — *Backup → JSON bundle* in the
+backoffice, and the jam beside it.
+
+### The copy document cannot be damaged
+
+Three rules, and between them nothing a caller does can take an
+organizer's words away:
+
+1. **The pages write one key at a time.** Both the public page's inline
+   editing and the backoffice's Emails page use
+   `POST /api/admin/copy/set`, one key per call, and that route refuses
+   a key the library does not have.
+2. **The whole-document write merges.** `PUT /api/admin/copy` unions what
+   it is given over what is stored: a key it leaves out is kept, and a
+   key the library does not have is dropped. Nothing in the app uses this
+   route, which is exactly why it had to be made safe — it was the one
+   way left to replace the document, and a caller who sent the wrong
+   shape would have replaced every string with one key. That is not a
+   hypothetical; it happened once on the test ship while this was being
+   written, and the merge is what made it harmless.
+3. **Backups read the document raw.** `+read-bundle` reads `copy.json`
+   itself, not the `+with-starter` view, so a key the library has retired
+   still round-trips through a backup and a restore.
+
+The gate pins all three.
+
+### Pushing a changed default to a ship
+
+`scripts/set-copy.py` is the tool for the second case. With no key names
+it lists every string whose stored value differs from the library's and
+changes nothing:
+
+```sh
+scripts/set-copy.py https://<host> <cookie-jar>
+```
+
+Name the keys to push, and it pushes those and only those, so an
+organizer's own wording is never touched unless it is asked for by name:
+
+```sh
+scripts/set-copy.py https://<host> <cookie-jar> form.weekend form.same_weekend
+```
+
+On the comet at version 16 the organizers had already rewritten ten
+strings of their own — the trademark marks, the button labels, and
+`form.mass_sat`, which reads "1:00 pm Mass at St. John Paul II, Nocatee"
+and not what the library says. Always run it with no arguments first and
+read the list.
+
+## The emails themselves
+
+Nine templates, edited in the backoffice under **Emails**: confirmation,
+manage, wait list, promoted, assistance approved, assistance declined,
+reminder, cancelled and check-in. Each has a subject and a body, and the
+body may hold any of ten words in double curly brackets, which the card
+at the top of that page lists in full:
+
+`{{first}}` `{{link}}` `{{total}}` `{{track}}` `{{people}}`
+`{{position}}` `{{day}}` `{{email}}` `{{site}}` `{{event}}`
+
+They are filled by `+send-mail`, and the legend in `admin.js` and
+`+test-email-vars` in the suite are the same list written twice more.
+Adding one means touching all three; the test is what catches forgetting.
+
+An organizer may add a variable to a template but may not lose one that
+is already there — the save is refused and names it.
+

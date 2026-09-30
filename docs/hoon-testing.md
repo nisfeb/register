@@ -49,14 +49,14 @@ grubbery translation applies to them and the suite's
 `/+ *test, reg=register` resolves the ordinary way. The whole config is
 the desk name, the libraries, and the tests directory.
 
-The suite is 90 arms over five libraries: `register.hoon` (the event and
+The suite is 86 arms over four libraries: `register.hoon` (the event and
 its rules), and phase 2's `register-http.hoon` (percent-encoding and form
 bodies), `register-stripe.hoon` (the Checkout calls, built and read) and
-`register-mail.hoon` (the Resend send) and `register-places.hoon` (the
-address suggestions). The three new ones are pure text
-in and pure text out, which is the whole reason they are libraries: an
-outbound call is untestable, but everything that decides what goes out
-and what comes back is not.
+`register-mail.hoon` (the Resend send). A fifth, `register-places.hoon`,
+held the address suggestions and went with them. The phase-2 three are
+pure text in and pure text out, which is the whole reason they are
+libraries: an outbound call is untestable, but everything that decides
+what goes out and what comes back is not.
 
 **The nexus is not under test.** `code/nex/register/app.hoon` is 1,940
 lines and nothing in it is reached by a unit test today; the HTTP gate
@@ -225,6 +225,10 @@ elements.
 
 ## Iris will not carry a space in a url, 2026-09-30
 
+*(The address suggestions that turned this up were removed the same day —
+see `docs/providers.md`. The finding outlives them: it is about iris,
+not about Photon.)*
+
 Worth writing down because it cost an hour and the symptom points
 nowhere near the cause. The address suggestions call Photon with a
 search term. One word worked. Two words came back as a bare nginx
@@ -284,7 +288,7 @@ counts and people.csv, against a truth table per day. Eleven checks.
 ## What to do next, in order
 
 1. Start a fake ship, run `setup`, and take a baseline: `hoon-test.sh`
-   should exit 0 with 90 `OK` lines.
+   should exit 0 with 86 `OK` lines.
 2. Run the cheap mutation pass over the library and triage every
    survivor. Re-trace each one before writing a test: many are equivalent,
    and the playbook lists the usual kinds.

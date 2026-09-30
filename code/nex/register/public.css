@@ -192,17 +192,7 @@ body.editing .btn, body.editing .check, body.editing a.btn, body.editing .remove
    text, so the blank lines between paragraphs can be seen and typed */
 .terms .copy { white-space: pre-wrap; display: block; }
 
-/* the address suggestions under the street box */
-.suggests { position: relative; }
-.suggests #place-list { position: absolute; z-index: 30; left: 0; right: 0; margin: -.2rem 0 0;
-  padding: 0; list-style: none; background: var(--bg); border: 1px solid var(--accent);
-  border-radius: 4px; box-shadow: 0 6px 18px rgba(13,13,13,.14); overflow: hidden; }
-.suggests #place-list button { display: block; width: 100%; text-align: left; border: 0;
-  background: none; font: inherit; padding: .5rem .7rem; cursor: pointer; }
-.suggests #place-list button:hover, .suggests #place-list button:focus { background: var(--accent-soft); }
-.suggests #place-list b { display: block; font-weight: 600; }
-.suggests #place-list span { color: var(--muted); font-size: .85rem; }
-body.editing .suggests #place-list { display: none; }
+
 .picks.assist { margin-top: 1.4rem; }
 .picks.assist .note { margin: .3rem 0 .8rem 1.7rem; }
 .picks.assist .actions { margin: 0; }

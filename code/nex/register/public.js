@@ -378,78 +378,6 @@
   function venueWords() {
     return { social_fri: t('form.social_fri.short'), social_sat: t('form.social_sat.short') };
   }
-  // ---- address suggestions ----
-  // The ship asks OpenStreetMap and answers with street names only; it
-  // never invents a house number, because a wrong address that looks
-  // right is worse than no suggestion. Whatever number the pilgrim has
-  // already typed is kept and put in front of the street they choose.
-  var placeHits = [];
-  var placeTimer = null;
-  var placeSeq = 0;
-  function closePlaces() {
-    var el = document.getElementById('place-list');
-    if (!el) return;
-    el.innerHTML = '';
-    el.hidden = true;
-  }
-  function drawPlaces(list) {
-    var el = document.getElementById('place-list');
-    if (!el) return;
-    placeHits = list;
-    if (!list.length) return closePlaces();
-    el.innerHTML = list.map(function (h, i) {
-      var tail = [h.city, stateName(h.state), h.zip].filter(Boolean).join(', ');
-      return '<li><button type="button" data-act="place" data-i="' + i + '">' +
-        '<b>' + esc(h.street) + '</b><span>' + esc(tail) + '</span></button></li>';
-    }).join('');
-    el.hidden = false;
-  }
-  function askPlaces(q) {
-    var mine = ++placeSeq;
-    api('/places?q=' + encodeURIComponent(q)).then(function (d) {
-      if (mine === placeSeq) drawPlaces(d.places || []);
-    }, function () { closePlaces(); });
-  }
-  function schedulePlaces(v) {
-    clearTimeout(placeTimer);
-    var q = String(v || '').trim();
-    // the house number on its own says nothing about which street
-    if (q.replace(/[0-9\s]/g, '').length < 3) { placeSeq++; return closePlaces(); }
-    placeTimer = setTimeout(function () { askPlaces(q); }, 350);
-  }
-  // Photon answers with the whole state name; the form stores the code
-  function stateCode(name) {
-    var want = String(name || '').trim().toLowerCase();
-    for (var i = 0; i < STATES.length; i++) {
-      if (STATES[i][1].toLowerCase() === want || STATES[i][0].toLowerCase() === want) return STATES[i][0];
-    }
-    return '';
-  }
-  function stateName(code) {
-    for (var i = 0; i < STATES.length; i++) if (STATES[i][0] === code) return STATES[i][1];
-    return code || '';
-  }
-  function fillField(k, v) {
-    setPath(model, k, v);
-    var n = view.querySelector('[data-k="' + k + '"]');
-    if (n) n.value = v;
-  }
-  function takePlace(i) {
-    var hit = placeHits[i];
-    if (!hit || !model) return;
-    var box = view.querySelector('[data-k="contact.street"]');
-    // 1220, 1220A, 12-B: whatever they typed in front of the street
-    var num = (String((box || {}).value || '').match(/^\s*([0-9][0-9A-Za-z-]*)\s/) || [])[1] || '';
-    fillField('contact.street', num ? num + ' ' + hit.street : hit.street);
-    if (hit.city) fillField('contact.city', hit.city);
-    var code = stateCode(hit.state);
-    if (code) fillField('contact.state', code);
-    if (hit.zip) fillField('contact.zip', hit.zip);
-    closePlaces();
-    scheduleSave();
-    var next = view.querySelector('[data-k="contact.zip"]');
-    if (next && !hit.zip) next.focus();
-  }
   function setPath(obj, path, val) {
     var ks = path.split('.'), o = obj;
     for (var i = 0; i < ks.length - 1; i++) o = o[ks[i]];
@@ -698,10 +626,7 @@
     // person card has still left a row an organizer can follow up.
     out += '<div class="card"><h2>' + tx('form.contact.title') + '</h2><p class="help">' + tx('form.contact.help') + '</p>';
     out += '<div class="row">' + input('contact.email', 'form.email', c.email, 'email', ' autocomplete="email"') + input('contact.phone', 'form.phone', c.phone, 'tel', ' autocomplete="tel"') + '</div>';
-    out += '<div class="suggests">' +
-      input('contact.street', 'form.street', c.street, 'text',
-        ' autocomplete="street-address" autocorrect="off" spellcheck="false"') +
-      '<ul id="place-list" hidden></ul></div>';
+    out += input('contact.street', 'form.street', c.street, 'text', ' autocomplete="street-address"');
     out += '<div class="row3">' + input('contact.city', 'form.city', c.city, 'text', ' autocomplete="address-level2"') +
       stateBox('contact.state', 'form.state', c.state) +
       input('contact.zip', 'form.zip', c.zip, 'text', ' autocomplete="postal-code"') + '</div>';
@@ -1406,8 +1331,6 @@
       return;
     }
     setPath(model, k, val);
-    // the street box asks the ship what streets that could be
-    if (k === 'contact.street') schedulePlaces(val);
     // a change to the first person's itinerary follows through to
     // everyone still copying it
     if (/^people\.0\.(days\.|sun_ten$|social_|mass_|holy_hour$|bus$|trolley$)/.test(k)) {
@@ -1452,7 +1375,6 @@
         route();
       }).catch(function (e) { freeAsk(); leaving = null; showError(e.message); });
     }
-    else if (act2 === 'place') { takePlace(+el.getAttribute('data-i')); }
     else if (act2 === 'submit') { clearTimeout(saveTimer); dirty = false; submit(el); }
     else if (act2 === 'save') {
       showError('');
@@ -1592,9 +1514,7 @@
     if (scrim && scrim.parentNode) scrim.parentNode.removeChild(scrim);
   }
   document.addEventListener('keydown', function (ev) {
-    if (ev.key !== 'Escape') return;
-    closeWaiver();
-    closePlaces();
+    if (ev.key === 'Escape') closeWaiver();
   });
   window.addEventListener('hashchange', function () { closeWaiver(); });
   window.addEventListener('hashchange', route);

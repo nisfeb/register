@@ -948,7 +948,10 @@ def backoffice(live_rid):
     # and the spreadsheet carries the same answers
     bx_csv = csv_rows('/export/people.csv', 'boxes-people.csv')
     bx_hdr = bx_csv[0]
-    bx_mine = [r for r in bx_csv[1:] if r[bx_hdr.index('last')] == 'Boxes']
+    # by the registration id, not the name: an earlier run of this gate
+    # leaves its own cancelled Omni Boxes behind, and the spreadsheet
+    # carries cancelled rows too
+    bx_mine = [r for r in bx_csv[1:] if r[bx_hdr.index('rid')] == bx_rid]
     check('people.csv has the row', len(bx_mine) == 1, len(bx_mine))
     if len(bx_mine) == 1:
         bx_cells = dict(zip(bx_hdr, bx_mine[0]))

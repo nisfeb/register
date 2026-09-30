@@ -31,7 +31,6 @@
 /<  hut     /lib/register-http.hoon
 /<  stripe  /lib/register-stripe.hoon
 /<  resend  /lib/register-mail.hoon
-/<  places  /lib/register-places.hoon
 /&  icon  icon.svg
 /&  public-html  public.html
 /&  public-css   public.css
@@ -813,8 +812,6 @@
   ?:  &(=('GET' meth) ?=([%'public.css' ~] suffix))               (serve-file eyre-id %'public.css')
   ?:  &(=('GET' meth) ?=([%'public.js' ~] suffix))                (serve-file eyre-id %'public.js')
   ?:  &(=('GET' meth) ?=([%api %status ~] suffix))               (serve-status eyre-id owner)
-  ?:  &(=('GET' meth) ?=([%api %places ~] suffix))
-    (serve-places eyre-id (fall (get-key:kv:html-utils 'q' args) ''))
   ?:  &(=('POST' meth) ?=([%api %draft ~] suffix))               (serve-draft eyre-id jon)
   ?:  &(=('POST' meth) ?=([%api %submit ~] suffix))              (serve-submit eyre-id jon)
   ?:  &(=('GET' meth) ?=([%api %reg @ ~] suffix))                (serve-reg eyre-id s2 tok)
@@ -922,49 +919,6 @@
   =/  cj=json  (with-starter:reg raw-cj)
   =/  s=settings:reg  (de-settings:reg sj)
   (send-json eyre-id 200 (status-json:reg s sj cj (tally:reg s regs now) now owner))
-::  +serve-places: street suggestions while a pilgrim types their address.
-::
-::  Public, because the form is, and every call costs an outbound
-::  request. So a query too short to mean anything is answered from here
-::  without making one, and the query itself is cut to 80 bytes. Ten
-::  seconds is the whole patience of somebody typing, and anything that
-::  goes wrong at the other end answers an empty list: a form that
-::  cannot suggest is a form that still works.
-::
-++  serve-places
-  |=  [eyre-id=@ta q=@t]
-  =/  m  (fiber:fiber:nexus ,~)
-  ^-  form:m
-  =/  want=@t  (end [3 80] q)
-  =/  none=json  (pairs:enjs:format ~[['places' a+~]])
-  ?:  (lth (met 3 want) 3)  (send-json eyre-id 200 none)
-  ;<  now=@da  bind:m  get-time:io
-  ;<  s=settings:reg  bind:m  (read-settings 1)
-  ::  This is the one public route that turns a request into an outbound
-  ::  one, so it shuts when there is nothing to fill in. Nobody is typing
-  ::  an address once sign-ups have closed and the last change has been
-  ::  made; without this the app would stand open as a proxy to somebody
-  ::  else's free service for the rest of the year.
-  ?.  |((window-open:reg s now) (changes-open:reg s now))
-    (send-json eyre-id 200 none)
-  ;<  res=[status=@ud body=@t]  bind:m
-    %^  fetch  %places  ~s10
-    :^  %'GET'
-      (rap 3 ~[api:places '?' (form-body:hut (places-query:places want))])
-    headers:places
-    ~
-  ?.  =(200 status.res)  (send-json eyre-id 200 none)
-  %^  send-json  eyre-id  200
-  %-  pairs:enjs:format
-  :_  ~
-  :-  'places'
-  :-  %a
-  %+  turn  (read-places:places body.res)
-  |=  pl=place:places
-  %-  pairs:enjs:format
-  :~  ['street' s+street.pl]  ['city' s+city.pl]
-      ['state' s+state.pl]  ['zip' s+zip.pl]
-  ==
 ::  +serve-draft: a draft the moment there is an email or a phone. The
 ::  rid and token come back so the page can resume and submit.
 ::
