@@ -702,6 +702,36 @@
     (expect-eq !>(2) !>(social-sat.adm))
     (expect-eq !>(0) !>(bambino.bam))
   ==
+::  +test-who-the-caps-count: what holds a track spot, and what does not.
+::
+::  Only two things take somebody out of the count: they registered to
+::  walk on no day at all, or an organizer marked their registration
+::  exempt. Being a Knight or Dame of the Order of Malta does NOT, and
+::  neither does volunteering; both are recorded on the person and
+::  neither is read by +tally. This is pinned because the backoffice
+::  puts "Order of Malta and volunteers" next to "exempt" in the same
+::  list of segments, which reads like a rule and is not one.
+::
+++  test-who-the-caps-count
+  =/  now=@da  (add t0 ~h1)
+  ::  some-person is an arm, so it is bound before it is mutated
+  =/  one=person:reg  some-person
+  =/  kd=person:reg  one(knight-dame &, volunteer &)
+  =/  idle=person:reg  one(days [fri=| sat=| sun=|])
+  =/  base=reg:reg  (some-reg %a %complete %full 1 t0)
+  =/  knights=reg:reg  base(people ~[kd kd kd])
+  =/  nobody=reg:reg  base(people ~[idle idle])
+  =/  mixed=reg:reg  base(people ~[kd idle one])
+  ;:  weld
+    ::  three Knights and Dames are three pilgrims on the beach
+    (expect-eq !>(3) !>(full:(tally:reg st ~[knights] now)))
+    ::  two people who walk on no day take no spot
+    (expect-eq !>(0) !>(full:(tally:reg st ~[nobody] now)))
+    ::  and in one party, only the two who walk are counted
+    (expect-eq !>(2) !>(full:(tally:reg st ~[mixed] now)))
+    ::  the organizer's mark is the only other way out of the count
+    (expect-eq !>(0) !>(full:(tally:reg st ~[knights(exempt &)] now)))
+  ==
 ++  test-reinstate
   =/  r=reg:reg  (some-reg %a %complete %full 2 t0)
   =/  gone=reg:reg

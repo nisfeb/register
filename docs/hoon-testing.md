@@ -49,10 +49,11 @@ grubbery translation applies to them and the suite's
 `/+ *test, reg=register` resolves the ordinary way. The whole config is
 the desk name, the libraries, and the tests directory.
 
-The suite is 78 arms over four libraries: `register.hoon` (the event and
+The suite is 87 arms over five libraries: `register.hoon` (the event and
 its rules), and phase 2's `register-http.hoon` (percent-encoding and form
 bodies), `register-stripe.hoon` (the Checkout calls, built and read) and
-`register-mail.hoon` (the Resend send). The three new ones are pure text
+`register-mail.hoon` (the Resend send) and `register-places.hoon` (the
+address suggestions). The three new ones are pure text
 in and pure text out, which is the whole reason they are libraries: an
 outbound call is untestable, but everything that decides what goes out
 and what comes back is not.
@@ -222,10 +223,34 @@ document coordinates, with the sticky nav painted through the middle.
 `docs/manual/cards.js` owns every close-up now and takes them as
 elements.
 
+## Iris will not carry a space in a url, 2026-09-30
+
+Worth writing down because it cost an hour and the symptom points
+nowhere near the cause. The address suggestions call Photon with a
+search term. One word worked. Two words came back as a bare nginx
+`400 Bad Request` from the far end, with no clue in it.
+
+It is not the far end. The same url from `curl` answers 200. Iris
+decodes the query string it is handed, finds a space, and puts a raw
+space into the request line. **Both spellings of a space go the same
+way**, `%20` and `+`, because both decode to one. Every other
+percent-escape rides through untouched, which is the way out:
+`+space-plus` in `code/lib/register-places.hoon` turns a space into a
+literal `+` *before* encoding, so it reaches the far end as `%2B`.
+Photon reads that back as a `+` and breaks words on it, and the answers
+are identical to a real space.
+
+The shape to recognise: **one word searches fine and two words do not.**
+If iris is ever fixed, that arm can go.
+
+`+form-body` also learned to spell a space `+` rather than `%20`, which
+is what `application/x-www-form-urlencoded` specifies anyway; `url-encode`
+still writes `%20`, which is right for a path.
+
 ## What to do next, in order
 
 1. Start a fake ship, run `setup`, and take a baseline: `hoon-test.sh`
-   should exit 0 with 78 `OK` lines.
+   should exit 0 with 87 `OK` lines.
 2. Run the cheap mutation pass over the library and triage every
    survivor. Re-trace each one before writing a test: many are equivalent,
    and the playbook lists the usual kinds.

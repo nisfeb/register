@@ -118,3 +118,44 @@ Two consequences worth knowing:
 
 Take a backup before any upgrade anyway — *Backup → JSON bundle* in the
 backoffice, and the jam beside it.
+
+### Pushing a changed default to a ship
+
+`scripts/set-copy.py` is the tool for the second case. With no key names
+it lists every string whose stored value differs from the library's and
+changes nothing:
+
+```sh
+scripts/set-copy.py https://<host> <cookie-jar>
+```
+
+Name the keys to push, and it pushes those and only those, so an
+organizer's own wording is never touched unless it is asked for by name:
+
+```sh
+scripts/set-copy.py https://<host> <cookie-jar> form.weekend form.same_weekend
+```
+
+On the comet at version 16 the organizers had already rewritten ten
+strings of their own — the trademark marks, the button labels, and
+`form.mass_sat`, which reads "1:00 pm Mass at St. John Paul II, Nocatee"
+and not what the library says. Always run it with no arguments first and
+read the list.
+
+## The address suggestions
+
+The street box asks the ship, and the ship asks
+[Photon](https://photon.komoot.io), the OpenStreetMap geocoder built for
+typing into. There is no key, no account and no bill.
+
+**It suggests street names and never house numbers.** Asked for "1220
+Penman Rd", Photon answers "1220 East 3rd Avenue, Mount Dora": it matches
+the number against some other street and offers it with every appearance
+of confidence. An address that is wrong and looks right is worse than no
+suggestion, so the house number is whatever the pilgrim typed, and
+picking a suggestion only fills the street, the town, the state and the
+ZIP around it.
+
+If Photon is down or slow the box is just a box: the route gives up after
+ten seconds and answers an empty list, and the form works as it always
+did.

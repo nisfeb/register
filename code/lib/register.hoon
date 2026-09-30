@@ -663,7 +663,10 @@
     %draft       ?=(?(%waitlist %waiver) to)
     %waitlist    ?=(?(%waiver %cancelled) to)
     %waiver      ?=(?(%payment %assistance %waitlist %cancelled) to)
-    %payment     ?=(?(%complete %waitlist %cancelled) to)
+    ::  a pilgrim at the payment step may ask for assistance instead,
+    ::  which is also where a declined one lands, so the door goes both
+    ::  ways: the organizers decide, and they can be asked twice
+    %payment     ?=(?(%complete %assistance %waitlist %cancelled) to)
     %assistance  ?=(?(%complete %payment %cancelled) to)
     %complete    ?=(%cancelled to)
     %cancelled   ?=(?(%waitlist %waiver %payment %assistance %complete) to)
@@ -1731,10 +1734,10 @@
       ['form.child' s+'Under 18']
       ['form.add_person' s+'Add another person']
       ['form.remove_person' s+'Remove {{name}}']
-      ['form.weekend' s+'{{name}}\'s weekend']
-      ['form.weekend.you' s+'Your weekend']
-      ['form.same_weekend' s+'Same weekend as {{first}}']
-      ['form.own_weekend' s+'A different weekend']
+      ['form.weekend' s+'{{name}}\'s itinerary']
+      ['form.weekend.you' s+'Your itinerary']
+      ['form.same_weekend' s+'Same itinerary as {{first}}']
+      ['form.own_weekend' s+'A different itinerary']
       ['form.days' s+'Walking']
       ['form.fri' s+'Friday, December 4: 10 miles, Jacksonville Beach to Mickler\'s Landing']
       ['form.sat' s+'Saturday, December 5: 10 miles, Mickler\'s Landing to GTM Reserve']
@@ -1812,6 +1815,9 @@
       ['next.payment.custom_help' s+'Anything above the registration fee is recorded as a gift to the Baby Steps Camino.']
       ['next.payment.too_low' s+'The amount cannot be less than the registration fee.']
       ['next.payment.card' s+'The next page is Stripe\'s, where you type your card. We never see your card number.']
+      ['next.payment.assist' s+'I would like to apply for financial assistance']
+      ['next.payment.assist_help' s+'Instead of paying now. The organizers read every request. Not all of them can be accepted, and you are not registered until assistance is approved.']
+      ['next.payment.assist_button' s+'Ask for financial assistance']
       ['next.assistance.title' s+'Your request is with the organizers']
       ['next.assistance.body' s+'Your waiver is signed. The organizers read every request for assistance, and we will email you as soon as yours is decided.']
       ['next.lapsed' s+'Your spots were held for 48 hours and that time has passed. You can still go on. If the track filled in the meantime we will offer you the wait list.']

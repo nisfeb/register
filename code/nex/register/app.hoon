@@ -31,6 +31,7 @@
 /<  hut     /lib/register-http.hoon
 /<  stripe  /lib/register-stripe.hoon
 /<  resend  /lib/register-mail.hoon
+/<  places  /lib/register-places.hoon
 /&  icon  icon.svg
 /&  public-html  public.html
 /&  public-css   public.css
@@ -44,6 +45,7 @@
 /&  sw-js         sw.js
 /&  manifest-json  manifest.json
 /&  logo      logo.png
+/&  favicon   favicon.png
 /&  icon-192  icon-192.png
 /&  icon-512  icon-512.png
 =<  ^-  nexus:nexus
@@ -79,6 +81,7 @@
           [%over %& [/ %'sw.js'] [[/ %mime] sw-js]]
           [%over %& [/ %'manifest.json'] [[/ %mime] manifest-json]]
           [%over %& [/ %'logo.png'] [[/ %mime] logo]]
+          [%over %& [/ %'favicon.png'] [[/ %mime] favicon]]
           [%over %& [/ %'icon-192.png'] [[/ %mime] icon-192]]
           [%over %& [/ %'icon-512.png'] [[/ %mime] icon-512]]
           [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
@@ -170,6 +173,7 @@
   ?:  =('edit' op)  (do-edit jon)
   ?:  =('cancel' op)  (do-cancel jon)
   ?:  =('advance' op)  (do-advance jon)
+  ?:  =('ask-assist' op)  (do-ask-assist jon)
   ?:  =('promote' op)  (do-promote jon)
   ?:  =('assist' op)  (do-assist jon)
   ?:  =('note' op)  (do-note jon)
@@ -382,6 +386,26 @@
   ;<  ~  bind:m  (write-reg 0 r |)
   ;<  ~  bind:m  (note-rid 'advance' & to by rid)
   (pure:m &)
+::  +do-ask-assist: a pilgrim at the payment step asks for help instead
+::  of paying. The mark goes on the registration as well as the status,
+::  so the record says they asked however the organizers answer.
+::
+++  do-ask-assist
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  rid=@ta  (rid-of jon)
+  =/  by=@t  (by-of jon)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
+  ?~  cur  (refuse 'ask-assist' 'no such registration')
+  ?.  =(%payment status.u.cur)  (refuse 'ask-assist' 'not at the payment step')
+  =/  r=reg:reg
+    %-  set-status:reg
+    [u.cur(assistance &) %assistance by 'asked for financial assistance' now]
+  ;<  ~  bind:m  (write-reg 0 r |)
+  ;<  ~  bind:m  (note-rid 'ask-assist' & '' by rid)
+  (pure:m &)
 ::  +do-promote: off the wait list and into the flow. The cap is not
 ::  checked: the organizer looked.
 ::
@@ -566,7 +590,7 @@
   ^-  form:m
   ?.  live  (pure:m [& ''])
   ;<  res=[status=@ud body=@t]  bind:m
-    %+  fetch  %mail
+    %^  fetch  %mail  ~m2
     :^  %'POST'  api:resend  (headers:resend key)
     `(as-octs:mimes:html (send-body:resend from to subject text))
   =/  sent=(unit @t)  (read-send:resend status.res body.res)
@@ -756,6 +780,8 @@
   ?:  &(=('GET' meth) ?=([%'public.css' ~] suffix))               (serve-file eyre-id %'public.css')
   ?:  &(=('GET' meth) ?=([%'public.js' ~] suffix))                (serve-file eyre-id %'public.js')
   ?:  &(=('GET' meth) ?=([%api %status ~] suffix))               (serve-status eyre-id owner)
+  ?:  &(=('GET' meth) ?=([%api %places ~] suffix))
+    (serve-places eyre-id (fall (get-key:kv:html-utils 'q' args) ''))
   ?:  &(=('POST' meth) ?=([%api %draft ~] suffix))               (serve-draft eyre-id jon)
   ?:  &(=('POST' meth) ?=([%api %submit ~] suffix))              (serve-submit eyre-id jon)
   ?:  &(=('GET' meth) ?=([%api %reg @ ~] suffix))                (serve-reg eyre-id s2 tok)
@@ -765,6 +791,7 @@
   ?:  &(=('POST' meth) ?=([%api %reg @ %cancel ~] suffix))       (serve-cancel eyre-id s2 tok jon 'pilgrim')
   ?:  &(=('POST' meth) ?=([%api %reg @ %sign ~] suffix))         (serve-sign eyre-id s2 tok jon)
   ?:  &(=('POST' meth) ?=([%api %reg @ %pay ~] suffix))          (serve-pay eyre-id s2 tok jon)
+  ?:  &(=('POST' meth) ?=([%api %reg @ %assist ~] suffix))        (serve-ask-assist eyre-id s2 tok)
   ::  where Stripe sends the pilgrim back, and where it tells the ship
   ::  the same thing a second time. Neither is trusted: both take only
   ::  a session id and ask Stripe itself what happened.
@@ -794,6 +821,11 @@
   ::  the event's own logo, served to anyone: the pilgrim's page wears it
   ?:  &(=('GET' meth) ?=([%'logo.png' ~] suffix))
     (serve-asset eyre-id %'logo.png' 'image/png' 'public, max-age=86400' ~)
+  ::  the event's own favicon, the Order of Malta cross, served without a
+  ::  cookie: a browser fetches a favicon uncredentialed, and it is the
+  ::  same mark the public site wears
+  ?:  &(=('GET' meth) ?=([%'favicon.png' ~] suffix))
+    (serve-asset eyre-id %'favicon.png' 'image/png' 'public, max-age=86400' ~)
   ?:  &(=('GET' meth) ?=([%'icon-192.png' ~] suffix))
     (serve-asset eyre-id %'icon-192.png' 'image/png' 'public, max-age=86400' ~)
   ?:  &(=('GET' meth) ?=([%'icon-512.png' ~] suffix))
@@ -857,6 +889,40 @@
   =/  cj=json  (with-starter:reg raw-cj)
   =/  s=settings:reg  (de-settings:reg sj)
   (send-json eyre-id 200 (status-json:reg s sj cj (tally:reg s regs now) now owner))
+::  +serve-places: street suggestions while a pilgrim types their address.
+::
+::  Public, because the form is, and every call costs an outbound
+::  request. So a query too short to mean anything is answered from here
+::  without making one, and the query itself is cut to 80 bytes. Ten
+::  seconds is the whole patience of somebody typing, and anything that
+::  goes wrong at the other end answers an empty list: a form that
+::  cannot suggest is a form that still works.
+::
+++  serve-places
+  |=  [eyre-id=@ta q=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  want=@t  (end [3 80] q)
+  =/  none=json  (pairs:enjs:format ~[['places' a+~]])
+  ?:  (lth (met 3 want) 3)  (send-json eyre-id 200 none)
+  ;<  res=[status=@ud body=@t]  bind:m
+    %^  fetch  %places  ~s10
+    :^  %'GET'
+      (rap 3 ~[api:places '?' (form-body:hut (places-query:places want))])
+    headers:places
+    ~
+  ?.  =(200 status.res)  (send-json eyre-id 200 none)
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :_  ~
+  :-  'places'
+  :-  %a
+  %+  turn  (read-places:places body.res)
+  |=  pl=place:places
+  %-  pairs:enjs:format
+  :~  ['street' s+street.pl]  ['city' s+city.pl]
+      ['state' s+state.pl]  ['zip' s+zip.pl]
+  ==
 ::  +serve-draft: a draft the moment there is an email or a phone. The
 ::  rid and token come back so the page can resume and submit.
 ::
@@ -1122,12 +1188,12 @@
 ::  never crashes the fiber, which is the rule the rest of the app keeps.
 ::
 ++  fetch
-  |=  [wire=@ta =request:http]
+  |=  [wire=@ta wait=@dr =request:http]
   =/  m  (fiber:fiber:nexus ,[status=@ud body=@t])
   ^-  form:m
   ;<  t0=@da  bind:m  get-time:io
   ;<  ~  bind:m  (send-request:io request)
-  ;<  ~  bind:m  (set-timer:io /[wire] (add t0 ~m2))
+  ;<  ~  bind:m  (set-timer:io /[wire] (add t0 wait))
   ;<  r=(unit client-response:iris)  bind:m
     |=  input:fiber:nexus
     :+  ~  q.state
@@ -1199,6 +1265,25 @@
   ;<  *  bind:m
     (send-mail u.cur 'confirmation' 'email.confirmation' (mail-vars u.cur 0 '') 'pilgrim')
   (send-json eyre-id 200 (pairs:enjs:format ~[['next' s+'complete']]))
+::  +serve-ask-assist: the pilgrim's own request for help, from the
+::  payment step. The organizers answer it in the backoffice exactly as
+::  they answer one made on the form.
+::
+++  serve-ask-assist
+  |=  [eyre-id=@ta rid=@t tok=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cur=(unit reg:reg)  bind:m  (with-reg eyre-id rid tok)
+  ?~  cur  (send-err eyre-id 404 'no such registration')
+  ::  asking twice is not an error; they are already where they asked to be
+  ?:  =(%assistance status.u.cur)
+    (send-json eyre-id 200 (pairs:enjs:format ~[['next' s+'assistance']]))
+  ?.  =(%payment status.u.cur)  (send-err eyre-id 409 'not at the payment step')
+  =/  pk=json
+    (pairs:enjs:format ~[['op' s+'ask-assist'] ['rid' s+id.u.cur] ['by' s+'pilgrim']])
+  ;<  err=(unit tang)  bind:m  (poke-writer pk)
+  ?^  err  (send-err eyre-id 503 'the ship is recovering; try again')
+  (send-json eyre-id 200 (pairs:enjs:format ~[['next' s+'assistance']]))
 ::  +start-checkout: the Stripe Checkout session. Anything the pilgrim
 ::  pays above the registration fee is a second line item, so the gift
 ::  and the fee stay apart in Stripe's own reporting as well as here.
@@ -1226,7 +1311,7 @@
     %-  checkout-body:stripe
     [id.r email.contact.r lines back quit (add (unix-secs now) 3.600)]
   ;<  res=[status=@ud body=@t]  bind:m
-    %+  fetch  %stripe
+    %^  fetch  %stripe  ~m2
     :^  %'POST'  (cat 3 api:stripe '/checkout/sessions')  (headers:stripe key)
     `(as-octs:mimes:html body)
   ?.  =(200 status.res)
@@ -1265,7 +1350,7 @@
   =/  key=@t  (stripe-key sj)
   ?:  =('' key)  (unsettled rid 'no Stripe key is set')
   ;<  res=[status=@ud body=@t]  bind:m
-    %+  fetch  %stripe
+    %^  fetch  %stripe  ~m2
     [%'GET' (rap 3 ~[api:stripe '/checkout/sessions/' sid]) (headers:stripe key) ~]
   ?.  =(200 status.res)
     (unsettled rid (cat 3 'Stripe would not say what happened; status ' (crip (a-co:co status.res))))
@@ -1339,7 +1424,7 @@
   =/  key=@t  (stripe-key sj)
   ?:  =('' key)  (send-json eyre-id 200 (pairs:enjs:format ~[['set' b+|]]))
   ;<  res=[status=@ud body=@t]  bind:m
-    %+  fetch  %stripe
+    %^  fetch  %stripe  ~m2
     [%'GET' (cat 3 api:stripe '/balance') (headers:stripe key) ~]
   =/  live=(unit ?)  (read-livemode:stripe body.res)
   %^  send-json  eyre-id  200

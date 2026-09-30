@@ -43,6 +43,17 @@
     !>  'mode=payment&customer_email=a%40b.com'
     !>  (form-body:http ~[['mode' 'payment'] ['customer_email' 'a@b.com']])
 ::
+++  test-form-body-space-is-plus
+  ::  application/x-www-form-urlencoded spells a space +, and iris
+  ::  mangles a %20 inside a url it is given: the far end answers 400.
+  ::  A real + in a value still has to be encoded.
+  ;:  weld
+    (expect-eq !>('q=Penman+Road') !>((form-body:http ~[['q' 'Penman Road']])))
+    (expect-eq !>('q=a%2Bb') !>((form-body:http ~[['q' 'a+b']])))
+    ::  and a path is not a form body: there a space is still %20
+    (expect-eq !>('a%20b') !>((url-encode:http 'a b')))
+  ==
+::
 ++  test-form-body-one-key
   %+  expect-eq
     !>  'mode=payment'

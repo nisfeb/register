@@ -46,8 +46,8 @@ async function main() {
   await type('[data-k="people.0.last"]', 'Silva');
   check('the card is headed by the name that was typed',
     (await text('.card.person h2')) === 'Ana Silva', await text('.card.person h2'));
-  check('the weekend section is headed by the name too',
-    (await text('[data-who="weekend"][data-i="0"]')) === "Ana Silva's weekend",
+  check('the itinerary section is headed by the name too',
+    (await text('[data-who="weekend"][data-i="0"]')) === "Ana Silva's itinerary",
     await text('[data-who="weekend"][data-i="0"]'));
   check('Friday\'s events are closed until Friday is checked',
     await seen('.group .closed'), 'no note');
