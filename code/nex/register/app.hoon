@@ -678,7 +678,26 @@
 ::  +is-admin: an actor the owner's routes named, 'admin:<name>'
 ::
 ++  is-admin  |=(by=@t ^-(? =('admin:' (end [3 6] by))))
-::  +dup-of: an active registration under this email, other than rid
+::  +dup-of: an active registration under this email, other than rid.
+::
+::  One email, one registration. This refuses a second sign-up under an
+::  address already registered, and it is the rule somebody asks to have
+::  relaxed roughly once a season: a man signing his wife and daughter up
+::  separately meets it and is turned away, which reads like a bug.
+::
+::  It is not. +serve-resend below asks this same arm which registration
+::  an address owns, and hands back the link to it. That link is the
+::  password to the registration. Two active registrations under one
+::  address and this arm would have to CHOOSE, and the choice would be
+::  whichever came first in the tree: somebody asking for their own lost
+::  link could be sent a stranger's, and anybody who knew an address
+::  could attach themselves to the registration behind it.
+::
+::  So the rule guards the token, not the reports, and it stays.
+::  sneagan, 2026-09-30: "we can't have people accidentally or
+::  maliciously merging their account with others." The way to sign up a
+::  second party under one address is to add them to the registration
+::  that address already owns, which since today can be paid for.
 ::
 ++  dup-of
   |=  [regs=(list reg:reg) email=@t rid=@ta]
