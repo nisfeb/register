@@ -360,6 +360,32 @@ and the Payment card will show the Stripe reference if the money
 arrived.
 \end{note}
 
+\subsection{Adding somebody to a registration that is already paid}
+
+A party can grow after it has paid. When a pilgrim (or you) adds a
+person to a paid registration, the fee for the party goes up and what
+was taken stays where it is, so the registration is put back to
+\textit{payment} for the difference and no more. Their own link takes them
+to a payment page asking for exactly what is owed; when they pay it, the
+Payment card shows the whole of what they have paid, both times
+together.
+
+Two things follow from that, and both are on purpose:
+
+\begin{itemize}
+\item A registration that was \textit{complete} can read \textit{payment} again
+  after an edit. Nothing is lost: the waiver stays signed, the spots stay
+  held, and the check-in link keeps working.
+\item A gift is not credit. Somebody who paid \$75 in fees and gave
+  \$75 on top still owes the whole fee for anybody added later. The gift
+  was given on purpose and stays given.
+\end{itemize}
+
+Reports counts this. \textbf{Still owing} adds up the fee less what was
+taken for every live registration, and names the part-paid ones, so a
+party that grew and has not settled up cannot hide behind a payment
+already on the record.
+
 \subsection{4. They keep their private link}
 
 The confirmation email carries a link that is theirs alone. From it they

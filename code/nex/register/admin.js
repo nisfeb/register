@@ -964,13 +964,21 @@
     });
     if (!Object.keys(pay).length) out += '<tr><td class="muted" colspan="4">No payments recorded yet.</td></tr>';
     out += '</tbody></table></div>';
-    var unpaid = live.filter(function (r) { return !r.paid || r.paid === 'none'; });
-    var owed = unpaid.reduce(function (n, r) { return n + (Number(r.fees) || 0); }, 0);
+    // what is owed is the fee less what was taken, registration by
+    // registration: one that grew after it was paid owes the difference
+    // and would be invisible in a count of the wholly unpaid
+    function shortfall(r) { return Math.max(0, (Number(r.fees) || 0) - (Number(r.amount) || 0)); }
+    var unpaid = live.filter(function (r) { return shortfall(r) > 0; });
+    var owed = unpaid.reduce(function (n, r) { return n + shortfall(r); }, 0);
+    var part = unpaid.filter(function (r) { return (Number(r.amount) || 0) > 0; });
     var unsigned = live.filter(function (r) { return r.waiver !== 'completed'; });
     var heads = unpaid.reduce(function (n, r) { return n + (Number(r.people) || 0); }, 0);
     out += '<div class="card"><h3>Still owing</h3><dl class="kv">' +
       '<dt>Unpaid</dt><dd>' + esc(unpaid.length) + ' registrations, ' + esc(heads) + ' people, ' +
-      esc(money(owed)) + ' in fees</dd>' +
+      esc(money(owed)) + ' in fees' +
+      (part.length ? ' (' + esc(part.length) + ' part paid: ' +
+        esc(part.map(function (r) { return (r.names && r.names[0]) || r.id; }).join(', ')) + ')' : '') +
+      '</dd>' +
       '<dt>Unsigned</dt><dd>' + esc(unsigned.length) + ' registrations without a completed waiver</dd>' +
       '</dl><p class="help">Live registrations only, so a draft or a cancelled one is left out.</p></div>';
     out += '</div>';

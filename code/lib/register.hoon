@@ -675,6 +675,18 @@
   |=  [s=settings r=reg]
   ^-  @ud
   (roll (turn people.r |=(p=person (fee s track.r p))) add)
+::  +owed: what is still to be paid. The fee for the party as it stands
+::  now, less what has already been taken. An edit that adds a person
+::  raises the first and not the second, so the difference is the thing
+::  left to charge. A gift is not counted against the fee: it was given
+::  on purpose, and stays given.
+::
+++  owed
+  |=  [s=settings r=reg]
+  ^-  @ud
+  =/  f=@ud  (fees-total s r)
+  ?:  (gte amount.payment.r f)  0
+  (sub f amount.payment.r)
 ::  ==  the cap fold
 ::
 ::  +counted: does this registration hold spots right now? Complete and
@@ -686,7 +698,7 @@
   ^-  ?
   ?+  status.r  |
     ?(%complete %assistance)  &
-    ?(%waiver %payment)  |(=(%admin source.r) (lth now (add updated.r hold.s)))
+    ?(%waiver %payment)  |(=(%admin source.r) (gth amount.payment.r 0) (lth now (add updated.r hold.s)))
   ==
 ++  tally
   |=  [s=settings regs=(list reg) now=@da]
@@ -764,7 +776,10 @@
     ::  ways: the organizers decide, and they can be asked twice
     %payment     ?=(?(%complete %assistance %waitlist %cancelled) to)
     %assistance  ?=(?(%complete %payment %cancelled) to)
-    %complete    ?=(%cancelled to)
+    ::  a completed registration that grows: adding a person raises the
+    ::  fee above what was taken, and the only way to collect the rest
+    ::  is to stand the registration back at the payment step
+    %complete    ?=(?(%payment %cancelled) to)
     %cancelled   ?=(?(%waitlist %waiver %payment %assistance %complete) to)
   ==
 ++  after-waiver  |=(r=reg ^-(@tas ?:(assistance.r %assistance %payment)))

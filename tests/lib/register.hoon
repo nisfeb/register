@@ -1413,4 +1413,39 @@
     (expect-eq !>(`(unit @ud)`[~ 1]) !>((gn:reg me 'sat')))
     (expect-eq !>(`(unit @ud)`[~ 0]) !>((gn:reg me 'fri')))
   ==
+::  +owed: what a registration has still to pay, and the door a paid
+::  one that grew a person goes back through
+::
+++  test-owed-after-growing
+  =/  one=reg:reg  (some-reg %a %complete %full 1 t0)
+  =/  paid=reg:reg  one(payment [%stripe 7.500 0 `t0 'cs_1' | ''])
+  =/  grown=reg:reg  paid(people (reap 3 some-person))
+  =/  giver=reg:reg  paid(payment [%stripe 7.500 7.500 `t0 'cs_1' | ''])
+  =/  big=reg:reg  giver(people (reap 3 some-person))
+  ;:  weld
+    ::  nothing taken yet, so the whole fee is owed
+    (expect-eq !>(7.500) !>((owed:reg st one)))
+    ::  paid in full: nothing
+    (expect-eq !>(0) !>((owed:reg st paid)))
+    ::  two more people at 7.500 each, and only the difference is owed
+    (expect-eq !>(22.500) !>((fees-total:reg st grown)))
+    (expect-eq !>(15.000) !>((owed:reg st grown)))
+    ::  a gift stays given: it is not credit against a later fee
+    (expect-eq !>(15.000) !>((owed:reg st big)))
+    ::  and the way back to the payment step is open, that one way only
+    (expect !>((transition-ok:reg %complete %payment)))
+    (expect !>(!(transition-ok:reg %complete %waiver)))
+  ==
+::  a registration with money on it holds its spots at the payment step
+::  however long it stands there: the hold window is for one that has
+::  paid nothing
+++  test-counted-when-part-paid
+  =/  late=@da  (add t0 ~d30)
+  =/  waiting=reg:reg  (some-reg %a %payment %full 1 t0)
+  =/  paid=reg:reg  waiting(payment [%stripe 7.500 0 `t0 'cs_1' | ''])
+  ;:  weld
+    (expect !>((counted:reg st waiting t0)))
+    (expect !>(!(counted:reg st waiting late)))
+    (expect !>((counted:reg st paid late)))
+  ==
 --

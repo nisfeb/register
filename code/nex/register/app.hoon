@@ -1035,6 +1035,21 @@
 ::  tree without this registration, so a party may grow only into free
 ::  spots and a sold-out social stays sold out.
 ::
+++  owe-again
+  |=  [s=settings:reg r=reg:reg by=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  &(=(%complete status.r) (gth (owed:reg s r) 0))  (pure:m ~)
+  ;<  *  bind:m
+    %-  poke-writer
+    %-  pairs:enjs:format
+    :~  ['op' s+'advance']  ['rid' s+id.r]  ['to' s+'payment']  ['by' s+by]
+        ['what' s+'the fee rose above what was paid: the difference is due']
+    ==
+  (pure:m ~)
+::  +serve-edit: a change to a live registration, by the pilgrim holding
+::  the token or by an organizer.
+::
 ++  serve-edit
   |=  [eyre-id=@ta rid=@t tok=@t jon=json by=@t]
   =/  m  (fiber:fiber:nexus ,~)
@@ -1068,11 +1083,16 @@
   ;<  err=(unit tang)  bind:m  (poke-writer pk)
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   =/  after=reg:reg  (with-input:reg u.cur p.got)
+  ::  adding a person raises the fee above what was taken. Saying so is
+  ::  not enough: the registration goes back to the payment step, which
+  ::  is the only door in this app that money comes through.
+  ;<  ~  bind:m  (owe-again s after by)
   %^  send-json  eyre-id  200
   %-  pairs:enjs:format
   :~  ['ok' b+&]
       ['fees_before' (en-num:reg (fees-total:reg s u.cur))]
       ['fees' (en-num:reg (fees-total:reg s after))]
+      ['owing' (en-num:reg (owed:reg s after))]
   ==
 ++  serve-cancel
   |=  [eyre-id=@ta rid=@t tok=@t jon=json by=@t]
@@ -1242,9 +1262,13 @@
   ;<  s=settings:reg  bind:m  (read-settings 1)
   ;<  now=@da  bind:m  get-time:io
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
-  ?.  (room-for:reg s regs u.cur now)
+  ::  a registration standing here a second time has already paid: it
+  ::  keeps its place whatever the caps say
+  ?.  |((room-for:reg s regs u.cur now) (gth amount.payment.u.cur 0))
     (lapse-to-waitlist eyre-id s regs u.cur now)
-  =/  fees=@ud  (fees-total:reg s u.cur)
+  ::  what is charged is what is still owed, not the whole fee: a
+  ::  registration standing here for a second time has already paid once
+  =/  fees=@ud  (owed:reg s u.cur)
   ?:  =(%live mode.s)
     (start-checkout eyre-id u.cur fees (fall (gn:reg jon 'amount') fees) now)
   =/  pk=json
@@ -1253,7 +1277,8 @@
         ['what' s+'paid (stub)']
         :-  'payment'
         %-  pairs:enjs:format
-        :~  ['method' s+'stub']  ['amount' (en-num:reg fees)]  ['gift' (en-num:reg 0)]  ['ref' s+'stub']
+        :~  ['method' s+'stub']  ['amount' (en-num:reg (add amount.payment.u.cur fees))]
+            ['gift' (en-num:reg gift.payment.u.cur)]  ['ref' s+'stub']
         ==
     ==
   ;<  err=(unit tang)  bind:m  (poke-writer pk)
@@ -1361,7 +1386,9 @@
   ?~  cur  (unsettled rid.u.got 'no such registration')
   ?.  =(%payment status.u.cur)  (pure:m |)
   ;<  s=settings:reg  bind:m  (read-settings 1)
-  =/  fees=@ud  (fees-total:reg s u.cur)
+  ::  owed, not the whole fee: this session paid the difference, and the
+  ::  amounts below add to what an earlier one already put on the record
+  =/  fees=@ud  (owed:reg s u.cur)
   =/  gift=@ud  ?:((gth total.u.got fees) (sub total.u.got fees) 0)
   =/  pk=json
     %-  pairs:enjs:format
@@ -1369,8 +1396,9 @@
         ['what' s+'paid by card']
         :-  'payment'
         %-  pairs:enjs:format
-        :~  ['method' s+'stripe']  ['amount' (en-num:reg (sub total.u.got gift))]
-            ['gift' (en-num:reg gift)]  ['ref' s+id.u.got]
+        :~  ['method' s+'stripe']
+            ['amount' (en-num:reg (add amount.payment.u.cur (sub total.u.got gift)))]
+            ['gift' (en-num:reg (add gift.payment.u.cur gift))]  ['ref' s+id.u.got]
         ==
     ==
   ;<  err=(unit tang)  bind:m  (poke-writer pk)

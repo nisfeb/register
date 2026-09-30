@@ -692,22 +692,29 @@
       // two and a half miles should not be asked for three days' cost
       var sug = r.track === 'full'
         ? Number(((status && status.fees) || {}).suggested_full || 0) * (people.length || 1) : 0;
+      // what is asked for is what is still owed. A registration that
+      // grew after it was paid stands here a second time, for the
+      // difference only, and a suggested figure for the whole weekend
+      // would make no sense against it
+      var paid = Number((r.payment || {}).amount || 0);
+      var due = Math.max(0, Number(r.fees || 0) - paid);
+      if (paid > 0) sug = 0;
       function amt(val, id, key, vars) {
         return '<label class="check"><input type="radio" name="amount" value="' + val + '" data-amount="' + id + '"' +
           (id === 'fee' ? ' checked' : '') + '><span>' + tx(key, vars) + '</span></label>';
       }
       out = '<h1>' + tx('next.payment.title') + '</h1><p>' +
         tx(spots ? 'next.payment.body' : 'next.payment.body.one',
-          { spots: spots, names: names, total: money(r.fees) }) + '</p>' + lapsed +
+          { spots: spots, names: names, total: money(due) }) + '</p>' + lapsed +
         '<div class="picks"><p>' + tx('next.payment.choose') + '</p>' +
-        amt(r.fees, 'fee', 'next.payment.minimum', { total: money(r.fees) }) +
-        (sug > r.fees ? amt(sug, 'suggested', 'next.payment.suggested', { total: money(sug) }) : '') +
+        amt(due, 'fee', 'next.payment.minimum', { total: money(due) }) +
+        (sug > due ? amt(sug, 'suggested', 'next.payment.suggested', { total: money(sug) }) : '') +
         amt('custom', 'custom', 'next.payment.custom') +
         '<div id="amount-box" hidden><label>$<input type="number" id="amount-dollars" min="' +
-        Math.ceil(r.fees / 100) + '" step="1" value="' + Math.ceil(r.fees / 100) +
-        '" data-floor="' + r.fees + '"></label>' +
+        Math.ceil(due / 100) + '" step="1" value="' + Math.ceil(due / 100) +
+        '" data-floor="' + due + '"></label>' +
         '<p class="note">' + tx('next.payment.custom_help') + '</p></div></div>' +
-        '<button type="button" class="btn" data-act="pay">' + tx('next.payment.button', { total: money(r.fees) }) + '</button>' +
+        '<button type="button" class="btn" data-act="pay">' + tx('next.payment.button', { total: money(due) }) + '</button>' +
         // in rehearsal the button completes the step itself, so the
         // line about Stripe would be a lie
         (status && status.mode === 'live' ? '<p class="note">' + tx('next.payment.card') + '</p>' : '') +
@@ -1382,6 +1389,13 @@
       say(t('form.saving'));
       post('/reg/' + rid + '/edit?t=' + encodeURIComponent(token), model).then(function (d) {
         freeSave();
+        if (d.fees > d.fees_before && d.owing > 0) {
+          // the ship put the registration back at the payment step for
+          // the difference, so the pilgrim goes where it can be paid
+          leaving = manageWas;
+          location.hash = '#next/' + rid + '/' + token;
+          return;
+        }
         if (d.fees > d.fees_before) showError(t('manage.pay_more', { diff: money(d.fees - d.fees_before) }));
       }).catch(function (e) { freeSave(); say(''); showError(e.message); window.scrollTo(0, 0); });
     }

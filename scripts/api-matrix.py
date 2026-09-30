@@ -378,6 +378,7 @@ def run():
     code, d = curl('POST', API + f'/reg/{one_rid}/cancel?t={one_tok}', {})
     check('cancelling twice is 409', code == 409, code)
 
+    growing()
     checkin(ana_rid, w2_rid)
     selfcheckin(ana_rid, ana_tok)
     backoffice(ana_rid)
@@ -391,6 +392,54 @@ def run():
     check('a draft after close is 403', code == 403, (code, d))
     s8 = status()
     check('status says closed', s8['open'] is False, s8['open'])
+
+
+def growing():
+    """A paid registration that grows a person owes the difference, and
+    the difference has to be payable: the fee rises, what was taken does
+    not, and the registration goes back to the payment step for the
+    rest. Stub mode asks for no amount, so what is checked here is the
+    record; the floor on a live amount is +start-checkout's."""
+    p = party('full', 'matrix-grow@example.com', [person('Gia', 'Grower')])
+    code, d = curl('POST', API + '/submit', p)
+    check('a party of one owes one fee', code == 200 and d['fees'] == 7500, (code, d))
+    g_rid, g_tok = d['rid'], d['token']
+    settle()
+    curl('POST', API + f'/reg/{g_rid}/sign?t={g_tok}', {})
+    settle()
+    curl('POST', API + f'/reg/{g_rid}/pay?t={g_tok}', {})
+    settle()
+    code, d = reg(g_rid, g_tok)
+    check('the one person is complete and paid', code == 200 and d['status'] == 'complete' and d['payment']['amount'] == 7500, (code, d))
+    grown = party('full', 'matrix-grow@example.com',
+                  [person('Gia', 'Grower'), person('Hal', 'Grower'), person('Ivy', 'Grower')])
+    code, d = curl('POST', API + f'/reg/{g_rid}/edit?t={g_tok}', grown)
+    check('the edit says what the fee was, what it is, and what is owed',
+          code == 200 and (d['fees_before'], d['fees'], d['owing']) == (7500, 22500, 15000), (code, d))
+    settle()
+    code, d = reg(g_rid, g_tok)
+    check('a grown registration stands at the payment step again', code == 200 and d['status'] == 'payment', (code, d))
+    check('and keeps what it already paid', d['payment']['amount'] == 7500 and d['fees'] == 22500, (d['payment'], d['fees']))
+    code, h = admin('GET', '/reg/' + g_rid)
+    check('the history says why it moved',
+          any('rose above what was paid' in st['what'] for st in h['history']), [st['what'] for st in h['history']])
+    code, d = curl('POST', API + f'/reg/{g_rid}/pay?t={g_tok}', {})
+    check('the difference can be paid', code == 200 and d['next'] == 'complete', (code, d))
+    settle()
+    code, d = reg(g_rid, g_tok)
+    check('both payments are on the record, not just the last',
+          d['status'] == 'complete' and d['payment']['amount'] == 22500, (d['status'], d['payment']))
+    code, d = curl('POST', API + f'/reg/{g_rid}/edit?t={g_tok}', grown)
+    check('an edit that adds nobody leaves a paid registration alone', d['owing'] == 0, d)
+    settle()
+    code, d = reg(g_rid, g_tok)
+    check('so it is still complete', d['status'] == 'complete', d['status'])
+    code, d = admin('GET', '/regs')
+    r = next((x for x in d['regs'] if x['id'] == g_rid), {})
+    check('the report row carries the fee and what was taken, so a shortfall shows',
+          (r.get('fees'), r.get('amount')) == (22500, 22500), (r.get('fees'), r.get('amount')))
+    admin('POST', '/reg/' + g_rid, {'op': 'cancel', 'note': 'matrix cleanup'})
+    settle()
 
 
 def checkin(done_rid, waiting_rid):
