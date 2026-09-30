@@ -175,6 +175,71 @@
     (expect !>((bad '2026-01-01T00:60:00Z')))
     (expect !>((bad '2026-01-01T00:00:60Z')))
   ==
+::  +test-bambino-only-sunday: the Bambino Camino is Sunday and the short
+::  walk. Anything a page might send from the rest of the weekend is
+::  cleared on the way in, because the roster, the day counts and both
+::  spreadsheets read the stored person: a Friday Mass left set would put
+::  a Bambino pilgrim on Friday's list for a day they never signed up
+::  for. The motorcoach is not a day's event and is left alone.
+::
+++  test-bambino-only-sunday
+  =/  everything=json
+    %-  jo
+    '''
+    {"track":"bambino","together":false,"assistance":false,"org":"","why":"",
+     "contact":{"email":"b@c.org","phone":"904-555-0100","street":"1 Beach Rd",
+       "city":"JB","state":"FL","zip":"32250"},
+     "people":[{"first":"Bea","last":"Bino","child":false,
+       "days":{"fri":true,"sat":true,"sun":true},"sun_ten":true,
+       "social_fri":true,"social_sat":true,"mass_fri":true,"mass_sat":true,
+       "mass_sun":true,"holy_hour":true,"bus":true,"trolley":true,
+       "first_bsc":false,"knight_dame":false,"volunteer":false}]}
+    '''
+  =/  got  (de-input:reg everything &)
+  ?:  ?=(%| -.got)  (expect-eq !>('read') !>(p.got))
+  =/  p=person:reg  (first-of people.p.got)
+  ;:  weld
+    (expect !>(!fri.days.p))
+    (expect !>(!sat.days.p))
+    (expect !>(sun.days.p))
+    (expect !>(!sun-ten.p))
+    (expect !>(!mass-fri.p))
+    (expect !>(!mass-sat.p))
+    (expect !>(!holy-hour.p))
+    (expect !>(!social-fri.p))
+    (expect !>(!social-sat.p))
+    ::  Sunday's own, and the ride, are theirs to keep
+    (expect !>(mass-sun.p))
+    (expect !>(trolley.p))
+    (expect !>(bus.p))
+  ==
+::  +test-full-keeps-its-weekend: the same document on the full track is
+::  left exactly as it came, so the rule is the Bambino track's alone
+::
+++  test-full-keeps-its-weekend
+  =/  everything=json
+    %-  jo
+    '''
+    {"track":"full","together":false,"assistance":false,"org":"","why":"",
+     "contact":{"email":"f@c.org","phone":"904-555-0100","street":"1 Beach Rd",
+       "city":"JB","state":"FL","zip":"32250"},
+     "people":[{"first":"Fay","last":"Full","child":false,
+       "days":{"fri":true,"sat":true,"sun":true},"sun_ten":true,
+       "social_fri":true,"social_sat":true,"mass_fri":true,"mass_sat":true,
+       "mass_sun":true,"holy_hour":true,"bus":true,"trolley":true,
+       "first_bsc":false,"knight_dame":false,"volunteer":false}]}
+    '''
+  =/  got  (de-input:reg everything &)
+  ?:  ?=(%| -.got)  (expect-eq !>('read') !>(p.got))
+  =/  p=person:reg  (first-of people.p.got)
+  ;:  weld
+    (expect !>(fri.days.p))
+    (expect !>(sat.days.p))
+    (expect !>(sun-ten.p))
+    (expect !>(mass-fri.p))
+    (expect !>(social-sat.p))
+    (expect !>(holy-hour.p))
+  ==
 ::  ==  decoders
 ::
 ++  test-de-person

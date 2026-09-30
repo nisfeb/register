@@ -477,7 +477,37 @@
   ?:  ?=(%| -.ps)  [%| p.ps]
   =/  tog=?  (gb jon 'together')
   =/  people=(list person)  ?:(tog (together p.ps) p.ps)
-  [%& [track p.ct p.org p.why (gb jon 'assistance') tog people]]
+  ::  after +together, so a party copying the first person's weekend is
+  ::  cut down too
+  =/  final=(list person)
+    ?.  =(%bambino track)  people
+    (turn people only-sunday)
+  [%& [track p.ct p.org p.why (gb jon 'assistance') tog final]]
+::  +only-sunday: what a Bambino Camino pilgrim is signed up for.
+::
+::  The Bambino Camino is Sunday, and it is the short walk from Vilano
+::  Beach. Nothing else in the weekend is theirs to choose. This clears
+::  the rest rather than trusting the page to hide it, because the
+::  roster, the day counts, the reports and both spreadsheets all read
+::  the stored person: a Friday Mass left set on a Bambino pilgrim would
+::  put them on Friday's list and in Friday's numbers, for a day they
+::  never signed up for.
+::
+::  The motorcoach is left alone. It is not a day's event, and a Bambino
+::  pilgrim needs the ride to the start like anyone else.
+::
+++  only-sunday
+  |=  p=person
+  ^-  person
+  %=  p
+    days        [fri=| sat=| sun=sun.days.p]
+    sun-ten     |
+    mass-fri    |
+    mass-sat    |
+    holy-hour   |
+    social-fri  |
+    social-sat  |
+  ==
 ::  +keep-checkins: an edit replaces the people but keeps each position's
 ::  check-ins, so a name fix on the beach does not lose a day
 ::

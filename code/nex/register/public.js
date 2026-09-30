@@ -254,7 +254,7 @@
     'form.social_fri.short', 'form.social_sat.short',
     'track.full', 'track.bambino',
     'next.payment.spots', 'next.payment.body.one', 'next.payment.too_low',
-    'next.payment.card', 'waiver.stale', 'form.sunday.closed',
+    'next.payment.card', 'waiver.stale', 'form.sunday.closed', 'form.saturday.closed',
     'manage.full', 'manage.closed_already', 'manage.closes_today', 'manage.closes_tomorrow',
     'next.draft.title', 'next.draft.body',
     'manage.closed', 'manage.pay_more', 'manage.cancel.confirm', 'stub.banner',
@@ -527,20 +527,11 @@
           check(k + 'trolley', 'form.trolley', p.trolley)
         : '<p class="closed">' + tx('form.sunday.closed') + '</p>');
     } else {
-      // The Bambino pilgrim walks on Sunday and is welcome at everything
-      // else in the weekend. These were once one group called "Also this
-      // weekend", and nobody could tell which day any of it was on: a
-      // Mass label names its church and a social names its restaurant,
-      // and the day was only ever supplied by the heading above them.
-      // So they get the same day headings as the full track.
+      // The Bambino Camino is Sunday, and it is the short walk: no
+      // choice of distance, and nothing from Friday or Saturday. The
+      // ship clears those fields anyway (+only-sunday), so this is the
+      // same rule said twice, which is what it deserves.
       out += group(tx('form.days'), check(k + 'days.sun', 'form.sun.bambino', p.days.sun));
-      out += group(tx('form.friday.title'),
-        check(k + 'mass_fri', 'form.mass_fri', p.mass_fri) +
-        check(k + 'holy_hour', 'form.holy_hour', p.holy_hour) +
-        socialRow(k + 'social_fri', 'form.social_fri', p.social_fri, 'social_fri'));
-      out += group(tx('form.saturday.title'),
-        check(k + 'mass_sat', 'form.mass_sat', p.mass_sat) +
-        socialRow(k + 'social_sat', 'form.social_sat', p.social_sat, 'social_sat'));
       out += group(tx('form.sunday.title'),
         check(k + 'mass_sun', 'form.mass_sun', p.mass_sun) +
         check(k + 'trolley', 'form.trolley', p.trolley));
@@ -881,14 +872,20 @@
   function fixtureModel(track) {
     var m = blankModel(track);
     m.people[0].days.sun = true;
-    m.people[0].mass_fri = true;
     m.people[0].mass_sun = true;
     m.people[0].trolley = true;
+    // a Bambino pilgrim has no Friday, so the fixture must not invent one
     if (track !== 'full') return m;
+    m.people[0].mass_fri = true;
     m.people.push(blankPerson(track));
     m.people[0].first = 'Ana';
     m.people[0].last = 'Silva';
+    // all three days open, so every day's Mass, Holy Hour and social is
+    // on screen for an organizer editing the words. The three "check
+    // this day to see its events" lines are under Other strings.
     m.people[0].days.fri = true;
+    m.people[0].days.sat = true;
+    m.people[0].mass_sat = true;
     m.people[0].sun_ten = true;
     m.people[1] = copyChoices(m.people[0], m.people[1]);
     // the second person is a child, so the fee table shows the word a
