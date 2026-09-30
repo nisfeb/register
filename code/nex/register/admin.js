@@ -1242,12 +1242,37 @@
   // the email templates, and only those. An email is on no page an
   // organizer can open, so it cannot be edited in place; every other
   // string is edited on the public page with Edit text.
+  // Every word in curly brackets the ship knows how to fill. This list
+  // is +send-mail's own: if a variable is added there it belongs here.
+  var MAIL_VARS = [
+    ['first', 'The first name of whoever signed up.', 'Margaret'],
+    ['link', 'Their own private link. Which page it opens depends on the email: the check-in email opens check-in, the ones that want money open the next step, the rest open their registration.', 'https://…/#manage/a1b2c3d4e5/…'],
+    ['total', 'The registration fee for the whole party.', '$150.00'],
+    ['track', 'Which walk they are on.', 'full Camino'],
+    ['people', 'How many people are on the registration.', '3'],
+    ['position', 'Their number on the wait list. 0 if they are not on it.', '4'],
+    ['day', 'Which day of the walk. Only the check-in email has one; anywhere else it comes out empty.', 'Saturday'],
+    ['email', 'The address the email is going to.', 'm.alvarez@example.com'],
+    ['site', 'The address of the public sign-up page.', 'https://…/apps/register/'],
+    ['event', 'What the event is called, from Settings.', 'Baby Steps Camino 2026'],
+  ];
+  function mailLegend() {
+    return '<div class="card"><h3>Words the ship fills in</h3>' +
+      '<p class="help">Anything in double curly brackets is replaced when the email is sent. ' +
+      'You may move one, put words around it, or use it twice. You may not lose one that is ' +
+      'already in a template: the save is refused and tells you which.</p>' +
+      '<table class="legend"><thead><tr><th>Write this</th><th>What it becomes</th><th>For example</th></tr></thead><tbody>' +
+      MAIL_VARS.map(function (v) {
+        return '<tr><td><code>{{' + v[0] + '}}</code></td><td>' + esc(v[1]) +
+          '</td><td class="eg">' + esc(v[2]) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
   function emailsView() {
     var by = mailGroups(copyDoc);
     var names = Object.keys(by).sort();
     var out = '<h1>Emails</h1><p class="muted">The templates the ship sends. ' +
       'Every other string a pilgrim reads is edited on the public page itself: ' +
-      'open it as the owner and press Edit text.</p>';
+      'open it as the owner and press Edit text.</p>' + mailLegend();
     if (!names.length) return out + '<p class="muted">No email templates yet.</p>';
     names.forEach(function (n) {
       var subj = by[n].subject, body = by[n].body;

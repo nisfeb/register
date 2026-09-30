@@ -233,18 +233,114 @@
 ::  records the fingerprint of whatever text was actually shown.
 ::
 ++  starter-waiver
+  ::  The Order of Malta's own Release, Waiver, Indemnification and
+  ::  Assumption of Risk Agreement for the Baby Steps Camino, transcribed
+  ::  from CaminoWaiver2025.pdf word for word, including its own spelling.
+  ::  The paper form's blank signature lines are not here: the pilgrim
+  ::  signs by reading to the end, ticking the box and pressing Adopt and
+  ::  sign, and the ship records the fingerprint of the exact wording they
+  ::  were shown.
+  ::
+  ::  The organizers own this text like every other string: it is edited
+  ::  on the page, under Edit text, The agreement. What is here is only
+  ::  what a ship starts with.
+  ::
   ^-  json
   :-  %s
   %+  rap  3
-  :~  'REPLACE THIS WITH THE WAIVER THE ORGANIZERS USE. Open the registration page as the owner, press Edit text, and paste the agreed wording here.'
+  :~
+      'I acknowledge and affirm that my participation in this Event is'
+      ' completely voluntary on my part, and that I am in no way relying'
+      ' on the Hosts as defined below for any direction, training,'
+      ' support, food, shelter, clothing, medical care, transportation or'
+      ' any support of any kind. I undertake this Event on my own in a'
+      ' show of support for the Event and the Hosts, and I am in no way'
+      ' joined to or a part of the Hosts\' groups, or any of them. I am'
+      ' not under the supervision or direction of the Hosts, or any of'
+      ' them. By my participation I merely elect to walk the same route on'
+      ' the same days as the Hosts, in no way relying on the Hosts in any'
+      ' way, shape, manner of form.'
       nl  nl
-      'The Baby Steps Camino is a walk of about ten miles a day along a public beach, in December, in weather nobody controls. I understand that walking it carries risks, including injury from the terrain, the water, the weather and the traffic at road crossings, and I accept those risks for myself and for everyone in my party, children included.'
+      '1. In recognition of the risk of personal injury and/or property'
+      ' damage while participating in the Baby Steps Camino Pilgrimage'
+      ' (the "Event"), and as consideration for the right to participate'
+      ' in the Event, I hereby for myself, my heirs, executors,'
+      ' administrators, assigns, or personal representatives knowingly and'
+      ' voluntarily enter into this Waiver and Release of Liability and'
+      ' Indemnification Agreement (the "Agreement") and hereby waive any'
+      ' and all rights, claims or causes of action of any kind whatsoever'
+      ' arising out of my participation in the Event, and do hereby'
+      ' release and forever discharge the Sovereign Military Hospitaller'
+      ' Order of St. John of Jerusalem, of Rhodes, and of Malta (Order),'
+      ' and the Sovereign Military Hospitaller Order of St. John of'
+      ' Jerusalem, of Rhodes, and of Malta, American Association, USA, and'
+      ' all their affiliates, managers, directors, members of Board of'
+      ' Directors, officers, members, Hospitallers, Area Chairs, agents,'
+      ' attorneys, employees, volunteers, heirs (born and unborn),'
+      ' representatives, predecessors, successors and assigns, the Diocese'
+      ' of St. Augustine, and its agents, attorneys, directors, officers,'
+      ' employees, volunteers, heirs, representatives, predecessors,'
+      ' successors and assigns and all sponsors and/or beneficiaries of'
+      ' the Event (collectively, the "Hosts") from any and all liability,'
+      ' claims, demands, damages, actions, or causes of action now'
+      ' existing or which hereinafter may arise as a result of my'
+      ' participation in the Event, whether foreseen or unforeseen,'
+      ' whether any injury or damage is caused solely or partially by the'
+      ' negligence of the Hosts, the negligence of myself or third'
+      ' parties, the conditions of the course or any other cause'
+      ' whatsoever, including without limitation active, passive, or gross'
+      ' negligence. I expressly voluntarily assume any and all risk,'
+      ' including injury to my person and property which may be caused as'
+      ' a result of my participation in the Event, whether any injury or'
+      ' damage is caused solely or partially by the negligence of the'
+      ' Hosts, the negligence of myself or third parties, the conditions'
+      ' of the course or any other cause whatsoever, including without'
+      ' limitation active, passive, or gross negligence by any party.'
       nl  nl
-      'I release the Sovereign Military Hospitaller Order of Saint John of Jerusalem of Rhodes and of Malta, American Association, its members and its volunteers from any claim arising out of my taking part, except for their own gross negligence.'
+      '2. I agree to indemnify, defend and hold harmless the Hosts'
+      ' against any and all claims, suits or actions of any kind'
+      ' whatsoever for liability, damages, loss, compensation or otherwise'
+      ' brought by me or anyone on my behalf, including costs and'
+      ' attorneys fees, on account of claims made by me or by anyone on my'
+      ' behalf, whether foreseen or unforeseen, whether any injury or'
+      ' damage is caused solely or partially by the negligence of the'
+      ' Hosts, the negligence of myself or third parties, the conditions'
+      ' of the course or any other cause whatsoever, including without'
+      ' limitation active, passive, or gross negligence by any party.'
       nl  nl
-      'I confirm that everyone in my party is fit to walk the distance they have signed up for, and that a child in my party walks in my care. I will follow the directions of the organizers and the volunteers on the day.'
+      '3. I attest that I am physically fit and have trained sufficiently'
+      ' for the Event, and that a licensed medical doctor has recently'
+      ' verified my physical condition. I will not knowingly push myself'
+      ' beyond my physical limits at any time during the Event. No Host is'
+      ' responsible for first aid or other medical treatment of any kind'
+      ' for me, including without limitation emergency medical treatment.'
       nl  nl
-      'I agree that photographs taken during the pilgrimage may be used by the organizers.'
+      '4. I recognize that various photographs, video recordings, and'
+      ' other media may be taken during the Event. I hereby grant the'
+      ' Hosts full permission to use any photographs, video recordings, or'
+      ' other media of the Event that contain my likeness for the purpose'
+      ' of promoting the Hosts, or any of them, and/or the Event, or for'
+      ' any purpose deemed appropriate by the Hosts.'
+      nl  nl
+      '5. For safety purposes, I agree to refrain from using headphones'
+      ' and/or cellular phones at any time that I am walking outside a'
+      ' designated pedestrian lane, sidewalk, trail, path or beach during'
+      ' the Event. I will be responsible for my physical condition,'
+      ' remaining adequately nourished and hydrated, and for all necessary'
+      ' precautions concerning exposure to sun, wildlife, surf, weather'
+      ' and the elements in general.'
+      nl  nl
+      '6. I acknowledge that this Agreement is the entire agreement'
+      ' between the Hosts and me, and that this Agreement cannot be'
+      ' modified or changed in any way by representations or statements of'
+      ' the Hosts or by me.'
+      nl  nl
+      '7. I hereby declare that I have read and fully understand this'
+      ' Agreement in its entirety and that I am competent to sign this'
+      ' Agreement. If I am signing on behalf of a minor, I represent that'
+      ' I have full legal authority to sign on behalf of such minor. By'
+      ' signing below, I agree to be bound by all of the terms and'
+      ' conditions contained in this Agreement.'
   ==
 ++  hash-text
   |=  t=@t
@@ -1835,7 +1931,7 @@
       ['manage.cancel' s+'Cancel the whole registration']
       ['manage.cancel.confirm' s+'Cancel this registration for everyone in the party? Your spots are released and this cannot be undone.']
       ['manage.closed' s+'Changes are closed. Contact us at register@babystepscamino.com.']
-      ['waiver.title' s+'The pilgrim\'s agreement']
+      ['waiver.title' s+'Order of Malta "Baby Steps Camino" Release, Waiver, Indemnification and Assumption of Risk Agreement']
       ['waiver.intro' s+'Please read this in full. You are agreeing for yourself and for everyone in your party: {{names}}.']
       ['waiver.text' starter-waiver]
       ['waiver.agree' s+'I have read and agree to the terms above, for myself and for everyone in my party.']
@@ -1862,24 +1958,136 @@
       ['checkin.done' s+'You\'re checked in. A volunteer at the start has your wristband.']
       ['checkin.done.some' s+'{{names}} checked in. Anyone else can use this link when they arrive.']
       ['checkin.nobody' s+'Tick at least one person.']
-      ['email.confirmation.subject' s+'You are registered for the Baby Steps Camino']
-      ['email.confirmation.body' s+'{{first}}, you are registered. Change or cancel your registration any time before the event at {{link}}']
+      ['email.confirmation.subject' s+'You are registered for the {{event}}']
+      :-  'email.confirmation.body'
+      :-  %s
+      %+  rap  3
+      :~
+          '{{first}}, you are registered for the {{track}}, and your'
+          ' registration fee of {{total}} has been received.'
+          nl  nl
+          'Keep this link. It is how you change your answers, add or'
+          ' remove somebody, or cancel, and on each morning of the walk it'
+          ' is how you check in:'
+          nl  nl
+          '{{link}}'
+          nl  nl
+          'See you on the beach.'
+      ==
       ['email.manage.subject' s+'Your Baby Steps Camino registration link']
-      ['email.manage.body' s+'{{first}}, here is the link to view, change or cancel your registration: {{link}}']
+      :-  'email.manage.body'
+      :-  %s
+      %+  rap  3
+      :~
+          '{{first}}, here is the link to your Baby Steps Camino'
+          ' registration. Use it to see what you signed up for, change it,'
+          ' or cancel:'
+          nl  nl
+          '{{link}}'
+          nl  nl
+          'This link is private. Anybody who has it can change your'
+          ' registration, so please do not post it anywhere.'
+      ==
       ['email.waitlist.subject' s+'You are on the Baby Steps Camino wait list']
-      ['email.waitlist.body' s+'{{first}}, the track you chose is full. You are number {{position}} on the wait list and we will email you if a spot opens.']
+      :-  'email.waitlist.body'
+      :-  %s
+      %+  rap  3
+      :~
+          '{{first}}, the {{track}} is full at the moment, so your'
+          ' registration is on the wait list. You are number {{position}}.'
+          nl  nl
+          'Nothing is owed yet. If a spot opens we will email you and'
+          ' hold it for 48 hours. In past years many have.'
+          nl  nl
+          'You can see your place, or give it up, here:'
+          nl  nl
+          '{{link}}'
+      ==
       ['email.promoted.subject' s+'A spot opened for you on the Baby Steps Camino']
-      ['email.promoted.body' s+'{{first}}, a spot opened. Sign the waiver and pay within 48 hours to keep it: {{link}}']
+      :-  'email.promoted.body'
+      :-  %s
+      %+  rap  3
+      :~
+          '{{first}}, a spot has opened on the {{track}} and it is yours.'
+          nl  nl
+          'Sign the agreement and pay the {{total}} registration fee'
+          ' within 48 hours to keep it:'
+          nl  nl
+          '{{link}}'
+          nl  nl
+          'After that the spot goes to the next person on the list.'
+      ==
       ['email.assistance_approved.subject' s+'Your Baby Steps Camino registration is complete']
-      ['email.assistance_approved.body' s+'{{first}}, your request for assistance was approved and you are registered. Your registration: {{link}}']
+      :-  'email.assistance_approved.body'
+      :-  %s
+      %+  rap  3
+      :~
+          '{{first}}, your request for financial assistance has been'
+          ' approved and you are registered for the {{track}}. There is'
+          ' nothing further to pay.'
+          nl  nl
+          'Your registration, and your check-in link on each morning of'
+          ' the walk, are here:'
+          nl  nl
+          '{{link}}'
+          nl  nl
+          'See you on the beach.'
+      ==
       ['email.assistance_declined.subject' s+'About your Baby Steps Camino registration']
-      ['email.assistance_declined.body' s+'{{first}}, we could not approve assistance this time. Pay the registration fee to complete your registration: {{link}}']
+      :-  'email.assistance_declined.body'
+      :-  %s
+      %+  rap  3
+      :~
+          '{{first}}, we are sorry: we were not able to approve financial'
+          ' assistance this time. There are more requests than we can'
+          ' meet.'
+          nl  nl
+          'Your spot is still held. To keep it, pay the {{total}}'
+          ' registration fee here:'
+          nl  nl
+          '{{link}}'
+          nl  nl
+          'If that is not possible, please write to us rather than let it'
+          ' go.'
+      ==
       ['email.reminder.subject' s+'Finish your Baby Steps Camino registration']
-      ['email.reminder.body' s+'{{first}}, your registration is not finished yet. Pick up where you left off: {{link}}']
+      :-  'email.reminder.body'
+      :-  %s
+      %+  rap  3
+      :~
+          '{{first}}, your Baby Steps Camino registration is not'
+          ' finished, and your spot is held only for a while.'
+          nl  nl
+          'Pick up where you left off:'
+          nl  nl
+          '{{link}}'
+      ==
       ['email.cancelled.subject' s+'Your Baby Steps Camino registration was cancelled']
-      ['email.cancelled.body' s+'{{first}}, your registration was cancelled. If that was a mistake, register again at {{site}}']
+      :-  'email.cancelled.body'
+      :-  %s
+      %+  rap  3
+      :~
+          '{{first}}, your Baby Steps Camino registration has been'
+          ' cancelled and your spot has gone back to the list. Nothing'
+          ' further is owed.'
+          nl  nl
+          'If that was not what you meant, or if you change your mind,'
+          ' you can register again at {{site}}'
+      ==
       ['email.checkin.subject' s+'Check in for {{day}}\'s walk']
-      ['email.checkin.body' s+'Good morning, {{first}}. When you reach the start today, open this link and check in: {{link}}. A volunteer will give you your wristband.']
+      :-  'email.checkin.body'
+      :-  %s
+      %+  rap  3
+      :~
+          'Good morning, {{first}}. Today is {{day}} of the {{event}}.'
+          nl  nl
+          'When you reach the start, open this link and check in. A'
+          ' volunteer will give you your wristband:'
+          nl  nl
+          '{{link}}'
+          nl  nl
+          'Anyone walking with you is checked in from the same link.'
+      ==
   ==
 ::  +with-starter: a stored copy document with the strings a release
 ::  added filled in from the starter.

@@ -605,7 +605,10 @@
 ::
 ++  send-mail
   |=  [r=reg:reg tpl=@t mark=@t vars=(list [@t @t]) by=@t]
-  =/  m  (fiber:fiber:nexus ,?)
+  ::  answers the subject as well as the outcome, so a caller that shows
+  ::  an organizer what went out shows what really went out rather than
+  ::  filling the template a second time from a shorter list
+  =/  m  (fiber:fiber:nexus ,[ok=? subj=@t])
   ^-  form:m
   ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
   ;<  raw-cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
@@ -616,8 +619,18 @@
   =/  from=@t  (gs:reg mj 'from')
   =/  to=@t  email.contact.r
   =/  site=@t  (site-url sj)
+  ::  everything a template may name. The legend on the Emails page is
+  ::  this list; if a variable is added here it belongs there too.
   =/  all=(list [@t @t])
-    (weld vars `(list [@t @t])`~[['site' site] ['link' (mail-link site tpl r)]])
+    %+  weld  vars
+    ^-  (list [@t @t])
+    :~  ['site' site]
+        ['link' (mail-link site tpl r)]
+        ['total' (cat 3 '$' (dollars:reg (fees-total:reg s r)))]
+        ['track' (gs:reg cj ?:(=(%bambino track.r) 'track.bambino' 'track.full'))]
+        ['people' (crip (a-co:co (lent people.r)))]
+        ['event' (gs:reg (gj:reg sj 'event') 'name')]
+    ==
   =/  raws=@t  (gs:reg cj (rap 3 ~['email.' tpl '.subject']))
   =/  rawb=@t  (gs:reg cj (rap 3 ~['email.' tpl '.body']))
   =/  subj=@t
@@ -634,7 +647,7 @@
         ['by' s+?:(live 'mail' 'stub')]  ['rid' s+id.r]
     ==
   ;<  *  bind:m  (poke-writer note)
-  (pure:m ok)
+  (pure:m [ok subj])
 ++  poke-writer
   |=  jon=json
   =/  m  (fiber:fiber:nexus ,(unit tang))
@@ -2217,10 +2230,10 @@
   ::  once the setting is fixed; nothing here has been marked as sent.
   ?:  (gte bad 3)  (pure:m sent)
   =/  r=reg:reg  i.batch
-  ;<  ok=?  bind:m  (send-mail r 'checkin' mark (mail-vars r 0 day) by)
+  ;<  got=[ok=? subj=@t]  bind:m  (send-mail r 'checkin' mark (mail-vars r 0 day) by)
   ::  a send that did not go out gets no history line, so the next
   ::  press of the button picks it up again
-  ?.  ok  (mail-each t.batch mark day by sent +(bad))
+  ?.  ok.got  (mail-each t.batch mark day by sent +(bad))
   =/  line=json
     (pairs:enjs:format ~[['op' s+'mail-sent'] ['rid' s+id.r] ['what' s+mark] ['by' s+by]])
   ;<  err2=(unit tang)  bind:m  (poke-writer line)
@@ -2359,13 +2372,9 @@
   =/  day-word=@t  ?~(today '' ?+(u.today 'Friday' %sat 'Saturday', %sun 'Sunday'))
   =/  mark=@t  ?:(=('checkin' tpl) (cat 3 'email.checkin.' (need today)) (rap 3 'email.' tpl ~))
   =/  cj=json  (with-starter:reg raw-cj)
-  =/  raw=@t  (gs:reg cj (rap 3 'email.' tpl '.subject' ~))
   =/  vars=(list [@t @t])  (mail-vars r (position-of:reg regs r) day-word)
-  =/  subj=@t
-    ?:  =('' raw)  (rap 3 'no copy for email.' tpl '.subject' ~)
-    (fill:reg raw vars)
-  ;<  ok=?  bind:m  (send-mail r tpl mark vars 'admin')
-  ?.  ok  (send-err eyre-id 502 'the mail did not go out; try again in a minute')
+  ;<  got=[ok=? subj=@t]  bind:m  (send-mail r tpl mark vars 'admin')
+  ?.  ok.got  (send-err eyre-id 502 'the mail did not go out; try again in a minute')
   ::  a check-in link sent by hand counts as sent, so the morning press
   ::  does not send it again
   ;<  err2=(unit tang)  bind:m
@@ -2373,5 +2382,5 @@
     (poke-writer (pairs:enjs:format ~[['op' s+'mail-sent'] ['rid' s+id.r] ['what' s+mark] ['by' s+'admin']]))
   ?^  err2  (send-err eyre-id 500 'the writer refused the poke')
   %^  send-json  eyre-id  200
-  (pairs:enjs:format ~[['ok' b+&] ['template' s+tpl] ['subject' s+subj]])
+  (pairs:enjs:format ~[['ok' b+&] ['template' s+tpl] ['subject' s+subj.got]])
 --

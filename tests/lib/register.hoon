@@ -585,6 +585,35 @@
 ::  copy document for ever, so the strings a release adds are filled in on
 ::  the way out. What somebody edited is never touched.
 ::
+::  +test-email-vars: every {{word}} in every email template is one the
+::  ship knows how to fill.
+::
+::  The way it is checked is the way the ship fills them: hand +fill the
+::  whole list of names, and nothing in double brackets should survive.
+::  A template that names {{name}} when the ship only knows {{first}}
+::  would otherwise go out to a pilgrim with the brackets still in it.
+::
+::  This list is +send-mail's, and the legend on the Emails page is the
+::  same list again. Adding a variable means touching all three.
+::
+++  test-email-vars
+  =/  known=(list [@t @t])
+    :~  ['first' 'x']  ['link' 'x']  ['total' 'x']  ['track' 'x']
+        ['people' 'x']  ['position' 'x']  ['day' 'x']  ['email' 'x']
+        ['site' 'x']  ['event' 'x']
+    ==
+  =/  c=json  starter-copy:reg
+  ?.  ?=([%o *] c)  (expect-eq !>('an object') !>(c))
+  =/  keys=(list @t)  ~(tap in ~(key by p.c))
+  |-  ^-  tang
+  ?~  keys  ~
+  =/  k=@t  i.keys
+  ?.  =('email.' (end [3 6] k))  $(keys t.keys)
+  =/  filled=@t  (fill:reg (gs:reg c k) known)
+  %+  weld
+    ::  the key is named in the failure, or a red line says nothing useful
+    (expect-eq !>([k '']) !>([k ?:(=(~ (find (trip '{{') (trip filled))) '' filled)]))
+  $(keys t.keys)
 ++  test-with-starter
   =/  old=json  (jo '{"landing.title": "Ours", "form.person": "Walker {{n}}"}')
   =/  got=json  (with-starter:reg old)
@@ -1038,11 +1067,18 @@
   =/  text=@t  (gs:reg c 'waiver.text')
   =/  h=@t  (hash-text:reg text)
   ;:  weld
-    ::  the starter terms are there, in paragraphs, and say to replace them
+    ::  the organizers' own agreement is there, whole, in paragraphs
     (expect !>(!=('' text)))
-    (expect !>((gth (met 3 text) 400)))
-    (expect !>(!=(~ (find "REPLACE THIS" (trip text)))))
+    (expect !>((gth (met 3 text) 5.000)))
     (expect !>(!=(~ (find ~[10 10] (trip text)))))
+    ::  the parties it releases and the clauses it is made of
+    (expect !>(!=(~ (find "Sovereign Military Hospitaller Order" (trip text)))))
+    (expect !>(!=(~ (find "Diocese of St. Augustine" (trip text)))))
+    (expect !>(!=(~ (find "7. I hereby declare" (trip text)))))
+    ::  and the placeholder it replaced is gone
+    (expect !>(=(~ (find "REPLACE THIS" (trip text)))))
+    ::  it fits the room the waiver key is given, with plenty to spare
+    (expect !>(!(over-cap:reg text (copy-cap:reg 'waiver.text'))))
     ::  the same words hash the same, a changed word does not
     (expect-eq !>(h) !>((hash-text:reg text)))
     (expect !>(!=(h (hash-text:reg (cat 3 text ' ')))))

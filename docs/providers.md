@@ -142,6 +142,24 @@ strings of their own — the trademark marks, the button labels, and
 and not what the library says. Always run it with no arguments first and
 read the list.
 
+## The emails themselves
+
+Nine templates, edited in the backoffice under **Emails**: confirmation,
+manage, wait list, promoted, assistance approved, assistance declined,
+reminder, cancelled and check-in. Each has a subject and a body, and the
+body may hold any of ten words in double curly brackets, which the card
+at the top of that page lists in full:
+
+`{{first}}` `{{link}}` `{{total}}` `{{track}}` `{{people}}`
+`{{position}}` `{{day}}` `{{email}}` `{{site}}` `{{event}}`
+
+They are filled by `+send-mail`, and the legend in `admin.js` and
+`+test-email-vars` in the suite are the same list written twice more.
+Adding one means touching all three; the test is what catches forgetting.
+
+An organizer may add a variable to a template but may not lose one that
+is already there — the save is refused and names it.
+
 ## The address suggestions
 
 The street box asks the ship, and the ship asks

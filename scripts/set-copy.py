@@ -26,14 +26,54 @@ API = HOST + '/apps/register/api'
 ACTOR = 'set-copy'
 
 
+CORD = r"'((?:[^'\\]|\\.)*)'"
+CORD_PAIR = re.compile(r"\['([a-z0-9_.]+)' s\+" + CORD + r"\]")
+
+
+def unescape(v):
+    return v.replace("\\'", "'").replace('\\\\', '\\')
+
+
+def arm_of(lib, name):
+    """the source of one ++ arm, up to the next one"""
+    start = lib.index('++  ' + name)
+    return lib[start:lib.index('\n++  ', start)]
+
+
+def rebuild(block):
+    """a run of cord literals and `nl` tokens, joined the way +rap does.
+    A Hoon cord cannot hold a newline, so a string with paragraphs in it
+    is written as cords with `nl` between them; this reads it back."""
+    out = []
+    for tok in re.finditer(r"::[^\n]*|" + CORD + r"|\bnl\b", block):
+        t = tok.group(0)
+        if t.startswith('::'):
+            continue                      # a comment, not part of the string
+        out.append('\n' if t == 'nl' else unescape(t[1:-1]))
+    return ''.join(out)
+
+
+BUILT = re.compile(
+    r"^      :-  '([a-z0-9_.]+)'\n"       # the key
+    r"      :-  %s\n"
+    r"      %\+  rap  3\n"
+    r"      :~\n"
+    r"(.*?)"                              # the cords and the nls
+    r"^      ==$",
+    re.M | re.S)
+
+
 def starter():
-    """the ['key' s+'value'] lines of +starter-copy, as the library has them"""
+    """every string the library ships, by key: the one-line ones, the
+    ones assembled out of cords, and the agreement in its own arm"""
     lib = open(os.path.join(REPO, 'code/lib/register.hoon')).read()
-    arm = lib[lib.index('++  starter-copy'):]
-    arm = arm[:arm.index('\n++  ')]
+    copy = arm_of(lib, 'starter-copy')
     out = {}
-    for k, v in re.findall(r"\['([a-z0-9_.]+)' s\+'((?:[^'\\]|\\.)*)'\]", arm):
-        out[k] = v.replace("\\'", "'").replace('\\\\', '\\')
+    for k, v in CORD_PAIR.findall(copy):
+        out[k] = unescape(v)
+    for k, block in BUILT.findall(copy):
+        out[k] = rebuild(block)
+    out['waiver.text'] = rebuild(arm_of(lib, 'starter-waiver').split(':~', 1)[1])
     return out
 
 
