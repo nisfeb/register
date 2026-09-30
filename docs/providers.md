@@ -119,6 +119,29 @@ Two consequences worth knowing:
 Take a backup before any upgrade anyway — *Backup → JSON bundle* in the
 backoffice, and the jam beside it.
 
+### The copy document cannot be damaged
+
+Three rules, and between them nothing a caller does can take an
+organizer's words away:
+
+1. **The pages write one key at a time.** Both the public page's inline
+   editing and the backoffice's Emails page use
+   `POST /api/admin/copy/set`, one key per call, and that route refuses
+   a key the library does not have.
+2. **The whole-document write merges.** `PUT /api/admin/copy` unions what
+   it is given over what is stored: a key it leaves out is kept, and a
+   key the library does not have is dropped. Nothing in the app uses this
+   route, which is exactly why it had to be made safe — it was the one
+   way left to replace the document, and a caller who sent the wrong
+   shape would have replaced every string with one key. That is not a
+   hypothetical; it happened once on the test ship while this was being
+   written, and the merge is what made it harmless.
+3. **Backups read the document raw.** `+read-bundle` reads `copy.json`
+   itself, not the `+with-starter` view, so a key the library has retired
+   still round-trips through a backup and a restore.
+
+The gate pins all three.
+
 ### Pushing a changed default to a ship
 
 `scripts/set-copy.py` is the tool for the second case. With no key names
@@ -177,3 +200,10 @@ ZIP around it.
 If Photon is down or slow the box is just a box: the route gives up after
 ten seconds and answers an empty list, and the form works as it always
 did.
+
+The route is public, and it is the only one that turns an inbound request
+into an outbound one, so it shuts itself when there is nothing to fill
+in: once the sign-up window and the change deadline have both passed it
+answers an empty list without asking anybody. Otherwise the app would
+stand open as a proxy to somebody else's free service for the rest of the
+year.

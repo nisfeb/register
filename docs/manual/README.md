@@ -3,7 +3,7 @@
 `register-manual.pdf` is the printed manual for the people who run the
 event: Susan, Bob and Beth in the backoffice, Sarah and her volunteers on
 the beach. It assumes no technical knowledge and no vocabulary from this
-repository. 51 pages, letter paper, large type, one picture per screen,
+repository. 52 pages, letter paper, large type, one picture per screen,
 in the event's own colours.
 
 ## Building it

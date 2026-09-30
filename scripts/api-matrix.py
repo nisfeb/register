@@ -847,6 +847,30 @@ def backoffice(live_rid):
     check('the rest of the copy document is untouched',
           code == 200 and len(d) == len(copy_before) and d['landing.intro'] == copy_before['landing.intro'],
           (len(d or {}), len(copy_before)))
+    # ---- the whole-document write, which nothing in the pages uses ----
+    # It is the only way to damage the copy document, so it is pinned:
+    # what it omits it keeps, what it names it changes, what it invents
+    # it drops. Without the first rule a caller that sent the wrong
+    # shape would replace every string an organizer wrote with one key.
+    code, whole = admin('GET', '/copy')
+    sent = dict(whole)
+    del sent['landing.intro']
+    sent['landing.meter'] = '{{percent}}% matrix'
+    sent['made.up.key'] = 'junk'
+    code, d = admin('PUT', '/copy', sent)
+    check('the owner may write the copy document whole', code == 200, (code, d))
+    settle()
+    code, after = admin('GET', '/copy')
+    check('a key the write left out is kept, not deleted',
+          after.get('landing.intro') == whole.get('landing.intro'), after.get('landing.intro'))
+    check('a key the write named is changed',
+          after.get('landing.meter') == '{{percent}}% matrix', after.get('landing.meter'))
+    check('a key the app does not have is refused, not stored',
+          'made.up.key' not in after, sorted(set(after) - set(whole)))
+    code, d = admin('POST', '/copy/set', {'key': 'landing.meter', 'value': whole['landing.meter']})
+    check('the meter string goes back', code == 200, (code, d))
+    settle()
+
     code, d = admin('POST', '/copy/set', {'key': 'landing.title', 'value': was})
     check('and the original string goes back', code == 200, (code, d))
     settle()

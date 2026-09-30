@@ -9,7 +9,7 @@
   var ADMIN = API + '/admin';
   var KEEP = '/grubbery/api/keep/apps/shell.shell/desks/register.desk/desk/data/register.register_app/beacon/rev';
   var SHRINE = 350;   // the Sunday capacity at the Shrine, reported not enforced
-  var TEMPLATES = ['confirmation', 'manage', 'promoted', 'assistance_approved',
+  var TEMPLATES = ['confirmation', 'manage', 'waitlist', 'promoted', 'assistance_approved',
     'assistance_declined', 'reminder', 'cancelled', 'checkin'];
   var DAYS = [['fri', 'Friday'], ['sat', 'Saturday'], ['sun', 'Sunday']];
   var ACTS = [['walk', 'Walk'], ['mass', 'Mass'], ['holy_hour', 'Holy Hour'],

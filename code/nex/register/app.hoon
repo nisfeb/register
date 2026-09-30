@@ -468,9 +468,29 @@
   |=  [name=@ta op=@t jon=json]
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
-  =/  doc=json  (gj:reg jon 'doc')
-  ?.  ?=([%o *] doc)  (refuse op 'doc: an object is required')
+  =/  sent=json  (gj:reg jon 'doc')
+  ?.  ?=([%o *] sent)  (refuse op 'doc: an object is required')
   ;<  cur=json  bind:m  (read-json (rf 0 / name))
+  ::  The copy document is MERGED, never replaced. A release may retire a
+  ::  key, and +with-starter then stops showing it; anything that read
+  ::  the document and wrote it back whole would take the organizer's own
+  ::  words away with it, silently and for good. Nothing in the app
+  ::  writes copy.json whole today — the pages write one key at a time —
+  ::  and this is what keeps that true if something ever does. The other
+  ::  documents are replaced as before, because a count has to be
+  ::  removable.
+  =/  doc=json
+    ?.  ?&(=(%'copy.json' name) ?=([%o *] cur))  sent
+    ::  and only strings the app actually has. A caller that sends the
+    ::  wrong shape then adds nothing; between the two rules this route
+    ::  can no longer damage the copy document at all, whatever it is
+    ::  handed. Proved by handing it a doubly wrapped document, which
+    ::  before the merge would have replaced every string with one key.
+    =/  keep=(map @t json)
+      %-  ~(gas by *(map @t json))
+      %+  skim  ~(tap by p.sent)
+      |=([k=@t *] (has-key:reg starter-copy:reg k))
+    [%o (~(uni by p.cur) keep)]
   ?:  =(cur doc)
     ;<  ~  bind:m  (note-rid op & 'unchanged' (by-of jon) '')
     (pure:m |)
@@ -918,6 +938,15 @@
   =/  want=@t  (end [3 80] q)
   =/  none=json  (pairs:enjs:format ~[['places' a+~]])
   ?:  (lth (met 3 want) 3)  (send-json eyre-id 200 none)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  s=settings:reg  bind:m  (read-settings 1)
+  ::  This is the one public route that turns a request into an outbound
+  ::  one, so it shuts when there is nothing to fill in. Nobody is typing
+  ::  an address once sign-ups have closed and the last change has been
+  ::  made; without this the app would stand open as a proxy to somebody
+  ::  else's free service for the rest of the year.
+  ?.  |((window-open:reg s now) (changes-open:reg s now))
+    (send-json eyre-id 200 none)
   ;<  res=[status=@ud body=@t]  bind:m
     %^  fetch  %places  ~s10
     :^  %'GET'
@@ -2356,9 +2385,13 @@
     ?|  =('confirmation' tpl)  =('manage' tpl)  =('promoted' tpl)
         =('assistance_approved' tpl)  =('assistance_declined' tpl)
         =('reminder' tpl)  =('cancelled' tpl)  =('checkin' tpl)
+        ::  the wait-list email goes out by itself on a wait-listed
+        ::  submit, which left it the one template an organizer could
+        ::  rewrite and never once see
+        =('waitlist' tpl)
     ==
   ?.  known
-    (send-err eyre-id 400 'template: not one of the eight')
+    (send-err eyre-id 400 'template: not one this ship sends')
   ;<  raw-cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
   ;<  now=@da  bind:m  get-time:io
