@@ -113,6 +113,12 @@
   =/  kind=@t  (gs u.jon 'type')
   ?.  =('checkout.session.' (end [3 17] kind))  ~
   =/  id=@t  (gs (gj (gj u.jon 'data') 'object') 'id')
+  ::  The route this feeds is public and unauthenticated, and answering
+  ::  it costs an outbound call to Stripe. Every Checkout session id
+  ::  begins cs_, so anything else is refused before that call is made.
+  ::  This is not a signature check and is not meant to be one; it only
+  ::  keeps rubbish from turning into traffic.
+  ?.  =('cs_' (end [3 3] id))  ~
   ?:(=('' id) ~ `id)
 ::  +read-livemode: whether the key that answered is a live key. Used by
 ::  the admin key check, which is the only thing that may say so.

@@ -14,7 +14,7 @@
 
 const { readFileSync } = require('fs');
 const { homedir } = require('os');
-const BASE = 'http://localhost:8080';
+const BASE = process.env.REG_BASE || 'http://localhost:8080';
 const PAGE = BASE + '/apps/register/';
 const API = BASE + '/apps/register/api';
 const CHROME = '/usr/bin/chromium';
@@ -26,7 +26,7 @@ const check = (m, c, d) => {
   if (!c) fails++;
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const cookie = readFileSync(homedir() + '/.config/lattice-fs/cookie', 'utf8').trim();
+const cookie = readFileSync(process.env.REG_COOKIE || homedir() + '/.config/lattice-fs/cookie', 'utf8').trim();
 const hdr = { 'content-type': 'application/json', cookie: cookie, 'x-actor': 'click' };
 const j = async (res) => { try { return await res.json(); } catch (e) { return {}; } };
 const post = (path, body, own) => fetch(API + path, { method: 'POST', headers: own ? hdr : { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });

@@ -14,7 +14,7 @@
 const { readFileSync } = require('fs');
 const { homedir } = require('os');
 
-const BASE = 'http://localhost:8080';
+const BASE = process.env.REG_BASE || 'http://localhost:8080';
 const PAGE = BASE + '/apps/register/';
 const CHROME = '/usr/bin/chromium';
 const PUPPETEER = '/home/sneagan/software/personal/lattice/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js';
@@ -70,7 +70,7 @@ const retype = async (page, key, text) => {
 
 async function main() {
   const puppeteer = (await import(PUPPETEER)).default;
-  const cookie = readFileSync(homedir() + '/.config/lattice-fs/cookie', 'utf8').trim();
+  const cookie = readFileSync(process.env.REG_COOKIE || homedir() + '/.config/lattice-fs/cookie', 'utf8').trim();
   const [cn, ...cr] = cookie.split('=');
   const api = BASE + '/apps/register/api';
   const before = await (await fetch(api + '/status')).json();
@@ -151,7 +151,7 @@ async function main() {
   await s.close();
 
   const p = await browser.newPage();
-  await p.setCookie({ name: cn, value: cr.join('='), domain: 'localhost', path: '/' });
+  await p.setCookie({ name: cn, value: cr.join('='), domain: new URL(BASE).hostname, path: '/' });
   p.on('pageerror', (e) => { console.log('  PAGE ERROR ' + e.message); fails++; });
   await p.goto(PAGE, { waitUntil: 'networkidle2' });
   await p.waitForSelector('.doors', { timeout: 20000 });
@@ -180,7 +180,10 @@ async function main() {
 
   // ---- a string typed over where it stands ----
   await watchTicks(p);
-  await retype(p, TITLE, 'The full Camino, edited');
+  // always different from what is stored, so a run that crashed after
+  // writing and before restoring cannot make this one a silent no-op
+  const edited = wasTitle + ' \u2014 edited';
+  await retype(p, TITLE, edited);
   await p.waitForSelector('#actor-name', { visible: true, timeout: 8000 });
   check('a first change with no name asks for one', (await p.$eval('#prompt', (n) => n.hidden)) === false);
   await p.evaluate(() => { document.getElementById('actor-name').value = ''; });
@@ -190,7 +193,7 @@ async function main() {
   check('the tick says the ship took it', await ticked(p, 10000));
   await sleep(1500);
   const live = await (await fetch(api + '/status')).json();
-  check('the ship holds the new string', live.copy[TITLE] === 'The full Camino, edited', live.copy[TITLE]);
+  check('the ship holds the new string', live.copy[TITLE] === edited, live.copy[TITLE]);
   check('nothing else in the document moved', live.copy[METER] === wasMeter, live.copy[METER]);
 
   // ---- and it is still there after a reload ----
@@ -198,7 +201,8 @@ async function main() {
   await p.waitForSelector('.copy', { timeout: 20000 });
   check('edit mode is remembered', (await p.evaluate(() => document.body.className)) === 'editing');
   check('the new string is on the page after a reload',
-    (await p.$eval(spanOf(TITLE), (n) => n.textContent)) === 'The full Camino, edited');
+    (await p.$eval(spanOf(TITLE), (n) => n.textContent)) === edited,
+    await p.$eval(spanOf(TITLE), (n) => n.textContent));
 
   // ---- an edit that drops a placeholder never leaves the browser ----
   await retype(p, METER, 'nearly full');
@@ -212,12 +216,15 @@ async function main() {
 
   // ---- every step, from a fixture ----
   const steps = await p.$$eval('#steps button[data-step]', (ns) => ns.map((n) => n.getAttribute('data-step')).filter(Boolean));
-  check('the step row offers the fourteen views and the leftover strings', steps.length === 15, steps.join(','));
+  check('the step row offers every view and the leftover strings', steps.length === 16, steps.join(','));
   // every key the previews put on screen, gathered as they are walked
   const seen = new Set();
   for (const name of steps) {
     await p.click('#steps button[data-step="' + name + '"]');
-    await sleep(250);
+    // wait for the preview the click asked for. A fixed sleep here was
+    // long enough on an idle ship and not on a busy one, and the whole
+    // coverage check then failed on strings that were perfectly fine.
+    await p.waitForSelector('#view .ribbon[data-step="' + name + '"]', { timeout: 30000 });
     const shape = await p.evaluate(() => ({
       ribbon: !!document.querySelector('#view .ribbon'),
       spans: document.querySelectorAll('#view .copy').length,
@@ -237,7 +244,8 @@ async function main() {
     missed.length === 0, missed.join(' '));
   // ---- the Form fixture is a party of two, so both party strings show ----
   await p.click('#steps button[data-step="form"]');
-  await sleep(400);
+  await p.waitForSelector('#view .ribbon[data-step="form"]', { timeout: 30000 });
+  await p.waitForSelector('#view .card.person', { timeout: 30000 });
   check('the Form fixture shows a party of two',
     (await p.$$('#view .card.person')).length === 2, (await p.$$('#view .card.person')).length);
   const partyKeys = await p.$$eval('#view .copy', (ns) => ns.map((n) => n.getAttribute('data-copy')));
@@ -300,4 +308,16 @@ async function main() {
   process.exit(fails ? 1 : 0);
 }
 
-main().catch((e) => { console.log('CRASHED ' + e.message); process.exit(1); });
+main().catch(async (e) => {
+  // a crash between the write and the restore leaves the ship holding
+  // the edited string, which makes every later run a no-op. Put it back.
+  console.log('CRASHED ' + e.message);
+  try {
+    const api = BASE + '/apps/register/api';
+    const now = await (await fetch(api + '/status')).json();
+    if (now.copy && now.copy[TITLE] !== undefined) {
+      console.log('  copy left as: ' + JSON.stringify(now.copy[TITLE]));
+    }
+  } catch (x) { /* the ship is the one that is broken; say nothing more */ }
+  process.exit(1);
+});

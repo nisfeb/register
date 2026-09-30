@@ -49,7 +49,7 @@ grubbery translation applies to them and the suite's
 `/+ *test, reg=register` resolves the ordinary way. The whole config is
 the desk name, the libraries, and the tests directory.
 
-The suite is 75 arms over four libraries: `register.hoon` (the event and
+The suite is 78 arms over four libraries: `register.hoon` (the event and
 its rules), and phase 2's `register-http.hoon` (percent-encoding and form
 bodies), `register-stripe.hoon` (the Checkout calls, built and read) and
 `register-mail.hoon` (the Resend send). The three new ones are pure text
@@ -92,9 +92,14 @@ loses a registration and reports success.
 The fix is calendar's shape, named in the playbook: `+rise-later`,
 `+soft-behn`, `+soft-now` and `+rise-park`, which park on a timer instead
 of eating a poke, back off, and refuse pokes while crashed rather than
-consuming them. **It needs `/sys/behn/` in `weir.json`**, which is a new
-permission and so a re-approval on every ship that runs register. That is
-a decision, not a tidy-up, and it is not made here.
+consuming them.
+
+**The reason this was deferred is gone.** It needed `/sys/behn/` in
+`weir.json`, a new permission and so a re-approval on every ship. Version
+15 asks for behn anyway, for the deadline on an outbound call, and every
+ship running register has already been re-approved for it. The fix is now
+an ordinary change to the three fibers' first step, with no permission
+consequence. It is the next thing to do here.
 
 ### 2. The HTTP binder and the request fibers park until a reload
 
@@ -194,10 +199,33 @@ check is the real guard.
 `LIBS` entry as a pair when entries have been triples for some time, so
 every `--since` died on the unpack. Fixed in the kit and re-vendored.
 
+## The review pass, 2026-09-29
+
+The suite is 79 arms. What the gate and the click-throughs found when
+they were pointed at version 15 is in the commit; two of it is worth
+keeping here because it is about how this app is tested, not about the
+app.
+
+**A click-through's fixed sleep is a test that lies.** `public-edit-click`
+slept 250 ms after pressing a preview and then read what was on screen.
+On a busy ship that was too short, and the failure it produced was
+"every string a pilgrim reads is editable" naming forty-nine perfectly
+editable strings. The preview's ribbon now carries `data-step`, and the
+script waits for the one it asked for. The same lesson as the check-in
+click-throughs, learned again.
+
+**A shot of one card must be an element screenshot.**
+`page.screenshot({clip})` measures from the top of the document;
+`getBoundingClientRect` measures from the top of the window. Every
+close-up below the fold was therefore a picture of whatever sat at those
+document coordinates, with the sticky nav painted through the middle.
+`docs/manual/cards.js` owns every close-up now and takes them as
+elements.
+
 ## What to do next, in order
 
 1. Start a fake ship, run `setup`, and take a baseline: `hoon-test.sh`
-   should exit 0 with 77 `OK` lines.
+   should exit 0 with 78 `OK` lines.
 2. Run the cheap mutation pass over the library and triage every
    survivor. Re-trace each one before writing a test: many are equivalent,
    and the playbook lists the usual kinds.

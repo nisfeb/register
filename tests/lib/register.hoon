@@ -532,6 +532,23 @@
     (expect !>(=(starter-copy:reg (with-starter:reg [%o ~]))))
     (expect !>(=(starter-copy:reg (with-starter:reg starter-copy:reg))))
   ==
+::  +test-with-starter-retires: a key the code no longer uses is dropped
+::  on the way out. Nothing renders it, so nobody could reach it to
+::  correct it; carrying it would leave a dead string in the document
+::  that looks like one that matters. Every live key keeps its value.
+::
+++  test-with-starter-retires
+  =/  old=json
+    (jo '{"landing.title": "Ours", "next.waiver.button": "Sign the waiver", "made.up.key": "x"}')
+  =/  got=json  (with-starter:reg old)
+  ;:  weld
+    (expect !>(=('Ours' (gs:reg got 'landing.title'))))
+    (expect !>(!(has-key:reg got 'next.waiver.button')))
+    (expect !>(!(has-key:reg got 'made.up.key')))
+    ::  and the count is the code's list, whatever the ship was holding
+    =/  n  |=(j=json ^-(@ud ?.(?=([%o *] j) 0 ~(wyt by p.j))))
+    (expect-eq !>((n starter-copy:reg)) !>((n got)))
+  ==
 ::  +test-copy-person-name: the form calls a person by the name typed for
 ::  them, so every string that names one carries a placeholder for the
 ::  page to fill. The weekend radio names the first person; the card

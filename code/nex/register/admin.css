@@ -119,3 +119,13 @@ tr.pending td, .card.pending { opacity: .55; }
 .tick { color: var(--good); font-weight: 600; }
 .notick { color: var(--muted); }
 .mailbox .actions { align-items: center; }
+
+/* the audit ring on the Backup page */
+table.log td { font-size: .82rem; }
+table.log .nowrap { white-space: nowrap; color: var(--muted); }
+table.log td:nth-child(2), table.log td:nth-child(3) { white-space: nowrap; }
+table.log tr.bad td { background: #fdecea; }
+table.log tr.bad td:last-child { color: var(--bad); }
+/* the waiver's wording fingerprint: long, and nobody reads it */
+.kv .hash { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .7rem;
+  word-break: break-all; color: var(--muted); }

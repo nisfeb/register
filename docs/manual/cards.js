@@ -1,15 +1,22 @@
 // The per-card close-ups, shot as elements so the coordinates are the
 // browser's problem and not mine. Seeds the same sample parties, shoots,
-// then cancels them. Run: node cards.js
+// then cancels them. This file owns every close-up; shots.js owns the
+// whole screens.
+//
+//   node cards.js
+//   REG_BASE=http://localhost:8080 REG_COOKIE=/path/to/cookie node cards.js
+//
+// The ship must be in STUB mode, and must not be the one the organizers
+// are using.
 'use strict';
 const { readFileSync } = require('fs');
 const { homedir } = require('os');
-const BASE = 'http://localhost:8080';
+const BASE = process.env.REG_BASE || 'http://localhost:8080';
 const API = BASE + '/apps/register/api';
 const OUT = __dirname + '/img';
 const CHROME = '/usr/bin/chromium';
 const PUPPETEER = '/home/sneagan/software/personal/lattice/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js';
-const cookie = readFileSync(homedir() + '/.config/lattice-fs/cookie', 'utf8').trim();
+const cookie = readFileSync(process.env.REG_COOKIE || homedir() + '/.config/lattice-fs/cookie', 'utf8').trim();
 const [cn, ...cr] = cookie.split('=');
 const hdr = { 'content-type': 'application/json', cookie, 'x-actor': 'Susan' };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -30,12 +37,18 @@ const party = (track, mail, people, o = {}) => ({
   org: o.org === undefined ? 'Order of Malta' : o.org, why: o.why || 'To walk in thanksgiving.',
   assistance: !!o.assistance, together: false, people,
 });
+let hash = null;
+async function waiverHash() {
+  if (hash === null) hash = (await j(await fetch(API + '/status'))).waiver_hash || '';
+  return hash;
+}
+
 const made = [];
 async function make(track, mail, people, opts = {}) {
   const d = await j(await post('/submit', party(track, mail, people, opts)));
   if (!d.rid) throw new Error('submit: ' + JSON.stringify(d));
   made.push([d.rid, d.token]);
-  await post(`/reg/${d.rid}/sign?t=${d.token}`, {});
+  await post(`/reg/${d.rid}/sign?t=${d.token}`, { agreed: true, text_hash: await waiverHash() });
   await sleep(1200);
   await post(`/reg/${d.rid}/pay?t=${d.token}`, {});
   await sleep(1200);
@@ -58,7 +71,7 @@ async function main() {
   try {
     const p = await browser.newPage();
     await p.setViewport({ width: 820, height: 1000, deviceScaleFactor: 2 });
-    await p.setCookie({ name: cn, value: cr.join('='), domain: 'localhost', path: '/' });
+    await p.setCookie({ name: cn, value: cr.join('='), domain: new URL(BASE).hostname, path: '/' });
     await p.evaluateOnNewDocument(() => { try { localStorage.setItem('register.actor', 'Susan'); } catch (e) {} });
 
     // an element screenshot: the browser scrolls it into view and gets
@@ -95,6 +108,7 @@ async function main() {
     await card('settings-fees', 'Fees, in dollars');
     await card('settings-window', 'Window');
     await card('settings-event', 'Event');
+    await card('settings-providers', 'Providers');
 
     await p.goto(BASE + '/apps/register/admin#add', { waitUntil: 'networkidle2' });
     await p.waitForSelector('[data-act="submit-add"]', { timeout: 60000 });

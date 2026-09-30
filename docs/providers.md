@@ -51,10 +51,15 @@ thing out of the body, the session id, and then asks Stripe itself what
 that session did. Everything else in the body is ignored. It answers 200
 to everything so Stripe stops retrying.
 
+The route is public, and asking Stripe costs an outbound call, so the id
+has to look like one first: `+webhook-sid` refuses anything that is not
+a `checkout.session.*` event carrying an id that begins `cs_`. That is a
+filter against rubbish, not a signature check, and it is not one.
+
 ## Where to look when a send or a charge does not happen
 
-The audit ring, at the bottom of the backoffice. Every attempt writes a
-line:
+**Backup → Recent activity**, which shows the last of the 2,000 lines
+the writer keeps. Every attempt writes one:
 
 - `by: stub` — the app was in stub mode, or no key was set. Nothing was
   sent, by design.
@@ -65,6 +70,14 @@ line:
 
 A card that fails never reaches the ship at all: the pilgrim stays on
 the payment step and Stripe tells them why.
+
+The line that matters most is `stripe.unsettled`. It means Stripe took
+the money and the ship could not write it down — the only case where
+money has moved and nothing else records it. It carries the session id,
+which is what to quote to Stripe. Everything else on that path is either
+ordinary (a session that was never paid, a registration the other of the
+two return paths already completed) or is visible as the pilgrim's own
+error on screen.
 
 ## What is deliberately not here
 
@@ -95,6 +108,13 @@ Two consequences worth knowing:
   change everywhere, an organizer edits it on the page, or it goes out
   by `POST /api/admin/copy/set` with the key and the new value. Only
   genuinely new keys arrive from a release.
+- **A key the code retires is dropped**, not carried for ever. Nothing
+  renders a retired string, so nobody could reach it to correct it, and
+  it would sit in the document looking like one that matters.
+  `+with-starter` answers the code's key list with the stored values
+  laid over it, so `next.waiver.button` went away when the waiver step
+  stopped using it. This only ever removes keys the code no longer knows;
+  an edit to a string still in use is never touched.
 
 Take a backup before any upgrade anyway — *Backup → JSON bundle* in the
 backoffice, and the jam beside it.

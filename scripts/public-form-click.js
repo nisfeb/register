@@ -12,7 +12,7 @@
 // does not call it: it is run by hand.
 'use strict';
 
-const BASE = 'http://localhost:8080';
+const BASE = process.env.REG_BASE || 'http://localhost:8080';
 const PAGE = BASE + '/apps/register/';
 const API = BASE + '/apps/register/api';
 const CHROME = '/usr/bin/chromium';
@@ -152,13 +152,43 @@ async function main() {
   await type('[data-k="contact.state"]', 'FL');
   await type('[data-k="contact.zip"]', '32250');
   await p.click('[data-act="submit"]');
-  await p.waitForSelector('[data-act="sign"]', { timeout: 25000 })
+  await p.waitForSelector('[data-act="waiver-open"]', { timeout: 25000 })
     .catch(async () => { console.log('  the page said: ' + await text('#error')); throw new Error('no waiver step'); });
   const body = await text('#view p');
   check('the waiver step names everybody the signature covers',
     /Ana Silva and Bo Silva/.test(body), body);
   const hash = await p.evaluate(() => location.hash);
   check('and the page is on the registration it just made', /^#next\//.test(hash), hash);
+
+  // ---- the agreement, pressed the way a pilgrim presses it ----
+  // This is here because the dialog was once appended to document.body
+  // while its click handler was bound to #view: it opened, and then
+  // every press of Adopt and sign did nothing at all.
+  await p.click('[data-act="waiver-open"]');
+  await p.waitForSelector('#waiver-terms', { timeout: 20000 });
+  check('the agreement opens with the box and the button asleep',
+    (await p.$eval('#waiver-agree', (n) => n.disabled)) === true &&
+    (await p.$eval('#waiver-adopt', (n) => n.disabled)) === true);
+  await p.evaluate(() => { const t = document.getElementById('waiver-terms'); t.scrollTop = t.scrollHeight; });
+  await sleep(400);
+  check('reading to the end wakes the box, and only the box',
+    (await p.$eval('#waiver-agree', (n) => n.disabled)) === false &&
+    (await p.$eval('#waiver-adopt', (n) => n.disabled)) === true);
+  // el.click(), not page.click(): the dialog is a fixed overlay with a
+  // scrolling body, and hit-testing its centre sometimes landed on the
+  // Close button underneath. The event still bubbles, which is the part
+  // under test.
+  await p.$eval('#waiver-agree', (n) => n.click());
+  await sleep(300);
+  check('ticking it wakes Adopt and sign',
+    (await p.$eval('#waiver-adopt', (n) => n.disabled)) === false);
+  await p.$eval('#waiver-adopt', (n) => n.click());
+  await p.waitForFunction(() => !document.getElementById('waiver-scrim'), { timeout: 25000 })
+    .catch(() => { throw new Error('Adopt and sign did nothing'); });
+  await p.waitForSelector('[data-act="pay"]', { timeout: 25000 })
+    .catch(() => { throw new Error('the waiver was not recorded: still not at the payment step'); });
+  check('pressing it signs and the page moves on to paying', true);
+
   await browser.close();
 
   // ---- put the spots back ----

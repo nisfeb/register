@@ -15,7 +15,7 @@
 const { readFileSync } = require('fs');
 const { homedir } = require('os');
 
-const BASE = 'http://localhost:8080';
+const BASE = process.env.REG_BASE || 'http://localhost:8080';
 const CHROME = '/usr/bin/chromium';
 const PUPPETEER = '/home/sneagan/software/personal/lattice/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js';
 const RID = process.argv[2];
@@ -56,11 +56,11 @@ async function main() {
     process.exit(2);
   }
   const puppeteer = (await import(PUPPETEER)).default;
-  const cookie = readFileSync(homedir() + '/.config/lattice-fs/cookie', 'utf8').trim();
+  const cookie = readFileSync(process.env.REG_COOKIE || homedir() + '/.config/lattice-fs/cookie', 'utf8').trim();
   const [cn, ...cr] = cookie.split('=');
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new', args: ['--no-sandbox'] });
   const p = await browser.newPage();
-  await p.setCookie({ name: cn, value: cr.join('='), domain: 'localhost', path: '/' });
+  await p.setCookie({ name: cn, value: cr.join('='), domain: new URL(BASE).hostname, path: '/' });
   p.on('pageerror', (e) => { console.log('  PAGE ERROR ' + e.message); fails++; });
 
   await p.goto(BASE + '/apps/register/checkin', { waitUntil: 'networkidle2' });

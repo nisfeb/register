@@ -68,6 +68,15 @@
     '{"type":"checkout.session.completed","data":{"object":{"id":"cs_test_9","object":"checkout.session"}}}'
   (expect-eq !>(`'cs_test_9') !>((webhook-sid:stripe j)))
 ::
+++  test-webhook-not-a-session-id
+  ::  the route this feeds is public: an id that is not a session id
+  ::  must not become an outbound call
+  ;:  weld
+    (expect-eq !>(~) !>((webhook-sid:stripe '{"type":"checkout.session.completed","data":{"object":{"id":"pi_1"}}}')))
+    (expect-eq !>(~) !>((webhook-sid:stripe '{"type":"checkout.session.completed","data":{"object":{"id":""}}}')))
+    (expect-eq !>(~) !>((webhook-sid:stripe '{"type":"checkout.session.completed","data":{}}')))
+  ==
+::
 ++  test-webhook-other-event
   =/  j=@t
     '{"type":"payment_intent.succeeded","data":{"object":{"id":"pi_1"}}}'

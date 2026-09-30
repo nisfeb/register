@@ -824,6 +824,7 @@
   ?:  &(=('PUT' meth) ?=([%api %admin %copy ~] suffix))          (own (act (serve-set-doc eyre-id 'set-copy' jon admin-by)))
   ?:  &(=('POST' meth) ?=([%api %admin %copy %set ~] suffix))     (own (act (serve-set-copy-key eyre-id jon admin-by)))
   ?:  &(=('GET' meth) ?=([%api %admin %counts ~] suffix))        (own (serve-doc eyre-id %'counts.json'))
+  ?:  &(=('GET' meth) ?=([%api %admin %log ~] suffix))           (own (serve-log eyre-id))
   ?:  &(=('PUT' meth) ?=([%api %admin %counts ~] suffix))        (own (act (serve-set-doc eyre-id 'set-counts' jon admin-by)))
   ?:  &(=('POST' meth) ?=([%api %admin %add ~] suffix))          (own (act (serve-add eyre-id jon admin-by)))
   ?:  &(=('POST' meth) ?=([%api %admin %'checkin-mail' ~] suffix))  (own (act (serve-checkin-mail eyre-id jon admin-by)))
@@ -929,11 +930,12 @@
   =/  probe=reg:reg  (new-reg:reg rid token %web p.got now)
   ::  the wait list is the only submit that mails: a held registration
   ::  is still on the page, at its next step
+  ::  the mail is built from `probe`, not from a read of the tree: the
+  ::  writer applies after this answer leaves, so a read here races it
+  ::  and finds nothing, and the wait-listed pilgrim is told nothing
   ;<  *  bind:m
     ?.  =(%waitlist to)  (pure:m ~)
-    ;<  cur=(unit reg:reg)  bind:m  (find-reg 1 `@ta`rid)
-    ?~  cur  (pure:m ~)
-    ;<  *  bind:m  (send-mail u.cur 'waitlist' 'email.waitlist' (mail-vars u.cur posn '') 'pilgrim')
+    ;<  *  bind:m  (send-mail probe 'waitlist' 'email.waitlist' (mail-vars probe posn '') 'pilgrim')
     (pure:m ~)
   %^  send-json  eyre-id  200
   %-  pairs:enjs:format
@@ -1052,8 +1054,9 @@
   :~  ['error' s+'the track filled while your registration waited']
       ['code' s+'waitlist']
   ==
-::  +serve-sign: the waiver step. In stub mode it completes itself; the
-::  live branch is phase 2.
+::  +serve-sign: the waiver step. In stub mode it completes itself; in
+::  live mode the pilgrim adopts the terms and the ship records which
+::  wording they were shown.
 ::
 ++  serve-sign
   |=  [eyre-id=@ta rid=@t tok=@t jon=json]
@@ -1240,22 +1243,41 @@
   |=  [sid=@t rid=@t]
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
+  ::  +unsettled: a paid session the ship could not write down. Money has
+  ::  moved and nothing else records it, so it goes in the ring where the
+  ::  Backup page shows it. The quiet exits below it are the ordinary
+  ::  ones: a session that is not paid, or a registration already past
+  ::  the payment step because the other of the two ways in got there
+  ::  first.
+  =/  unsettled
+    |=  [rid=@t why=@t]
+    ^-  form:m
+    ;<  *  bind:m
+      %-  poke-writer
+      %-  pairs:enjs:format
+      :~  ['op' s+'note']  ['what' s+'stripe.unsettled']  ['ok' b+|]
+          ['why' s+(rap 3 ~[why ' (session ' sid ')'])]
+          ['by' s+'stripe']  ['rid' s+rid]
+      ==
+    (pure:m |)
   ?:  =('' sid)  (pure:m |)
   ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
   =/  key=@t  (stripe-key sj)
-  ?:  =('' key)  (pure:m |)
+  ?:  =('' key)  (unsettled rid 'no Stripe key is set')
   ;<  res=[status=@ud body=@t]  bind:m
     %+  fetch  %stripe
     [%'GET' (rap 3 ~[api:stripe '/checkout/sessions/' sid]) (headers:stripe key) ~]
-  ?.  =(200 status.res)  (pure:m |)
+  ?.  =(200 status.res)
+    (unsettled rid (cat 3 'Stripe would not say what happened; status ' (crip (a-co:co status.res))))
   =/  got  (read-session:stripe body.res)
-  ?~  got  (pure:m |)
+  ?~  got  (unsettled rid 'Stripe answered something this app could not read')
   ?.  paid.u.got  (pure:m |)
   ::  only Stripe says whose registration this was
-  ?:  =('' rid.u.got)  (pure:m |)
-  ?:  &(!=('' rid) !=(rid rid.u.got))  (pure:m |)
+  ?:  =('' rid.u.got)  (unsettled rid 'Stripe named no registration')
+  ?:  &(!=('' rid) !=(rid rid.u.got))
+    (unsettled rid 'Stripe named a different registration')
   ;<  cur=(unit reg:reg)  bind:m  (find-reg 1 ?:((ok-rid:reg rid.u.got) `@ta`rid.u.got %$))
-  ?~  cur  (pure:m |)
+  ?~  cur  (unsettled rid.u.got 'no such registration')
   ?.  =(%payment status.u.cur)  (pure:m |)
   ;<  s=settings:reg  bind:m  (read-settings 1)
   =/  fees=@ud  (fees-total:reg s u.cur)
@@ -1271,7 +1293,7 @@
         ==
     ==
   ;<  err=(unit tang)  bind:m  (poke-writer pk)
-  ?^  err  (pure:m |)
+  ?^  err  (unsettled id.u.cur 'the writer would not record the payment')
   ;<  *  bind:m
     (send-mail u.cur 'confirmation' 'email.confirmation' (mail-vars u.cur 0 '') 'pilgrim')
   (pure:m &)
@@ -1398,7 +1420,6 @@
   =/  op=@t  (gs:reg jon 'op')
   ?:  =('edit' op)  (serve-edit eyre-id rid '' (gj:reg jon 'input') by)
   ?:  =('cancel' op)  (serve-cancel eyre-id rid '' jon by)
-  ?:  =('recheck-waiver' op)  (send-err eyre-id 501 'waiver recheck is phase 2')
   ;<  cur=(unit reg:reg)  bind:m  (find-reg 1 ?:((ok-rid:reg rid) `@ta`rid %$))
   ?~  cur  (send-err eyre-id 404 'no such registration')
   ?:  =('resend' op)  (serve-resend-template eyre-id u.cur jon)
@@ -1467,6 +1488,17 @@
   ::  document is answered with those filled in
   =/  out=json  ?:(=(%'copy.json' name) (with-starter:reg doc) doc)
   (send-json eyre-id 200 out)
+::  +serve-log: the audit ring, newest last, as the writer keeps it.
+::  Until now nothing showed it, so an email the provider refused was
+::  recorded and then invisible. It is the owner's, like every other
+::  admin route.
+::
+++  serve-log
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 1 /tr %log))
+  (send-json eyre-id 200 ?:(?=([%a *] doc) doc a+~))
 ++  serve-settings
   |=  eyre-id=@ta
   =/  m  (fiber:fiber:nexus ,~)
@@ -2055,10 +2087,9 @@
 ::  +serve-checkin-mail: the morning's links. Complete parties with
 ::  nobody checked in that day yet, and no line saying the link went
 ::  out, unless `again`. At most a hundred a press; the page presses
-::  until none remain. Until phase 2 sends, each recipient gets a ring
-::  note with the filled subject and the history line the next press
-::  reads. When phase 2 sends, a failed send must skip the history line
-::  so a repress retries it.
+::  until none remain. Each recipient gets a ring note with the filled
+::  subject and the history line the next press reads. A send that did
+::  not go out gets no history line, so a repress retries it.
 ::
 ++  serve-checkin-mail
   |=  [eyre-id=@ta jon=json by=@t]
@@ -2083,26 +2114,32 @@
     !(lien history.r |=(st=step:reg =(mark what.st)))
   =/  batch=(list reg:reg)  (scag 100 due)
   =/  left=@ud  (sub (lent due) (lent batch))
-  ;<  sent=@ud  bind:m  (mail-each batch mark day-word by 0)
+  ;<  sent=@ud  bind:m  (mail-each batch mark day-word by 0 0)
   %^  send-json  eyre-id  200
   (pairs:enjs:format ~[['sent' (en-num:reg sent)] ['remaining' (en-num:reg left)]])
 ::  +mail-each: one recipient at a time: the ring note that stands in
 ::  for the send, then the history line
 ::
 ++  mail-each
-  |=  [batch=(list reg:reg) mark=@t day=@t by=@t sent=@ud]
+  |=  [batch=(list reg:reg) mark=@t day=@t by=@t sent=@ud bad=@ud]
   =/  m  (fiber:fiber:nexus ,@ud)
   ^-  form:m
   ?~  batch  (pure:m sent)
+  ::  Three refusals in a row is the provider, not the recipients: an
+  ::  unverified domain or a bad key refuses everyone, and a hundred
+  ::  outbound calls that each wait out their deadline would hold this
+  ::  request open for hours. Stop, and let the button be pressed again
+  ::  once the setting is fixed; nothing here has been marked as sent.
+  ?:  (gte bad 3)  (pure:m sent)
   =/  r=reg:reg  i.batch
   ;<  ok=?  bind:m  (send-mail r 'checkin' mark (mail-vars r 0 day) by)
   ::  a send that did not go out gets no history line, so the next
   ::  press of the button picks it up again
-  ?.  ok  (mail-each t.batch mark day by sent)
+  ?.  ok  (mail-each t.batch mark day by sent +(bad))
   =/  line=json
     (pairs:enjs:format ~[['op' s+'mail-sent'] ['rid' s+id.r] ['what' s+mark] ['by' s+by]])
   ;<  err2=(unit tang)  bind:m  (poke-writer line)
-  (mail-each t.batch mark day by ?^(err2 sent +(sent)))
+  (mail-each t.batch mark day by ?^(err2 sent +(sent)) 0)
 ++  serve-checkin-roster
   |=  [eyre-id=@ta day=@t]
   =/  m  (fiber:fiber:nexus ,~)
@@ -2206,9 +2243,9 @@
   ;<  ~  bind:m  (write-reg 0 u.next |)
   ;<  ~  bind:m  (note-rid 'checkin' & u.want by rid)
   (pure:m &)
-::  +serve-resend-template: phase 2 sends the mail. Here the subject is
-::  filled and noted in the ring, so a rehearsal reads what would go
-::  out. Never a body: a body carries the manage link.
+::  +serve-resend-template: one template, by hand, to one registration.
+::  The subject is filled and noted in the ring, so a rehearsal reads
+::  what would go out. Never a body: a body carries the manage link.
 ::
 ++  serve-resend-template
   |=  [eyre-id=@ta r=reg:reg jon=json]

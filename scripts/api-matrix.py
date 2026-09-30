@@ -788,8 +788,11 @@ def backoffice(live_rid):
     code, d = admin('GET', '/reg/' + ck_rid)
     check('it records the waiver and does not move the status',
           code == 200 and d['waiver']['method'] == 'paper' and d['status'] == 'complete', (code, d))
+    # recheck-waiver went with DocuSign: the pilgrim adopts the terms on
+    # the page and the ship writes it there and then, so there is nothing
+    # to go and ask about
     code, d = admin('POST', '/reg/' + ck_rid, {'op': 'recheck-waiver'})
-    check('recheck-waiver is 501 until phase 2', code == 501, (code, d))
+    check('recheck-waiver is not an op this ship knows', code == 400, (code, d))
     code, d = admin('POST', '/reg/' + ck_rid, {'op': 'resend', 'template': 'reminder'})
     check('resend answers the filled subject',
           code == 200 and d.get('template') == 'reminder' and d.get('subject'), (code, d))

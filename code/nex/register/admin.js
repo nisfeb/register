@@ -741,15 +741,16 @@
   }
   function waiverCard(r) {
     var w = r.waiver || {};
+    // `envelope` holds the fingerprint of the exact wording adopted;
+    // it is only worth showing when there is one
     var out = '<div class="card"><h3>Waiver</h3><dl class="kv">' +
       '<dt>Method</dt><dd>' + esc(w.method) + '</dd>' +
       '<dt>Status</dt><dd>' + esc(w.status) + '</dd>' +
-      '<dt>Envelope</dt><dd>' + esc(w.envelope) + '</dd>' +
+      (w.envelope ? '<dt>Wording signed</dt><dd class="hash">' + esc(w.envelope) + '</dd>' : '') +
       '<dt>Signed at</dt><dd>' + esc(when(w.at)) + '</dd></dl><div class="actions">';
     if (r.status !== 'draft' && r.status !== 'cancelled') {
       out += '<button type="button" class="btn small" data-act="waiver-paper">They signed on paper</button>';
     }
-    out += '<button type="button" class="btn quiet small" data-act="recheck-waiver">Check whether they have signed</button>';
     return out + '</div></div>';
   }
   function actionsCard(r) {
@@ -1286,6 +1287,38 @@
       '<span id="stripe-check"></span></p></div>';
     return out + '<div class="actions"><button type="button" class="btn" data-act="save-settings">Save the settings</button></div>';
   }
+  var logRows = [];
+  var LOG_SHOWN = 80;
+  // the writer's own words for what happened, in the organizers'
+  var LOG_WHAT = {
+    submit: 'signed up', advance: 'moved on', cancel: 'cancelled',
+    reinstate: 'put back', promote: 'offered a spot', assist: 'assistance decided',
+    pay: 'payment recorded', refund: 'marked refunded', exempt: 'cap exemption',
+    edit: 'changed', add: 'added by an organizer', note: 'note',
+    'set-notes': 'note changed', 'set-waiver': 'waiver recorded',
+    'set-settings': 'settings saved', 'set-copy': 'wording saved',
+    'set-copy-key': 'wording saved', 'set-counts': 'counts saved',
+    checkin: 'checked in', 'mail-sent': 'email marked sent',
+    restore: 'backup restored', 'resend-link': 'link asked for',
+  };
+  var LOG_DAY = { fri: 'Friday', sat: 'Saturday', sun: 'Sunday' };
+  function logWhat(op) {
+    var k = String(op || '');
+    if (LOG_WHAT[k]) return LOG_WHAT[k];
+    if (k.indexOf('email.checkin.') === 0) {
+      return (LOG_DAY[k.slice(14)] || k.slice(14)) + ' check-in email';
+    }
+    if (k.indexOf('email.') === 0) return k.slice(6).replace(/_/g, ' ') + ' email';
+    return k.replace(/[._-]/g, ' ');
+  }
+  function logWho(by) {
+    var k = String(by || '');
+    if (k.indexOf('admin:') === 0) return k.slice(6);
+    if (k === 'stub') return 'rehearsal';
+    if (k === 'mail') return 'the mail service';
+    if (k === 'pilgrim') return 'the pilgrim';
+    return k;
+  }
   function backupView() {
     var out = '<h1>Backup</h1>';
     out += '<div class="card"><h3>Download</h3><p class="actions">' +
@@ -1313,6 +1346,39 @@
         'so the 48 hour hold starts again for each one.</p>';
     } else if (fileBody) {
       out += '<p class="muted">' + esc(fileName) + ' is ready. Read it before you restore from it.</p>';
+    }
+    out += '</div>';
+    return out + logCard();
+  }
+  // What the program has been doing, newest first. Its reason for
+  // existing is the emails: a send the provider refused is recorded
+  // here and nowhere else, so without this card it is invisible.
+  function logCard() {
+    var out = '<div class="card"><h3>Recent activity</h3>';
+    if (logRows === null) return out + '<p class="help">Could not read the log.</p></div>';
+    if (!logRows || !logRows.length) return out + '<p class="help">Nothing yet.</p></div>';
+    var rows = logRows.slice(-LOG_SHOWN).reverse();
+    var bad = rows.filter(function (r) { return r.ok === false; }).length;
+    if (bad) {
+      out += '<p class="help"><b>' + bad + (bad === 1 ? ' line' : ' lines') +
+        '</b> below did not go through. An email refused by the sending ' +
+        'service is a setting to fix, not a pilgrim to chase.</p>';
+    }
+    out += '<table class="log"><thead><tr><th>When</th><th>What</th><th>Who</th>' +
+      '<th>Registration</th><th>Outcome</th></tr></thead><tbody>';
+    rows.forEach(function (r) {
+      var why = String(r.why || '');
+      out += '<tr' + (r.ok === false ? ' class="bad"' : '') + '>' +
+        '<td class="nowrap">' + esc(when(r.at)) + '</td>' +
+        '<td>' + esc(logWhat(r.op)) + '</td>' +
+        '<td>' + esc(logWho(r.by)) + '</td>' +
+        '<td>' + (r.rid ? '<a href="#reg/' + esc(r.rid) + '">' + esc(r.rid) + '</a>' : '') + '</td>' +
+        '<td>' + (r.ok === false ? '<b>refused</b> ' : '') + esc(why) + '</td></tr>';
+    });
+    out += '</tbody></table>';
+    if (logRows.length > LOG_SHOWN) {
+      out += '<p class="help">The newest ' + LOG_SHOWN + ' of ' + logRows.length +
+        '. The program keeps the last 2,000.</p>';
     }
     return out + '</div>';
   }
@@ -1491,7 +1557,11 @@
         paint(settingsView());
       });
     } else if (r.name === 'backup') {
-      p = Promise.resolve().then(function () { paint(backupView()); });
+      paint(backupView());
+      // the log is the only thing on this page the ship has to be asked
+      // for, and a page that cannot read it is still a usable Backup page
+      p = read('/log').then(function (d) { logRows = d || []; paint(backupView()); },
+        function () { logRows = null; paint(backupView()); });
     } else {
       // the rows this browser saw last time go up first, then the ship's
       if (paintKept()) { model = null; paint(rosterView()); } else paint(loading());
@@ -1528,8 +1598,8 @@
       if (next) painted = next;
     });
     var free = spin(el);
-    // an op the page cannot paint, recheck-waiver among them, leaves
-    // nothing local behind, so there is nothing to reconcile afterwards
+    // an op the page cannot paint leaves nothing local behind, so there
+    // is nothing to reconcile afterwards
     var local = painted !== detail;
     if (local) {
       detail = painted;
@@ -1732,7 +1802,6 @@
       });
     }
     if (a === 'waiver-paper') return act(function () { post({ op: 'waiver-paper' }); });
-    if (a === 'recheck-waiver') return act(function () { post({ op: 'recheck-waiver' }); });
     if (a === 'promote') return act(function () { post({ op: 'promote' }); });
     if (a === 'assist-yes') return act(function () { post({ op: 'assist', approve: true }); });
     if (a === 'assist-no') return act(function () { post({ op: 'assist', approve: false }); });

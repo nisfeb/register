@@ -254,6 +254,8 @@
     'form.social_fri.short', 'form.social_sat.short',
     'track.full', 'track.bambino',
     'next.payment.spots', 'next.payment.body.one', 'next.payment.too_low',
+    'next.payment.card', 'waiver.stale', 'form.sunday.closed',
+    'manage.full', 'manage.closed_already', 'manage.closes_today', 'manage.closes_tomorrow',
     'next.draft.title', 'next.draft.body',
     'manage.closed', 'manage.pay_more', 'manage.cancel.confirm', 'stub.banner',
     'checkin.early', 'checkin.over', 'checkin.gone', 'checkin.solo.body', 'checkin.solo.button',
@@ -525,18 +527,23 @@
           check(k + 'trolley', 'form.trolley', p.trolley)
         : '<p class="closed">' + tx('form.sunday.closed') + '</p>');
     } else {
-      // the Bambino weekend is the Sunday walk and the socials, which
-      // are open to everyone who comes
+      // The Bambino pilgrim walks on Sunday and is welcome at everything
+      // else in the weekend. These were once one group called "Also this
+      // weekend", and nobody could tell which day any of it was on: a
+      // Mass label names its church and a social names its restaurant,
+      // and the day was only ever supplied by the heading above them.
+      // So they get the same day headings as the full track.
       out += group(tx('form.days'), check(k + 'days.sun', 'form.sun.bambino', p.days.sun));
+      out += group(tx('form.friday.title'),
+        check(k + 'mass_fri', 'form.mass_fri', p.mass_fri) +
+        check(k + 'holy_hour', 'form.holy_hour', p.holy_hour) +
+        socialRow(k + 'social_fri', 'form.social_fri', p.social_fri, 'social_fri'));
+      out += group(tx('form.saturday.title'),
+        check(k + 'mass_sat', 'form.mass_sat', p.mass_sat) +
+        socialRow(k + 'social_sat', 'form.social_sat', p.social_sat, 'social_sat'));
       out += group(tx('form.sunday.title'),
         check(k + 'mass_sun', 'form.mass_sun', p.mass_sun) +
         check(k + 'trolley', 'form.trolley', p.trolley));
-      out += group(tx('form.also.title'),
-        check(k + 'mass_fri', 'form.mass_fri', p.mass_fri) +
-        check(k + 'mass_sat', 'form.mass_sat', p.mass_sat) +
-        check(k + 'holy_hour', 'form.holy_hour', p.holy_hour) +
-        socialRow(k + 'social_fri', 'form.social_fri', p.social_fri, 'social_fri') +
-        socialRow(k + 'social_sat', 'form.social_sat', p.social_sat, 'social_sat'));
     }
     out += group(tx('form.around.title'), check(k + 'bus', 'form.bus', p.bus));
     return out;
@@ -652,7 +659,11 @@
     else if (s === 'payment') {
       // the fee is the floor; anything above it is a gift, and the ship
       // records the two apart. The suggested figure is per pilgrim.
-      var sug = Number((status.fees || {}).suggested_full || 0) * (people.length || 1);
+      // the suggested figure is what a full weekend costs, so it is
+      // only offered on the full track: a Bambino walker doing the last
+      // two and a half miles should not be asked for three days' cost
+      var sug = r.track === 'full'
+        ? Number(((status && status.fees) || {}).suggested_full || 0) * (people.length || 1) : 0;
       function amt(val, id, key, vars) {
         return '<label class="check"><input type="radio" name="amount" value="' + val + '" data-amount="' + id + '"' +
           (id === 'fee' ? ' checked' : '') + '><span>' + tx(key, vars) + '</span></label>';
@@ -665,9 +676,13 @@
         (sug > r.fees ? amt(sug, 'suggested', 'next.payment.suggested', { total: money(sug) }) : '') +
         amt('custom', 'custom', 'next.payment.custom') +
         '<div id="amount-box" hidden><label>$<input type="number" id="amount-dollars" min="' +
-        Math.ceil(r.fees / 100) + '" step="1" value="' + Math.ceil(r.fees / 100) + '"></label>' +
+        Math.ceil(r.fees / 100) + '" step="1" value="' + Math.ceil(r.fees / 100) +
+        '" data-floor="' + r.fees + '"></label>' +
         '<p class="note">' + tx('next.payment.custom_help') + '</p></div></div>' +
-        '<button type="button" class="btn" data-act="pay">' + tx('next.payment.button', { total: money(r.fees) }) + '</button>';
+        '<button type="button" class="btn" data-act="pay">' + tx('next.payment.button', { total: money(r.fees) }) + '</button>' +
+        // in rehearsal the button completes the step itself, so the
+        // line about Stripe would be a lie
+        (status && status.mode === 'live' ? '<p class="note">' + tx('next.payment.card') + '</p>' : '');
     }
     else if (s === 'assistance') out = block('assistance');
     else if (s === 'waitlist') out = block('waitlist', { position: r.position, track: trackWords(r.track) });
@@ -706,7 +721,11 @@
       '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="waiver-h">' +
       '<h2 id="waiver-h">' + tx('waiver.title') + '</h2>' +
       '<p class="help">' + tx('waiver.intro', { names: names }) + '</p>' +
-      '<div class="terms" id="waiver-terms" tabindex="0">' + paragraphs(raw('waiver.text')) + '</div>' +
+      // in edit mode the terms are one editable block of raw text, not
+      // rendered paragraphs: this is the one string an organizer MUST
+      // replace, and it cannot be replaced a paragraph at a time
+      '<div class="terms" id="waiver-terms" tabindex="0">' +
+      (editing ? tx('waiver.text') : paragraphs(raw('waiver.text'))) + '</div>' +
       '<label class="check"><input type="checkbox" id="waiver-agree" disabled>' +
       '<span>' + tx('waiver.agree') + '</span></label>' +
       '<p class="help" id="waiver-note">' + tx('waiver.scroll') + '</p>' +
@@ -922,7 +941,11 @@
         out = form(model);
       } else if (name === 'agreement') {
         mode = 'next';
-        out = nextStep(fixtureReg('waiver')) + waiverDialog(fixtureReg('waiver'));
+        // `preview` makes the backdrop let clicks through: it is fixed
+        // and covers the step row, so without it pressing another step
+        // does nothing and the organizer is stuck on this one
+        out = nextStep(fixtureReg('waiver')) +
+          waiverDialog(fixtureReg('waiver')).replace('class="scrim"', 'class="scrim preview"');
       } else if (name === 'checkin') {
         mode = 'checkin';
         out = checkinPage(checkinFixture());
@@ -936,11 +959,17 @@
       status = keep.status; model = keep.model; mode = keep.mode; rid = keep.rid; token = keep.token;
       sameAs = keep.sameAs; manageMade = keep.manageMade;
     }
-    return '<div class="ribbon">Preview: ' + esc(labelOf(name)) +
+    // the step is named on the ribbon so a click-through can wait for
+    // the preview it asked for instead of sleeping and hoping
+    return '<div class="ribbon" data-step="' + esc(name) + '">Preview: ' + esc(labelOf(name)) +
       '. Nothing here is real and no button works.</div>' + out;
   }
   function showStep(name) {
     step = name;
+    // a route started a moment ago is still waiting on /api/status, and
+    // its .then would paint the real page over this preview. Bumping the
+    // generation is how every other path here cancels one.
+    routeGen++;
     stepsEl.innerHTML = stepsHtml();
     if (!name) return route();
     render(previewHtml(name));
@@ -1338,28 +1367,12 @@
       });
     }
     else if (act2 === 'waiver-open') {
+      // on the body, so a repaint of the view cannot take the dialog
+      // with it. Its own buttons are handled on the document; see below.
       var host = document.createElement('div');
       host.innerHTML = waiverDialog(lastReg || { people: [] });
       document.body.appendChild(host.firstChild);
       waiverWatch();
-    }
-    else if (act2 === 'waiver-close') { closeWaiver(); }
-    else if (act2 === 'waiver-adopt') {
-      var freeAdopt = spin(el);
-      leaving = 'waiver';
-      post('/reg/' + rid + '/sign?t=' + encodeURIComponent(token),
-           { agreed: true, text_hash: status.waiver_hash }).then(function (d) {
-        closeWaiver();
-        if (d.next && lastReg) fresh = Object.assign({}, lastReg, { status: d.next, lapsed: false });
-        route();
-      }).catch(function (e) {
-        freeAdopt();
-        leaving = null;
-        var box = document.getElementById('waiver-error');
-        var msg = e.code === 'stale' ? t('waiver.stale') : e.message;
-        if (box) box.innerHTML = '<div class="error">' + esc(msg) + '</div>';
-        else showError(msg);
-      });
     }
     else if (act2 === 'sign' || act2 === 'pay') {
       var body = {};
@@ -1397,7 +1410,9 @@
     if (picked.value !== 'custom') return Number(picked.value);
     var box = document.getElementById('amount-dollars');
     var cents = Math.round(Number(box && box.value) * 100);
-    var floor = Math.round(Number(box && box.min) * 100);
+    // the floor is the fee itself, not the whole dollars the box rounds
+    // it up to, so a fee with cents in it is not quietly raised
+    var floor = Number((box && box.getAttribute('data-floor')) || 0);
     if (!(cents >= floor)) return null;
     return cents;
   }
@@ -1409,6 +1424,34 @@
     showError('');
     var btn = document.querySelector('[data-act="pay"]');
     if (btn && n.value !== 'custom') btn.textContent = fill(raw('next.payment.button'), { total: money(Number(n.value)) });
+  });
+  // The dialog's own two buttons, bound to the document rather than to
+  // the view. They were once handled by the view's listener while the
+  // dialog hung off document.body, which is outside it: the dialog
+  // opened and then every press of Adopt and sign did nothing at all.
+  // Binding it here works wherever the dialog is put.
+  document.addEventListener('click', function (ev) {
+    if (editing) return;
+    var el = ev.target.closest ? ev.target.closest('[data-act]') : null;
+    if (!el) return;
+    var act2 = el.getAttribute('data-act');
+    if (act2 === 'waiver-close') return closeWaiver();
+    if (act2 !== 'waiver-adopt') return;
+    var freeAdopt = spin(el);
+    leaving = 'waiver';
+    post('/reg/' + rid + '/sign?t=' + encodeURIComponent(token),
+         { agreed: true, text_hash: status.waiver_hash }).then(function (d) {
+      closeWaiver();
+      if (d.next && lastReg) fresh = Object.assign({}, lastReg, { status: d.next, lapsed: false });
+      route();
+    }).catch(function (e) {
+      freeAdopt();
+      leaving = null;
+      var box = document.getElementById('waiver-error');
+      var msg = e.code === 'stale' ? t('waiver.stale') : e.message;
+      if (box) box.innerHTML = '<div class="error">' + esc(msg) + '</div>';
+      else showError(msg);
+    });
   });
   function closeWaiver() {
     var scrim = document.getElementById('waiver-scrim');

@@ -17,11 +17,12 @@
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \usepackage{hyperref}
 
-\definecolor{ink}{HTML}{1A1A1A}
-\definecolor{accent}{HTML}{0B5F91}
-\definecolor{softbg}{HTML}{EEF4F8}
+% The event's own colours, taken from babystepscamino.com.
+\definecolor{ink}{HTML}{0D0D0D}
+\definecolor{accent}{HTML}{B70000}
+\definecolor{softbg}{HTML}{F7F3F3}
 \definecolor{warnbg}{HTML}{FDF1E3}
-\definecolor{rule}{HTML}{C8D4DC}
+\definecolor{rule}{HTML}{DCD2D2}
 \color{ink}
 \hypersetup{colorlinks=true,linkcolor=accent,urlcolor=accent,pdftitle={Baby Steps Camino: the organizers' manual},pdfauthor={Baby Steps Camino}}
 
@@ -110,7 +111,9 @@
 
 % ---------------------------------------------------------------- cover
 \thispagestyle{empty}
-\vspace*{1.1in}
+\vspace*{0.5in}
+\noindent\includegraphics[width=1.5in]{img/logo.png}\par
+\vspace{24pt}
 {\fontsize{30}{36}\selectfont\bfseries\color{accent} Baby Steps Camino\par}
 \vspace{10pt}
 {\fontsize{22}{28}\selectfont The organizers' manual\par}
@@ -231,6 +234,126 @@ normal. Press the name at the top right any time to change it.
 \end{note}
 
 % ---------------------------------------------------------------- 3
+\section{What a pilgrim does}
+
+You will be asked about this on the telephone more than about anything
+else in the program, so it is worth reading once even though none of it
+is your work. A pilgrim never has a password and never has an account.
+They do four things.
+
+\subsection{1. They choose a track and fill in the form}
+
+\closeup[2.7in]{img/ov-pilgrim-landing.png}{The public page, on a
+telephone. Two doors: the full Camino and the Bambino Camino.}
+
+They pick the full Camino or the Bambino Camino, say who is walking,
+which days, and which meals, Masses and rides they want, and give one
+address and one telephone number for the whole party. One person signs
+up for everybody: a family is one registration, not four.
+
+The form saves itself as they go. Somebody who closes the tab halfway
+through and comes back finds their answers still there. Until they press
+the button at the bottom it is a \textit{draft}, and drafts are the
+people worth chasing; see the Roster chapter.
+
+\subsection{2. They read and sign the agreement}
+
+\closeup[5in]{img/pilgrim-waiver.png}{After signing up, this. One
+button.}
+
+Every pilgrim signs a liability waiver before walking, and the person
+who signed up signs once for the whole party, children included. There
+is no paper, no second website and no separate email: it happens on the
+page.
+
+\closeup[4.6in]{img/pilgrim-terms.png}{The agreement itself. The tick box
+is grey and the button pale until they have scrolled to the bottom.}
+
+Two things are deliberate here, and both come up on the telephone:
+
+\begin{itemize}[leftmargin=*,itemsep=6pt]
+\item \textbf{The tick box does nothing until they have scrolled the
+  words to the very end.} A line under it says \textit{Read to the end
+  to continue}. Nobody can agree to words the page never showed them.
+\item \textbf{The button stays pale until the box is ticked.} Then
+  \btn{Adopt and sign} turns red and works.
+\end{itemize}
+
+\closeup[4.6in]{img/pilgrim-terms-agreed.png}{Read to the end, and
+ticked. \textnormal{\textbf{Adopt and sign}} works now.}
+
+\btn{Close}, or the Escape key, leaves without signing. Their spot is
+still held; they can come back to the same link.
+
+\begin{note}[warnbg]{Careful: the words are yours, and they start as a
+placeholder}
+A brand-new program ships with the agreement reading \textit{REPLACE
+THIS WITH THE WAIVER THE ORGANIZERS USE}, followed by plain-English
+terms written as an example. \textbf{Somebody must paste in the wording
+your lawyer approved before registration opens.} It is edited the same
+way as every other piece of writing on the page; see the chapter
+\textit{Changing the words pilgrims read}, and look for \btn{The
+agreement} in the row of steps.
+
+The program records which exact wording each pilgrim agreed to. If you
+change the words later, everybody who signed before the change is on
+record as having agreed to the old ones, which is correct and is the
+whole point. A pilgrim who happens to have the page open while you
+change it is asked to read it again rather than being signed up to
+something they did not see.
+\end{note}
+
+\subsection{3. They pay}
+
+\closeup[5in]{img/pilgrim-payment.png}{The payment step. The registration
+fee is chosen for them; the other two are offers.}
+
+The page offers three amounts:
+
+\begin{itemize}[leftmargin=*,itemsep=6pt]
+\item \textbf{The registration fee.} What the party owes. Chosen
+  already, so a pilgrim who is not reading carefully pays the right
+  thing.
+\item \textbf{The full cost of a pilgrim's weekend.} What it actually
+  costs you to put one person on the beach for three days, which is more
+  than the fee. You set this figure in Settings.
+\item \textbf{Another amount}, with a box. It will not accept less than
+  the fee.
+\end{itemize}
+
+Whatever they pay above the fee is recorded as a \textbf{gift}, kept
+separate from the registration money on their record and in Stripe, so
+your bookkeeping does not have to untangle the two.
+
+Pressing the button sends them to Stripe's own page to type their card
+number. Their card details never touch this program. When Stripe says
+the money is taken, they come back, the registration completes, and the
+confirmation email goes out.
+
+\begin{note}{Good to know: a pilgrim who closes the tab after paying}
+It still completes. Stripe tells the program separately, so a payment is
+never lost because somebody shut their laptop at the wrong moment. If
+you ever see a registration sitting at \textit{payment} that the pilgrim
+swears they paid, look at their record: the History says what happened,
+and the Payment card will show the Stripe reference if the money
+arrived.
+\end{note}
+
+\subsection{4. They keep their private link}
+
+The confirmation email carries a link that is theirs alone. From it they
+can change their answers, add or remove somebody, or cancel, right up
+until the changes deadline. On each morning of the walk that link also
+checks them in.
+
+\begin{note}{Careful}
+That link is a password. Anybody holding it can change that
+registration. If a pilgrim loses it, they can ask for it again from the
+bottom of the public page, or you can send it from their record with
+\btn{Send this email again}. Never post one in a group message.
+\end{note}
+
+% ---------------------------------------------------------------- 4
 \section{The Roster: your everyday screen}
 
 The roster is the list of everyone who has signed up. It is the first
@@ -372,7 +495,7 @@ The number on the button can be smaller than the number of rows. A
 sign-up that left only a telephone number has no address to copy, and
 two people who typed the same address count once.
 
-% ---------------------------------------------------------------- 4
+% ---------------------------------------------------------------- 5
 \section{One registration}
 
 Press any name on the roster. You get the whole registration: their
@@ -411,20 +534,41 @@ the caps.
 \closeup{img/reg-payment.png}{The Payment card, on a party that has
 paid.}
 
-What they paid, how, when, and any reference. If they still owe, you
-get a \btn{Record this payment} form: choose \textit{check},
-\textit{cash} or \textit{other}, put in the amount, a reference such as
-a cheque number, and a note. That completes the registration.
+What they paid, how, when, and any reference. A party that paid more
+than the fee shows the extra separately as a \textbf{gift}; the
+registration money and the gift are never added together here, and they
+reach Stripe as two separate lines as well.
+
+A payment made by card reads \textit{stripe}, and the reference is
+Stripe's own session number, which is what to quote if you ever have to
+ask Stripe about it.
+
+If they still owe, you get a \btn{Record this payment} form: choose
+\textit{check}, \textit{cash} or \textit{other}, put in the amount, a
+reference such as a cheque number, and a note. That completes the
+registration.
 
 If a payment exists, \btn{Mark this payment refunded} flags it. The
 actual refund is done in Stripe; this only writes it on the record.
 
 \subsubsection{Waiver}
 
-\closeup{img/reg-waiver.png}{The Waiver card.}
+\closeup{img/reg-waiver.png}{The Waiver card. This one was signed while
+the program was in rehearsal, so it says \textnormal{\textit{stub}}.}
 
 Whether they signed, how, and when. \btn{They signed on paper} records
 a paper waiver for somebody who could not sign online.
+
+\textbf{Method} is usually \textit{adopt}: they read the agreement on
+the page and pressed \btn{Adopt and sign}. Under it, \textbf{Wording
+signed} is a long code: a fingerprint of the exact words they were
+shown, so that if the agreement is ever rewritten you can still tell who
+agreed to which version. You never need to read it. It is there for the
+day somebody asks.
+
+The other answers are \textit{paper}, which you recorded yourself, and
+\textit{stub}, which means it was signed while the program was in
+rehearsal and is not a real signature.
 
 \subsubsection{Actions}
 
@@ -468,7 +612,7 @@ History is the whole story of the registration, newest first: every
 change, who made it and when. Nothing is ever lost. This is what to
 read when somebody asks what happened.
 
-% ---------------------------------------------------------------- 5
+% ---------------------------------------------------------------- 6
 \section{Adding a registration yourself}
 
 For someone who telephoned, sent a cheque, or turned up on the day.
@@ -494,7 +638,7 @@ The registration window and the caps do not apply here, because you
 have looked and decided. These come out of the pool of late places the
 organizers hold back.
 
-% ---------------------------------------------------------------- 6
+% ---------------------------------------------------------------- 7
 \section{The wait list}
 
 When a track fills up, the public page stops taking sign-ups for it and
@@ -519,7 +663,7 @@ and the wait list is where you fill them. It is worth checking the wait
 list whenever a cancellation comes in.
 \end{note}
 
-% ---------------------------------------------------------------- 7
+% ---------------------------------------------------------------- 8
 \section{The event weekend}
 
 This is the part you will use on the three days themselves. There are
@@ -641,7 +785,7 @@ many really came.
 such as \textit{just after eight}. A box left empty is not a zero, it
 means nobody filled it in, and Reports treats it that way.
 
-% ---------------------------------------------------------------- 8
+% ---------------------------------------------------------------- 9
 \section{Reports and spreadsheets}
 
 \shot{img/ov-reports.png}{The top of Reports. Everything here is worked
@@ -682,7 +826,7 @@ history. Use this for the treasurer. \\
 \bottomrule
 \end{tabularx}
 
-% ---------------------------------------------------------------- 9
+% ---------------------------------------------------------------- 10
 \section{Settings}
 
 \shot{img/ov-settings.png}{The top of Settings. Change what you need,
@@ -708,6 +852,10 @@ day it is in Florida, so check-in opens at the right hour. \\[5pt]
 first, written year first: \texttt{2026-12-04}. \\[5pt]
 \textbf{Public URL} & The address pilgrims use. \\[5pt]
 \textbf{Fees} & In dollars. Per person, children included. \\[5pt]
+\textbf{Suggested full cost} & In dollars. What one pilgrim's weekend
+really costs you. It is offered on the payment page as a second choice
+beside the fee, and anything paid above the fee is recorded as a gift.
+Set it to the fee to stop offering it. \\[5pt]
 \textbf{Caps} & How many may sign up for each track and each social,
 and how many late places you hold back. The Shrine number is reported
 only, never enforced. \\[5pt]
@@ -720,20 +868,53 @@ from another time zone, allow for it. \\[5pt]
 finished paying. 48 is the normal answer. \\[5pt]
 \textbf{Organizations} & The parishes and groups the sign-up form
 suggests. One per line. \\[5pt]
-\textbf{Providers} & Leave alone. See the box below. \\
+\textbf{Providers} & The card and email arrangements. See below. \\
 \bottomrule
 \end{tabularx}
 
-\begin{note}[warnbg]{Careful: rehearsal mode}
-While \textbf{Mode} says \textit{stub}, the program is in rehearsal: no
-email is really sent, and payments complete themselves without any
-money changing hands. You will see the word \textit{stub} in the Paid
-column and a line saying \textit{Rehearsal: no email leaves the ship}.
-That is correct for testing. Switching it to \textit{live} is not
-something to do on your own; ask whoever set the program up.
+\subsection{Providers: rehearsal or real}
+
+\closeup{img/settings-providers.png}{The Providers card. \textnormal{\textbf{Mode}}
+is the switch between rehearsal and real.}
+
+This one card decides whether the program is playing or working.
+
+\begin{tabularx}{\linewidth}{@{}L{1.5in}Y@{}}
+\toprule
+\textbf{stub} & Rehearsal. Nobody's card is charged, no email leaves
+the program, and signing and paying complete themselves so you can walk
+through the whole thing. A yellow line across the top of the public
+page says so, and the Paid column reads \textit{stub}. \\[6pt]
+\textbf{live} & Real. Cards are charged through Stripe and emails go
+out through Resend. \\
+\bottomrule
+\end{tabularx}
+
+\begin{note}[warnbg]{Careful: before you ever choose \textit{live}}
+Four things have to be true, and none of them are things the program can
+do for you.
+
+\begin{enumerate}[leftmargin=*,itemsep=5pt]
+\item A \textbf{Stripe secret key} is in the box. Once saved it shows as
+  four stars and cannot be read back, which is on purpose.
+\item You have pressed \btn{Check the Stripe key} and read the answer.
+  It asks Stripe and says either \textit{This is a test key: no real
+  money moves} or \textit{This is a LIVE key: real cards will be
+  charged}. \textbf{Do not switch to live until that sentence says what
+  you expect.}
+\item A \textbf{Resend key} is in the box, and the address in
+  \textbf{Mail from} is at a domain that has been set up and verified at
+  Resend. Until it is, every email is refused and nothing goes out.
+\item \textbf{Public URL} is the address pilgrims really use. Every
+  emailed link and the return trip from Stripe are built from it.
+\end{enumerate}
+
+If you are not sure about any of the four, ask whoever set the program
+up. Switching to \textit{live} with a real key and a real card is real
+money.
 \end{note}
 
-% ---------------------------------------------------------------- 10
+% ---------------------------------------------------------------- 11
 \section{The emails}
 
 \shot{img/ov-emails.png}{The Emails screen. One card per email the
@@ -760,10 +941,31 @@ the subject again before you save a second time.
 You may move a curly-bracket word, put words around it, or use it
 twice. You simply may not lose one.
 
+\subsection{How to tell whether an email really went}
+
+An email can be written perfectly and still not arrive, because the
+sending service refused it. Open \btn{Backup} and read the log at the
+bottom of the page. Every attempt leaves a line:
+
+\begin{tabularx}{\linewidth}{@{}L{1.5in}Y@{}}
+\toprule
+\textbf{stub} & The program was in rehearsal. Nothing was sent, on
+purpose. \\[6pt]
+\textbf{mail}, a tick & The sending service took it. \\[6pt]
+\textbf{mail}, a cross & It was refused, and the line says why in the
+service's own words, for instance \textit{the domain is not verified}.
+That is a setting to fix, not a pilgrim to chase. \\
+\bottomrule
+\end{tabularx}
+
+The morning check-in emails are careful about this: a pilgrim whose
+email was refused does not get ticked as sent, so pressing the button
+again picks them up.
+
 Every other piece of writing that a pilgrim reads is edited on the
 public page itself, not here. See the next section.
 
-% ---------------------------------------------------------------- 11
+% ---------------------------------------------------------------- 12
 \section{Changing the words pilgrims read}
 
 Everything on the sign-up page, every heading, every label, every bit of
@@ -783,6 +985,22 @@ payment step, the wait list, and so on. Press one to see that page,
 filled with a made-up example, so you can edit its words without having
 to sign up yourself.
 
+\begin{note}[warnbg]{The agreement lives here too}
+Press \btn{The agreement} in that row and the waiver opens. While
+\btn{Edit text} is on, the terms are shown as one block of plain text
+rather than as tidy paragraphs, because this is the one string that has
+to be replaced whole rather than a line at a time. Click into it, select
+everything, and paste your own wording over it.
+
+\textbf{This is where the real wording has to be pasted in before
+registration opens}, over the placeholder the program ships with. It is
+the one piece of writing in this program that a lawyer should see.
+
+Leave a blank line between paragraphs; that is how the page knows where
+one ends. There is room for about twenty pages of text, far more than
+any waiver needs.
+\end{note}
+
 \begin{note}{Careful}
 While \btn{Edit text} is on, nothing else on the page works: buttons do
 nothing and boxes cannot be typed in. That is on purpose, so you cannot
@@ -790,11 +1008,36 @@ accidentally sign yourself up while editing. Press \btn{Editing text}
 again to turn it off.
 \end{note}
 
-% ---------------------------------------------------------------- 12
+% ---------------------------------------------------------------- 13
 \section{Backup}
 
 \shot{img/ov-backup.png}{Backup. The downloads at the top, the restore
 below.}
+
+\subsection{Recent activity}
+
+\closeup[5.4in]{img/backup-log.png}{The last of everything the program
+has done, newest first.}
+
+At the bottom of the Backup page is a list of the last two thousand
+things the program did: every sign-up, every change, every payment and
+every email it tried to send. Newest first. The registration number in
+each line is a link straight to that registration.
+
+This is the page to open when somebody says \textit{I never got the
+email}. A line shaded red is one that did not go through, and it carries
+the reason in the sending service's own words. A red line usually means
+a setting to put right, not a pilgrim to chase.
+
+\begin{tabularx}{\linewidth}{@{}L{1.5in}Y@{}}
+\toprule
+\textbf{rehearsal} & The program was in rehearsal mode. Nothing was
+sent, on purpose. \\[6pt]
+\textbf{the mail service} & A real send. Red means it was refused. \\[6pt]
+\textbf{the pilgrim} & Something a pilgrim did on the public page. \\[6pt]
+\textbf{a name} & Something one of you did in the backoffice. \\
+\bottomrule
+\end{tabularx}
 
 \subsection{Taking a backup}
 
@@ -828,7 +1071,7 @@ or somebody signs up while you are deciding, the program asks you to
 press \btn{Read the file} again before it will restore. That is on
 purpose: it will only restore onto the situation it showed you.
 
-% ---------------------------------------------------------------- 13
+% ---------------------------------------------------------------- 14
 \section{If something looks wrong}
 
 \begin{tabularx}{\linewidth}{@{}L{1.95in}Y@{}}
@@ -851,7 +1094,22 @@ so. Send them the right email again from the box under Actions. \\[7pt]
 back}. It returns to exactly where it was. \\[7pt]
 \textbf{Two of us edited the same registration} & The last save wins.
 Read the History at the bottom: it shows both changes, with names and
-times. \\
+times. \\[7pt]
+\textbf{A pilgrim says they never got an email} & Backup, then
+\btn{Recent activity}. Find the line. If it is red, it says why, and it
+is a setting to fix. If it is not there at all, the program never tried:
+check that Mode is \textit{live}. \\[7pt]
+\textbf{A pilgrim says they paid but the program says they have not} &
+Open their registration. If the Payment card names a Stripe reference,
+the money arrived and the program has it. If it does not, look in
+\btn{Recent activity} for a red line mentioning Stripe, and check Stripe
+itself for a payment against their email address. \\[7pt]
+\textbf{Nobody is getting the morning check-in emails} & Press the
+button once more. If it sends a handful and then stops, the sending
+service is refusing them: \btn{Recent activity} says why. The program
+stops rather than grinding through the whole list, and nobody it stopped
+short of is marked as sent, so pressing again once the setting is fixed
+picks them all up. \\
 \bottomrule
 \end{tabularx}
 
@@ -861,7 +1119,7 @@ history, and cancellations can be put back. If you are unsure, look at
 the History before you worry.
 \end{note}
 
-% ---------------------------------------------------------------- 14
+% ---------------------------------------------------------------- 15
 \section{Words this program uses}
 
 \begin{tabularx}{\linewidth}{@{}L{1.5in}Y@{}}
@@ -870,18 +1128,28 @@ the History before you worry.
 \textbf{Bambino} & The Sunday-only track, the last 2.5 miles. \\
 \textbf{Cap} & The most people allowed on a track or at a social. \\
 \textbf{Complete} & Signed and paid. Nothing outstanding. \\
+\textbf{Adopt} & How a pilgrim signs the agreement: they read it on the
+page and press \btn{Adopt and sign}. \\
 \textbf{Draft} & A sign-up somebody started and never finished. \\
 \textbf{Exempt} & Marked as not counting against the caps. Used for
 local Order of Malta members and volunteers. \\
 \textbf{Full track} & All three days of the walk. \\
+\textbf{Gift} & Anything a pilgrim paid above the registration fee. Kept
+separate from the fee everywhere. \\
 \textbf{Hold} & The 48 hours a spot is kept for somebody who has signed
 up but not finished paying. \\
 \textbf{Party} & One registration, which may be one person or a whole
 family. \\
+\textbf{Live} & The opposite of rehearsal: real cards, real emails. \\
+\textbf{Recent activity} & The list at the bottom of the Backup page of
+everything the program has done lately. \\
 \textbf{Rehearsal (stub)} & Practice mode: no real emails, no real
 money. \\
+\textbf{Resend} & The service that carries the emails out. \\
 \textbf{The ship} & The computer this program runs on. It shows up in a
 few messages. \\
+\textbf{Stripe} & The service that takes the card payments. Pilgrims
+type their card number on Stripe's page, never on ours. \\
 \textbf{Track} & Which walk they are on: full or Bambino. \\
 \textbf{Waiver} & The liability form every pilgrim signs. \\
 \textbf{Wristband} & What a checked-in pilgrim is given. Green means
@@ -889,7 +1157,7 @@ give one. \\
 \bottomrule
 \end{tabularx}
 
-% ---------------------------------------------------------------- 15
+% ---------------------------------------------------------------- 16
 \newpage
 \section*{The one-page reminder}
 \addcontentsline{toc}{section}{The one-page reminder}
@@ -910,6 +1178,8 @@ give one. \\
 
 \begin{enumerate}[leftmargin=*,itemsep=4pt]
 \item \btn{Backup}, press \btn{jam}, save the file somewhere safe.
+\item On the same page, read \btn{Recent activity}. Anything shaded red
+  is an email that did not go out.
 \item \btn{Reports} for the totals and the money.
 \end{enumerate}
 
@@ -933,6 +1203,6 @@ give one. \\
 \end{enumerate}
 
 \vfill
-{\small This manual describes Register version 13.\par}
+{\small This manual describes Register version 15.\par}
 
 \end{document}

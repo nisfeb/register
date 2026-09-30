@@ -40,7 +40,7 @@
       note=@t
   ==
 +$  waiver
-  $:  method=@tas                               ::  %none %adopt %paper %stub %docusign
+  $:  method=@tas                               ::  %none %adopt %paper %stub
       envelope=@t
       status=@tas                               ::  %none %sent %completed %declined
       at=(unit @da)
@@ -1259,6 +1259,9 @@
   |=  jon=json
   ^-  (each waiver @t)
   =/  meth=@t  (gs jon 'method')
+  ::  docusign is not written any more; it is still read, because a
+  ::  registration signed that way before the waiver moved into the app
+  ::  must not become unreadable
   ?.  (one-of meth ~['none' 'adopt' 'docusign' 'paper' 'stub'])
     [%| (rap 3 'waiver method ' meth ' is not one the ship writes' ~)]
   =/  st=@t  (gs jon 'status')
@@ -1551,9 +1554,10 @@
   $(vars t.vars, out (replace out key (trip v.i.vars)))
 ::  +secret-key: a settings key whose value is a secret
 ::
-::  phase 2 note: the DocuSign tokens are stored as access_token and
-::  refresh_token, and neither name ends in _key, so this arm must
-::  name them too before those tokens are ever written.
+::  Every secret this app stores is named either `secret` or `*_key`,
+::  which is what this arm matches. A provider added later whose token
+::  is named otherwise must be named here too, before it is ever
+::  written: an unnamed secret is exported and displayed in the clear.
 ::
 ++  secret-key
   |=  k=@t
@@ -1724,7 +1728,6 @@
       ['form.social_sat' s+'Pilgrim social at [Pusser\'s](https://pusserspvb.com/), 3pm']
       ['form.social_sat.short' s+'Pusser\'s']
       ['form.social_soldout' s+'(sold out)']
-      ['form.also.title' s+'Also this weekend']
       ['form.around.title' s+'Getting around']
       ['form.bus' s+'Needs a seat on the motorcoach (back to the start each day; to the start on Sunday)']
       ['form.about' s+'About {{name}}']
@@ -1767,7 +1770,6 @@
       ['form.resend.done' s+'If that address has a registration, the link is on its way.']
       ['next.waiver.title' s+'Sign the waiver']
       ['next.waiver.body' s+'Every pilgrim signs a liability waiver before walking. You sign once, for yourself and for everyone in your party: {{names}}.']
-      ['next.waiver.button' s+'Sign the waiver']
       ['next.payment.title' s+'Pay the registration fee']
       ['next.payment.body' s+'Your {{spots}} are held. Registration fee for {{names}}: {{total}}.']
       ['next.payment.body.one' s+'Your spot is held. Registration fee for {{names}}: {{total}}.']
@@ -1779,6 +1781,7 @@
       ['next.payment.custom' s+'Another amount']
       ['next.payment.custom_help' s+'Anything above the registration fee is recorded as a gift to the Baby Steps Camino.']
       ['next.payment.too_low' s+'The amount cannot be less than the registration fee.']
+      ['next.payment.card' s+'The next page is Stripe\'s, where you type your card. We never see your card number.']
       ['next.assistance.title' s+'Your request is with the organizers']
       ['next.assistance.body' s+'Your waiver is signed. The organizers read every request for assistance, and we will email you as soon as yours is decided.']
       ['next.lapsed' s+'Your spots were held for 48 hours and that time has passed. You can still go on. If the track filled in the meantime we will offer you the wait list.']
@@ -1857,5 +1860,15 @@
   =/  base=json  starter-copy
   ?.  ?=([%o *] base)  cur
   ?.  ?=([%o *] cur)  base
-  [%o (~(uni by p.base) p.cur)]
+  ::  every key the code still uses, carrying the stored value wherever
+  ::  there is one: an organizer's edits always win, and a string a
+  ::  release adds arrives at its default.
+  ::
+  ::  A key the code has RETIRED is dropped rather than carried for ever.
+  ::  Nothing renders it, so nobody could reach it to correct it, and it
+  ::  would sit in the document looking like a string that matters.
+  :-  %o
+  %-  ~(urn by p.base)
+  |=  [k=@t v=json]
+  (fall (~(get by p.cur) k) v)
 --

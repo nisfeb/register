@@ -1,0 +1,6 @@
+# xelatex build artefacts; register-manual.pdf is the committed output
+manual.pdf
+manual.aux
+manual.log
+manual.out
+manual.toc
