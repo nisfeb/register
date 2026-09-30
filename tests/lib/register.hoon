@@ -761,6 +761,157 @@
     ::  the organizer's mark is the only other way out of the count
     (expect-eq !>(0) !>(full:(tally:reg st ~[knights(exempt &)] now)))
   ==
+::  +test-roster-row-every-box: what a day's roster says about somebody
+::  who ticked every box, and about somebody who ticked none.
+::
+::  Each of these is either that day's own question or a question asked
+::  on one day only, and nothing pinned which. The mutation run said so
+::  in as many words: dropping the day gate off the trolley, the Holy
+::  Hour, Friday's Mass or the Sunday distance changed nothing any test
+::  read. A ticked box that shows on the wrong day is a pilgrim counted
+::  for a meal they never asked for; a box that shows when it was never
+::  ticked is the same pilgrim counted twice.
+::
+++  test-roster-row-every-box
+  =/  one=person:reg  some-person
+  =/  every=person:reg
+    %=  one
+      days  [fri=& sat=& sun=&]
+      sun-ten  &  mass-fri  &  mass-sat  &  mass-sun  &
+      holy-hour  &  social-fri  &  social-sat  &  bus  &  trolley  &
+    ==
+  =/  nought=person:reg
+    %=  one
+      days  [fri=& sat=& sun=&]
+      sun-ten  |  mass-fri  |  mass-sat  |  mass-sun  |
+      holy-hour  |  social-fri  |  social-sat  |  bus  |  trolley  |
+    ==
+  =/  row  |=([p=person:reg day=@tas k=@t] ^-(? (gb:reg (en-roster-person:reg p day 0) k)))
+  ::  everything ticked: each field on the days it belongs to, and only those
+  =/  all-on=(list [day=@tas k=@t v=?])
+    :~  [%fri 'walks' &]   [%fri 'bus' &]       [%fri 'trolley' |]
+        [%fri 'mass' &]    [%fri 'mass_fri' &]  [%fri 'holy_hour' &]
+        [%fri 'social' &]  [%fri 'sun_ten' |]
+        [%sat 'walks' &]   [%sat 'bus' &]       [%sat 'trolley' |]
+        [%sat 'mass' &]    [%sat 'mass_fri' |]  [%sat 'holy_hour' |]
+        [%sat 'social' &]  [%sat 'sun_ten' |]
+        [%sun 'walks' &]   [%sun 'bus' &]       [%sun 'trolley' &]
+        [%sun 'mass' &]    [%sun 'mass_fri' |]  [%sun 'holy_hour' |]
+        [%sun 'social' |]  [%sun 'sun_ten' &]
+    ==
+  ::  Somebody who unticked Sunday but whose Sunday answers are still
+  ::  stored. The form stops offering a day's events when the day is
+  ::  unticked, and does not erase what was already there, so this is an
+  ::  ordinary record and not a contrived one.
+  ::
+  ::  The Sunday distance is gated on actually walking Sunday and so
+  ::  falls away. The Sunday Mass and the trolley are NOT: they stand on
+  ::  their own, because somebody may come to the Cathedral without
+  ::  walking the last stretch. That is a decision rather than an
+  ::  accident, and it is pinned here so it stays a decision.
+  =/  no-sun=person:reg
+    %=  one
+      days  [fri=& sat=& sun=|]
+      sun-ten  &  mass-sun  &  trolley  &
+      mass-fri  |  mass-sat  |  holy-hour  |  social-fri  |  social-sat  |  bus  |
+    ==
+  =/  off-sun=(list [day=@tas k=@t v=?])
+    :~  [%sun 'walks' |]    [%sun 'sun_ten' |]
+        [%sun 'mass' &]     [%sun 'trolley' &]
+    ==
+  ::  nothing ticked: walking, and nothing else, on any day
+  =/  all-off=(list [day=@tas k=@t v=?])
+    :~
+        [%fri 'walks' &]
+        [%fri 'bus' |]
+        [%fri 'trolley' |]
+        [%fri 'mass' |]
+        [%fri 'mass_fri' |]
+        [%fri 'holy_hour' |]
+        [%fri 'social' |]
+        [%fri 'sun_ten' |]
+        [%sat 'walks' &]
+        [%sat 'bus' |]
+        [%sat 'trolley' |]
+        [%sat 'mass' |]
+        [%sat 'mass_fri' |]
+        [%sat 'holy_hour' |]
+        [%sat 'social' |]
+        [%sat 'sun_ten' |]
+        [%sun 'walks' &]
+        [%sun 'bus' |]
+        [%sun 'trolley' |]
+        [%sun 'mass' |]
+        [%sun 'mass_fri' |]
+        [%sun 'holy_hour' |]
+        [%sun 'social' |]
+        [%sun 'sun_ten' |]
+    ==
+  %+  weld
+    |-  ^-  tang
+    ?~  all-on  ~
+    %+  weld
+      %+  expect-eq  !>([day.i.all-on k.i.all-on v.i.all-on])
+      !>  [day.i.all-on k.i.all-on (row every day.i.all-on k.i.all-on)]
+    $(all-on t.all-on)
+  %+  weld
+    |-  ^-  tang
+    ?~  all-off  ~
+    %+  weld
+      %+  expect-eq  !>([day.i.all-off k.i.all-off v.i.all-off])
+      !>  [day.i.all-off k.i.all-off (row nought day.i.all-off k.i.all-off)]
+    $(all-off t.all-off)
+  |-  ^-  tang
+  ?~  off-sun  ~
+  %+  weld
+    %+  expect-eq  !>([day.i.off-sun k.i.off-sun v.i.off-sun])
+    !>  [day.i.off-sun k.i.off-sun (row no-sun day.i.off-sun k.i.off-sun)]
+  $(off-sun t.off-sun)
+::  +test-planned-every-box: the same truth, counted over a party. The
+::  Sunday distance splits: the one who chose ten miles and the one who
+::  did not are counted apart, and on Friday and Saturday neither is
+::  counted at all.
+::
+++  test-planned-every-box
+  =/  one=person:reg  some-person
+  =/  every=person:reg
+    %=  one
+      days  [fri=& sat=& sun=&]
+      sun-ten  &  mass-fri  &  mass-sat  &  mass-sun  &
+      holy-hour  &  social-fri  &  social-sat  &  bus  &  trolley  &
+    ==
+  =/  nought=person:reg
+    %=  one
+      days  [fri=& sat=& sun=&]
+      sun-ten  |  mass-fri  |  mass-sat  |  mass-sun  |
+      holy-hour  |  social-fri  |  social-sat  |  bus  |  trolley  |
+    ==
+  =/  r=reg:reg  (some-reg %a %complete %full 1 t0)
+  ::  a third who is not walking Sunday, with a stale Sunday distance,
+  ::  and a fourth who is not walking Sunday and never chose one. The
+  ::  fourth is what keeps the short-walk count honest: without the gate
+  ::  on actually walking Sunday they would be counted among the people
+  ::  doing the last two and a half miles.
+  =/  no-sun=person:reg  every(days [fri=& sat=& sun=|])
+  =/  no-sun-plain=person:reg  nought(days [fri=& sat=& sun=|])
+  =/  regs=(list reg:reg)  ~[r(people ~[every nought no-sun no-sun-plain])]
+  =/  n  |=([day=@tas k=@t] ^-(@ud (fall (gn:reg (planned:reg regs day) k) 999)))
+  =/  want=(list [day=@tas k=@t v=@ud])
+    :~  [%fri 'walk' 4]  [%fri 'mass' 2]  [%fri 'holy_hour' 2]  [%fri 'social' 2]
+        [%fri 'bus' 2]   [%fri 'trolley' 0]  [%fri 'sun_ten' 0]  [%fri 'sun_short' 0]
+        [%sat 'walk' 4]  [%sat 'mass' 2]  [%sat 'holy_hour' 0]  [%sat 'social' 2]
+        [%sat 'bus' 2]   [%sat 'trolley' 0]  [%sat 'sun_ten' 0]  [%sat 'sun_short' 0]
+        ::  two of the four walk on Sunday. The two who do not are still
+        ::  counted at Mass and on the trolley, which stand alone, and in
+        ::  neither distance, which does not.
+        [%sun 'walk' 2]  [%sun 'mass' 2]  [%sun 'holy_hour' 0]  [%sun 'social' 0]
+        [%sun 'bus' 2]   [%sun 'trolley' 2]  [%sun 'sun_ten' 1]  [%sun 'sun_short' 1]
+    ==
+  |-  ^-  tang
+  ?~  want  ~
+  %+  weld
+    (expect-eq !>([day.i.want k.i.want v.i.want]) !>([day.i.want k.i.want (n day.i.want k.i.want)]))
+  $(want t.want)
 ++  test-reinstate
   =/  r=reg:reg  (some-reg %a %complete %full 2 t0)
   =/  gone=reg:reg

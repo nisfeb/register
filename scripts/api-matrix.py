@@ -884,6 +884,82 @@ def backoffice(live_rid):
     code, d = curl('GET', API + '/status')
     check('status says owner is false without one', code == 200 and (d or {}).get('owner') is False, (code, (d or {}).get('owner')))
 
+    # ---- every box, traced from the form to every report ----
+    # A ticked box that goes missing, or one that turns up on the wrong
+    # day, is the failure an organizer only finds on the beach. So one
+    # person ticks everything and is read back through the record, the
+    # three day rosters, the planned counts and the spreadsheet.
+    bx_base = {}
+    for bx_day in ('fri', 'sat', 'sun'):
+        code, bx_d = curl('GET', API + '/checkin/roster?day=' + bx_day, jar=JAR)
+        bx_base[bx_day] = (bx_d or {}).get('planned', {})
+    bx_person = person('Omni', 'Boxes', sun_ten=True, social_fri=True, social_sat=True,
+                       mass_fri=True, mass_sat=True, mass_sun=True, holy_hour=True,
+                       bus=True, trolley=True, first_bsc=True, knight_dame=True, volunteer=True)
+    code, bx_d = curl('POST', API + '/submit', party('full', 'matrix-boxes@example.com', [bx_person]))
+    check('a party with every box ticked submits', code == 200 and bx_d.get('rid'), (code, bx_d))
+    bx_rid, bx_tok = bx_d['rid'], bx_d['token']
+    settle()
+    code, bx_rec = admin('GET', '/reg/' + bx_rid)
+    bx_got = (bx_rec or {}).get('people', [{}])[0]
+    bx_lost = [k for k, v in bx_person.items()
+               if k != 'days' and v is True and bx_got.get(k) is not True]
+    check('the record keeps every box that was ticked', not bx_lost, bx_lost)
+    check('and the three walking days with them',
+          bx_got.get('days') == {'fri': True, 'sat': True, 'sun': True}, bx_got.get('days'))
+
+    # what each day's roster must say about that one person
+    bx_rows = {
+        'fri': {'walks': True, 'bus': True, 'trolley': False, 'mass': True,
+                'mass_fri': True, 'holy_hour': True, 'social': True, 'sun_ten': False},
+        'sat': {'walks': True, 'bus': True, 'trolley': False, 'mass': True,
+                'mass_fri': False, 'holy_hour': False, 'social': True, 'sun_ten': False},
+        'sun': {'walks': True, 'bus': True, 'trolley': True, 'mass': True,
+                'mass_fri': False, 'holy_hour': False, 'social': False, 'sun_ten': True},
+    }
+    for bx_day, bx_want in bx_rows.items():
+        code, bx_d = curl('GET', API + '/checkin/roster?day=' + bx_day, jar=JAR)
+        bx_mine = None
+        for bx_r in (bx_d or {}).get('rows', []):
+            if bx_r.get('rid') == bx_rid:
+                bx_mine = (bx_r.get('people') or [{}])[0]
+        if bx_mine is None:
+            check(bx_day + " roster carries the party", False, 'row not found')
+            continue
+        bx_bad = {k: (v, bx_mine.get(k)) for k, v in bx_want.items() if bx_mine.get(k) is not v}
+        check(bx_day + " roster shows that day's boxes and no other day's", not bx_bad, bx_bad)
+
+    # and the planned counts move by exactly what that one person asked for
+    bx_plan = {
+        'fri': {'walk': 1, 'mass': 1, 'holy_hour': 1, 'social': 1, 'bus': 1,
+                'trolley': 0, 'sun_ten': 0, 'sun_short': 0},
+        'sat': {'walk': 1, 'mass': 1, 'holy_hour': 0, 'social': 1, 'bus': 1,
+                'trolley': 0, 'sun_ten': 0, 'sun_short': 0},
+        'sun': {'walk': 1, 'mass': 1, 'holy_hour': 0, 'social': 0, 'bus': 1,
+                'trolley': 1, 'sun_ten': 1, 'sun_short': 0},
+    }
+    for bx_day, bx_want in bx_plan.items():
+        code, bx_d = curl('GET', API + '/checkin/roster?day=' + bx_day, jar=JAR)
+        bx_now = (bx_d or {}).get('planned', {})
+        bx_moved = {k: bx_now.get(k, 0) - bx_base[bx_day].get(k, 0) for k in bx_want}
+        check(bx_day + ' planned counts move by exactly what they asked for',
+              bx_moved == bx_want, {'moved': bx_moved, 'want': bx_want})
+
+    # and the spreadsheet carries the same answers
+    bx_csv = csv_rows('/export/people.csv', 'boxes-people.csv')
+    bx_hdr = bx_csv[0]
+    bx_mine = [r for r in bx_csv[1:] if r[bx_hdr.index('last')] == 'Boxes']
+    check('people.csv has the row', len(bx_mine) == 1, len(bx_mine))
+    if len(bx_mine) == 1:
+        bx_cells = dict(zip(bx_hdr, bx_mine[0]))
+        bx_cols = ['sun_ten', 'social_fri', 'social_sat', 'mass_fri', 'mass_sat',
+                   'mass_sun', 'holy_hour', 'bus', 'trolley', 'first_bsc',
+                   'knight_dame', 'volunteer', 'fri', 'sat', 'sun']
+        bx_off = {c: bx_cells.get(c) for c in bx_cols if bx_cells.get(c) != 'yes'}
+        check('people.csv says yes to every box that was ticked', not bx_off, bx_off)
+    code, bx_d = curl('POST', API + '/reg/' + bx_rid + '/cancel?t=' + bx_tok, {})
+    settle()
+
     # ---- the exports ----
     code, roster = admin('GET', '/regs')
     check('the roster answers rows with the caps and the clock',

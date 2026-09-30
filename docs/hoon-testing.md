@@ -49,7 +49,7 @@ grubbery translation applies to them and the suite's
 `/+ *test, reg=register` resolves the ordinary way. The whole config is
 the desk name, the libraries, and the tests directory.
 
-The suite is 87 arms over five libraries: `register.hoon` (the event and
+The suite is 90 arms over five libraries: `register.hoon` (the event and
 its rules), and phase 2's `register-http.hoon` (percent-encoding and form
 bodies), `register-stripe.hoon` (the Checkout calls, built and read) and
 `register-mail.hoon` (the Resend send) and `register-places.hoon` (the
@@ -247,10 +247,44 @@ If iris is ever fixed, that arm can go.
 is what `application/x-www-form-urlencoded` specifies anyway; `url-encode`
 still writes `%20`, which is right for a path.
 
+## The day-gating, pinned at last, 2026-09-30
+
+The first mutation run named this as the gap to close first and it sat
+open for a day: **no test pinned what each day's encoder shows on the
+other two days.** Dropping `=(%fri day)` off the Holy Hour, or
+`=(%sun day)` off the trolley, changed nothing any test read. A ticked
+box appearing on the wrong day is a pilgrim counted for a meal they
+never asked for, and it is the sort of thing nobody finds until the
+morning of the walk.
+
+`+test-roster-row-every-box` and `+test-planned-every-box` are table
+tests over four people — one who ticked everything, one who ticked
+nothing, one who unticked Sunday with the Sunday answers still stored,
+and one who unticked Sunday having never chosen a distance — read across
+all three days. `--only en-roster-person,planned` went from **3 killed,
+16 survived** to **19 killed, 0 survived**.
+
+The fourth person is the one worth explaining. `sun_short` is
+`&(=(%sun day) sun.days.p !sun-ten.p)`, and until somebody in the
+fixtures both skipped Sunday *and* never chose the ten miles, dropping
+`sun.days.p` changed no count. Two of the four fixtures had to exist
+before that gate was tested at all.
+
+They also pin a decision rather than an accident: **the Sunday distance
+is gated on actually walking Sunday; the Sunday Mass and the trolley are
+not.** Somebody may come to the Cathedral without walking the last
+stretch, and the form stops offering a day's events when the day is
+unticked without erasing what was already stored. That asymmetry is now
+written down in a test instead of living in three arms.
+
+The gate carries the other half: one party ticks every box on the form
+and is read back through the record, the three day rosters, the planned
+counts and people.csv, against a truth table per day. Eleven checks.
+
 ## What to do next, in order
 
 1. Start a fake ship, run `setup`, and take a baseline: `hoon-test.sh`
-   should exit 0 with 87 `OK` lines.
+   should exit 0 with 90 `OK` lines.
 2. Run the cheap mutation pass over the library and triage every
    survivor. Re-trace each one before writing a test: many are equivalent,
    and the playbook lists the usual kinds.
