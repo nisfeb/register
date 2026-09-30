@@ -149,7 +149,8 @@ async function main() {
   await type('[data-k="contact.phone"]', '904 555 0143');
   await type('[data-k="contact.street"]', '1 Beach Road');
   await type('[data-k="contact.city"]', 'Jacksonville');
-  await type('[data-k="contact.state"]', 'FL');
+  // the state is a dropdown now, not a box
+  await p.select('[data-k="contact.state"]', 'FL');
   await type('[data-k="contact.zip"]', '32250');
   await p.click('[data-act="submit"]');
   await p.waitForSelector('[data-act="waiver-open"]', { timeout: 25000 })

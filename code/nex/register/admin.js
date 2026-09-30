@@ -547,6 +547,40 @@
       })
     };
   }
+
+  // the states, matching the pilgrim's own form: the two-letter code is
+  // stored, the whole name is read. A record taken before the list
+  // existed keeps whatever it holds as its own first option.
+  var STATES = [
+    ['AL', 'Alabama'], ['AK', 'Alaska'], ['AZ', 'Arizona'], ['AR', 'Arkansas'],
+    ['CA', 'California'], ['CO', 'Colorado'], ['CT', 'Connecticut'], ['DE', 'Delaware'],
+    ['DC', 'District of Columbia'], ['FL', 'Florida'], ['GA', 'Georgia'], ['HI', 'Hawaii'],
+    ['ID', 'Idaho'], ['IL', 'Illinois'], ['IN', 'Indiana'], ['IA', 'Iowa'],
+    ['KS', 'Kansas'], ['KY', 'Kentucky'], ['LA', 'Louisiana'], ['ME', 'Maine'],
+    ['MD', 'Maryland'], ['MA', 'Massachusetts'], ['MI', 'Michigan'], ['MN', 'Minnesota'],
+    ['MS', 'Mississippi'], ['MO', 'Missouri'], ['MT', 'Montana'], ['NE', 'Nebraska'],
+    ['NV', 'Nevada'], ['NH', 'New Hampshire'], ['NJ', 'New Jersey'], ['NM', 'New Mexico'],
+    ['NY', 'New York'], ['NC', 'North Carolina'], ['ND', 'North Dakota'], ['OH', 'Ohio'],
+    ['OK', 'Oklahoma'], ['OR', 'Oregon'], ['PA', 'Pennsylvania'], ['RI', 'Rhode Island'],
+    ['SC', 'South Carolina'], ['SD', 'South Dakota'], ['TN', 'Tennessee'], ['TX', 'Texas'],
+    ['UT', 'Utah'], ['VT', 'Vermont'], ['VA', 'Virginia'], ['WA', 'Washington'],
+    ['WV', 'West Virginia'], ['WI', 'Wisconsin'], ['WY', 'Wyoming'],
+    ['AS', 'American Samoa'], ['GU', 'Guam'], ['MP', 'Northern Mariana Islands'],
+    ['PR', 'Puerto Rico'], ['VI', 'U.S. Virgin Islands'],
+    ['AA', 'Armed Forces Americas'], ['AE', 'Armed Forces Europe'], ['AP', 'Armed Forces Pacific'],
+  ];
+  function stateField(k, label, value) {
+    var v = String(value === undefined || value === null ? '' : value);
+    var known = STATES.some(function (s) { return s[0] === v; });
+    return '<label>' + esc(label) + '<select data-k="' + k + '">' +
+      '<option value=""' + (v ? '' : ' selected') + '></option>' +
+      (v && !known ? '<option value="' + esc(v) + '" selected>' + esc(v) + '</option>' : '') +
+      STATES.map(function (s) {
+        return '<option value="' + s[0] + '"' + (s[0] === v ? ' selected' : '') + '>' +
+          esc(s[1]) + '</option>';
+      }).join('') + '</select></label>';
+  }
+
   function field(k, label, value, type, extra) {
     return '<label>' + esc(label) + '<input type="' + esc(type || 'text') +
       '" data-k="' + esc(k) + '" value="' + esc(value === undefined || value === null ? '' : value) + '"' + (extra || '') + '></label>';
@@ -592,7 +626,7 @@
     if (!m.isAdd && c.email) out += '<p class="help"><a href="mailto:' + esc(c.email) + '">Write to ' + esc(c.email) + '</a></p>';
     out += field('contact.street', 'Street', c.street);
     out += '<div class="row3">' + field('contact.city', 'City', c.city) +
-      field('contact.state', 'State', c.state, 'text', ' maxlength="40"') + field('contact.zip', 'ZIP', c.zip) + '</div>';
+      stateField('contact.state', 'State', c.state) + field('contact.zip', 'ZIP', c.zip) + '</div>';
     out += field('org', 'Organization', m.org);
     out += '<label>Why they are walking<textarea data-k="why">' + esc(m.why) + '</textarea></label>';
     out += box('assistance', 'Requests financial assistance', m.assistance);

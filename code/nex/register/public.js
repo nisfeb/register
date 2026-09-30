@@ -416,6 +416,43 @@
   // in edit mode a field's caption is a plain block, not a <label>: a
   // click inside a <label> jumps to the field it names, which would
   // take the caret straight out of the span being typed into
+  // The states, as the post office writes them. The form stores the
+  // two-letter code, which is what the reports group by and what the
+  // spreadsheets carry; the pilgrim reads the whole name.
+  var STATES = [
+    ['AL', 'Alabama'], ['AK', 'Alaska'], ['AZ', 'Arizona'], ['AR', 'Arkansas'],
+    ['CA', 'California'], ['CO', 'Colorado'], ['CT', 'Connecticut'], ['DE', 'Delaware'],
+    ['DC', 'District of Columbia'], ['FL', 'Florida'], ['GA', 'Georgia'], ['HI', 'Hawaii'],
+    ['ID', 'Idaho'], ['IL', 'Illinois'], ['IN', 'Indiana'], ['IA', 'Iowa'],
+    ['KS', 'Kansas'], ['KY', 'Kentucky'], ['LA', 'Louisiana'], ['ME', 'Maine'],
+    ['MD', 'Maryland'], ['MA', 'Massachusetts'], ['MI', 'Michigan'], ['MN', 'Minnesota'],
+    ['MS', 'Mississippi'], ['MO', 'Missouri'], ['MT', 'Montana'], ['NE', 'Nebraska'],
+    ['NV', 'Nevada'], ['NH', 'New Hampshire'], ['NJ', 'New Jersey'], ['NM', 'New Mexico'],
+    ['NY', 'New York'], ['NC', 'North Carolina'], ['ND', 'North Dakota'], ['OH', 'Ohio'],
+    ['OK', 'Oklahoma'], ['OR', 'Oregon'], ['PA', 'Pennsylvania'], ['RI', 'Rhode Island'],
+    ['SC', 'South Carolina'], ['SD', 'South Dakota'], ['TN', 'Tennessee'], ['TX', 'Texas'],
+    ['UT', 'Utah'], ['VT', 'Vermont'], ['VA', 'Virginia'], ['WA', 'Washington'],
+    ['WV', 'West Virginia'], ['WI', 'Wisconsin'], ['WY', 'Wyoming'],
+    ['AS', 'American Samoa'], ['GU', 'Guam'], ['MP', 'Northern Mariana Islands'],
+    ['PR', 'Puerto Rico'], ['VI', 'U.S. Virgin Islands'],
+    ['AA', 'Armed Forces Americas'], ['AE', 'Armed Forces Europe'], ['AP', 'Armed Forces Pacific'],
+  ];
+  // A registration taken before the list existed may hold anything at
+  // all, including a whole state name. It keeps what it holds, as its
+  // own first option, so opening an old record cannot silently blank it.
+  function stateBox(k, key, value) {
+    var v = String(value === undefined || value === null ? '' : value);
+    var known = STATES.some(function (s) { return s[0] === v; });
+    var opts = '<option value=""' + (v ? '' : ' selected') + '></option>' +
+      (v && !known ? '<option value="' + esc(v) + '" selected>' + esc(v) + '</option>' : '') +
+      STATES.map(function (s) {
+        return '<option value="' + s[0] + '"' + (s[0] === v ? ' selected' : '') + '>' +
+          esc(s[1]) + '</option>';
+      }).join('');
+    var box = '<select data-k="' + k + '">' + opts + '</select>';
+    if (editing) return '<div class="field">' + tx(key) + box + '</div>';
+    return '<label>' + esc(t(key)) + box + '</label>';
+  }
   function input(k, key, value, type, extra) {
     var box = '<input type="' + (type || 'text') + '" data-k="' + k + '" value="' + esc(value) + '"' + (extra || '') + '>';
     if (editing) return '<div class="field">' + tx(key) + box + '</div>';
@@ -591,7 +628,7 @@
     out += '<div class="row">' + input('contact.email', 'form.email', c.email, 'email', ' autocomplete="email"') + input('contact.phone', 'form.phone', c.phone, 'tel', ' autocomplete="tel"') + '</div>';
     out += input('contact.street', 'form.street', c.street, 'text', ' autocomplete="street-address"');
     out += '<div class="row3">' + input('contact.city', 'form.city', c.city, 'text', ' autocomplete="address-level2"') +
-      input('contact.state', 'form.state', c.state, 'text', ' autocomplete="address-level1" maxlength="40"') +
+      stateBox('contact.state', 'form.state', c.state) +
       input('contact.zip', 'form.zip', c.zip, 'text', ' autocomplete="postal-code"') + '</div>';
     out += '<p class="help">' + tx('form.address.help') + '</p>';
     out += input('org', 'form.org', m.org, 'text', ' list="orgs"') + '<datalist id="orgs">' +

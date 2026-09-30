@@ -162,6 +162,10 @@ header .tools { display: flex; align-items: center; gap: .9rem; }
 .steps button.on { background: var(--accent); color: var(--accent-ink); }
 body.editing .copy { outline: 1px dashed var(--accent); outline-offset: 2px; border-radius: 2px; background: var(--accent-soft); }
 body.editing .copy:focus { outline: 2px solid var(--accent); background: var(--bg); white-space: pre-wrap; }
+/* A string inside a solid button. The editing background is nearly
+   white and a solid button's own colour is white text, so the words
+   vanished the moment Edit text went on. Ink while they are edited. */
+body.editing .btn .copy, body.editing a.btn .copy { color: var(--ink); }
 body.editing .btn, body.editing .check, body.editing a.btn, body.editing .remove { cursor: default; }
 .tick { color: var(--good); font-weight: 600; margin-left: .3rem; }
 .copy-bad { color: var(--bad); font-size: .85rem; margin-left: .3rem; }
