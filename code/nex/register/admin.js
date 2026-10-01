@@ -2061,15 +2061,17 @@
     return (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') &&
       (view.contains(el) || promptEl.contains(el));
   }
+  // The beacon bumps on every change anywhere on the ship, which during
+  // sign-ups is constantly. It used to empty the caches here, and an
+  // empty cache makes the view paint "Loading" over the page: on a busy
+  // day that is the screen going blank every few seconds under somebody
+  // trying to read it. catchUp reads INTO the caches instead, and
+  // render() leaves the DOM alone when the answer has not changed.
   function bumped() {
     reconcile();
     if (editing()) return;
     clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(function () {
-      if (editing()) return;
-      roster = null; countsDoc = null;
-      refresh();
-    }, 300);
+    refreshTimer = setTimeout(catchUp, 300);
   }
   async function stream() {
     for (;;) {

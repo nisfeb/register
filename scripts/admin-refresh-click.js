@@ -65,11 +65,21 @@ async function main() {
     const rows = await page.evaluate(() => document.querySelectorAll('#view table tbody tr').length);
     check('there are rows enough to scroll', rows > 20, rows);
 
-    // every rewrite of the view from here on is counted
+    // every rewrite of the view from here on is counted, and what it
+    // painted is kept: a count alone hid the bug this test exists for,
+    // where the page flashed Loading and a stale copy between the two
     await page.evaluate(() => {
       window.__writes = 0;
+      window.__loads = 0;
+      window.__stale = 0;
       new MutationObserver((ms) => {
-        ms.forEach((m) => { if (m.type === 'childList') window.__writes++; });
+        ms.forEach((m) => {
+          if (m.type !== 'childList') return;
+          window.__writes++;
+          var h = document.getElementById('view').innerHTML;
+          if (/class="loading"/.test(h)) window.__loads++;
+          if (/kept in this browser/.test(h)) window.__stale++;
+        });
       }).observe(document.getElementById('view'), { childList: true });
     });
 
@@ -102,8 +112,17 @@ async function main() {
                  first_bsc: true, knight_dame: false, volunteer: false }]
     });
     check('the new registration was taken', !!add.rid, JSON.stringify(add).slice(0, 120));
+    // the ship's beacon bumps on any change, within 300ms, so this is
+    // the path that blanked the screen during sign-ups
     await sleep(TICK * 3);
-    check('the list that changed was repainted', (await page.evaluate(() => window.__writes)) > 0);
+    const w = await page.evaluate(() => window.__writes);
+    const loads = await page.evaluate(() => window.__loads);
+    const stale = await page.evaluate(() => window.__stale);
+    check('the list that changed was repainted', w > 0, w + ' repaints');
+    check('and painted the new list straight, with no Loading in between',
+          loads === 0, loads + ' Loading paints');
+    check('nor the copy kept in this browser', stale === 0, stale + ' stale paints');
+    check('once, not two or three times over', w === 1, w + ' repaints');
     check('and the organizer kept their place through it',
           Math.abs((await page.evaluate(() => window.scrollY)) - was) < 40,
           was + ' -> ' + (await page.evaluate(() => window.scrollY)));
@@ -114,10 +133,44 @@ async function main() {
       check('the registration it made is cancelled again', true);
     }
 
+    // and the same again with nothing kept in this browser, which is the
+    // harsher case: with no copy to fall back on, an emptied cache has
+    // the view paint Loading, and the screen really does go blank
+    await page.evaluate(() => {
+      try { localStorage.clear(); } catch (e) { }
+      window.__writes = 0; window.__loads = 0; window.__stale = 0;
+    });
+    await page.evaluate(() => window.scrollTo(0, 1200));
+    await sleep(300);
+    const was2 = await page.evaluate(() => window.scrollY);
+    const add2 = await api('/submit', {
+      track: 'full', org: 'Order of Malta', why: 'refresh click-through',
+      assistance: false, together: false,
+      contact: { email: 'refresh2-' + Date.now() + '@example.com', phone: '904-555-0100',
+                 street: '1 Beach Rd', city: 'Jacksonville Beach', state: 'FL', zip: '32250' },
+      people: [{ first: 'Blan', last: 'Kerr', child: false,
+                 days: { fri: true, sat: true, sun: true }, sun_ten: true,
+                 social_fri: false, social_sat: false, mass_fri: false, mass_sat: false,
+                 mass_sun: true, holy_hour: false, bus: false, trolley: false,
+                 first_bsc: true, knight_dame: false, volunteer: false }]
+    });
+    await sleep(TICK * 3);
+    check('with nothing kept in this browser, still no Loading panel',
+          (await page.evaluate(() => window.__loads)) === 0,
+          (await page.evaluate(() => window.__loads)) + ' Loading paints');
+    check('and the place is still kept',
+          Math.abs((await page.evaluate(() => window.scrollY)) - was2) < 40,
+          was2 + ' -> ' + (await page.evaluate(() => window.scrollY)));
+    if (add2.rid) await api('/admin/reg/' + add2.rid, { op: 'cancel', note: 'refresh click-through cleanup' }, 'admin:click');
+
     // a move to another view starts at that view's top, which the page
     // now has to ask for: it used to happen by accident
     await page.evaluate(() => { location.hash = '#reports'; });
-    await sleep(2500);
+    // wait for the view itself, not for a guess at how long it takes:
+    // a fixed sleep passes on an idle ship and lies on a busy one
+    await page.waitForFunction(
+      () => /Still owing/.test(document.getElementById('view').innerHTML), { timeout: 20000 });
+    await sleep(200);
     check('a different view starts at the top',
           (await page.evaluate(() => window.scrollY)) < 40,
           await page.evaluate(() => window.scrollY));
