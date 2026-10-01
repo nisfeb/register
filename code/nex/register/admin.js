@@ -969,7 +969,12 @@
     // what is owed is the fee less what was taken, registration by
     // registration: one that grew after it was paid owes the difference
     // and would be invisible in a count of the wholly unpaid
-    function shortfall(r) { return Math.max(0, (Number(r.fees) || 0) - (Number(r.amount) || 0)); }
+    function shortfall(r) {
+      // a granted assistance is not a debt: the fee was waived, so the
+      // record shows the whole fee and nothing taken on purpose
+      if (r.paid === 'assistance') return 0;
+      return Math.max(0, (Number(r.fees) || 0) - (Number(r.amount) || 0));
+    }
     var unpaid = live.filter(function (r) { return shortfall(r) > 0; });
     var owed = unpaid.reduce(function (n, r) { return n + shortfall(r); }, 0);
     var part = unpaid.filter(function (r) { return (Number(r.amount) || 0) > 0; });

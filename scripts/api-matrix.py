@@ -440,6 +440,34 @@ def growing():
           (r.get('fees'), r.get('amount')) == (22500, 22500), (r.get('fees'), r.get('amount')))
     admin('POST', '/reg/' + g_rid, {'op': 'cancel', 'note': 'matrix cleanup'})
     settle()
+    # a granted assistance is settled, not a shortfall. The fee stands on
+    # the record and nothing was taken, on purpose, so an edit must not
+    # stand the registration back at the payment step and ask a person
+    # who was excused the fee to pay it.
+    p = party('full', 'matrix-waived@example.com', [person('Ada', 'Waived')], assistance=True)
+    code, d = curl('POST', API + '/submit', p)
+    a_rid, a_tok = d['rid'], d['token']
+    settle()
+    curl('POST', API + f'/reg/{a_rid}/sign?t={a_tok}', {})
+    settle()
+    code, d = reg(a_rid, a_tok)
+    check('asking for help lands at the assistance step', code == 200 and d['status'] == 'assistance', (code, d.get('status')))
+    code, d = admin('POST', '/reg/' + a_rid, {'op': 'assist', 'approve': True})
+    check('the organizers grant it', code == 200, (code, d))
+    settle()
+    code, d = reg(a_rid, a_tok)
+    check('granted: complete, the fee on the record and nothing taken',
+          d['status'] == 'complete' and d['payment']['method'] == 'assistance'
+          and d['payment']['amount'] == 0 and d['fees'] == 7500,
+          (d['status'], d['payment'], d['fees']))
+    code, d = curl('POST', API + f'/reg/{a_rid}/edit?t={a_tok}',
+                   party('full', 'matrix-waived@example.com', [person('Ada', 'Waived')], assistance=True))
+    check('an edit to it owes nothing', code == 200 and d['owing'] == 0, (code, d))
+    settle()
+    code, d = reg(a_rid, a_tok)
+    check('so it is left complete, not sent back to pay', d['status'] == 'complete', d['status'])
+    admin('POST', '/reg/' + a_rid, {'op': 'cancel', 'note': 'matrix cleanup'})
+    settle()
 
 
 def checkin(done_rid, waiting_rid):

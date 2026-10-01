@@ -684,6 +684,12 @@
 ++  owed
   |=  [s=settings r=reg]
   ^-  @ud
+  ::  a granted assistance is not a debt. The organizers waived the fee,
+  ::  so the record carries the whole fee and nothing taken, and that is
+  ::  the settled state rather than a shortfall. Without this an edit to
+  ::  such a registration would stand it back at the payment step and
+  ::  ask the fee of somebody who was excused it.
+  ?:  ?=(%assistance method.payment.r)  0
   =/  f=@ud  (fees-total s r)
   ?:  (gte amount.payment.r f)  0
   (sub f amount.payment.r)

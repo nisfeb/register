@@ -1436,6 +1436,24 @@
     (expect !>((transition-ok:reg %complete %payment)))
     (expect !>(!(transition-ok:reg %complete %waiver)))
   ==
+::  a granted assistance is settled, not a shortfall: the organizers
+::  waived the fee, so the record carries the whole fee and nothing
+::  taken, and nothing is owed. An edit to one must not ask for it.
+::
+++  test-owed-when-assistance-granted
+  =/  r=reg:reg  (some-reg %a %complete %full 1 t0)
+  =/  waived=reg:reg  r(payment [%assistance 0 0 `t0 '' | ''])
+  =/  grown=reg:reg  waived(people (reap 3 some-person))
+  =/  waiting=reg:reg  r(status %assistance)
+  ;:  weld
+    ::  the fee stands on the record and none of it is owed
+    (expect-eq !>(7.500) !>((fees-total:reg st waived)))
+    (expect-eq !>(0) !>((owed:reg st waived)))
+    ::  nor is it owed when the party grows: that is the organizers' call
+    (expect-eq !>(0) !>((owed:reg st grown)))
+    ::  but one still WAITING on the decision has paid nothing and owes
+    (expect-eq !>(7.500) !>((owed:reg st waiting)))
+  ==
 ::  a registration with money on it holds its spots at the payment step
 ::  however long it stands there: the hold window is for one that has
 ::  paid nothing
