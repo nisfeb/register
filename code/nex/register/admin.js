@@ -327,6 +327,8 @@
   var dirty = false;          // something typed on this view and not yet saved
   var lastHash = location.hash, restoring = false;
   var routeGen = 0, lastRev = null, refreshTimer = null;
+  // the HTML now on screen, and which view it was painted for
+  var painted = null, paintedAt = '';
   var copyWas = null;         // the email templates as the ship last gave them
   var settingsWas = null;     // the settings as the ship last gave them, for the boxes left blank
   var waitingOn = null;       // the op the page painted and the ship has not confirmed
@@ -1460,6 +1462,12 @@
     // the copy page became the emails page; an old link still lands
     return { name: parts[0] === 'copy' ? 'emails' : parts[0], id: parts[1] || '' };
   }
+  // which view is on screen, as one string: a repaint of the same view
+  // keeps its scroll, a move to another one does not
+  function routeKey() {
+    var r = route();
+    return r.name + '/' + r.id;
+  }
   function markNav() {
     var r = route();
     Array.prototype.forEach.call(document.querySelectorAll('#nav a'), function (a) {
@@ -1526,10 +1534,27 @@
   // with its caret where it was, and the roster can repaint under a
   // resting cursor.
   function render(html) {
+    // The minute timer repaints whether or not the ship said anything
+    // new, and view.innerHTML is the only thing that writes this page's
+    // DOM, so identical HTML means the DOM is already right: writing it
+    // again would only throw away the scroll position and the caret.
+    if (html === painted) return;
+    var was = painted === null ? null : paintedAt;
+    painted = html;
+    paintedAt = routeKey();
     var had = document.activeElement, id = had ? had.id : '';
     var pos = had && /^[fd]-/.test(id) && had.setSelectionRange ? had.selectionStart : null;
+    // where they had scrolled to, kept across a repaint of the same
+    // view. A different view starts at the top, as it always has.
+    var top = was === paintedAt ? (window.scrollY || window.pageYOffset || 0) : null;
     view.innerHTML = html;
     markNav();
+    if (top) { try { window.scrollTo(0, top); } catch (e) { } }
+    // and a move to another view starts at that view's top. The browser
+    // used to do this by accident, because the old page collapsed to
+    // nothing for an instant; now that a repaint can be skipped
+    // entirely, it has to be asked for.
+    else if (was !== null) { try { window.scrollTo(0, 0); } catch (e) { } }
     if (/^[fd]-/.test(id)) {
       var again = document.getElementById(id);
       if (again) {
@@ -1742,6 +1767,11 @@
   view.addEventListener('change', onChange);
   function onChange(ev) {
     var el = ev.target;
+    // Anything typed into the view puts the DOM ahead of the HTML that
+    // was painted, so the two are no longer the same thing and the
+    // skip in render() must not fire: a repaint meant to discard what
+    // was typed would otherwise do nothing at all.
+    painted = null;
     var k = el.getAttribute('data-k');
     if (el.id === 'f-seg') { filters.seg = el.value; return render(rosterView()); }
     if (el.id === 'f-track') { filters.track = el.value; return render(rosterView()); }
@@ -2087,12 +2117,20 @@
     lastHash = location.hash;
     model = null; dry = null; refresh();
   });
-  document.addEventListener('visibilitychange', function () { if (!document.hidden && !editing()) refresh(); });
-  setInterval(function () {
+  // Read fresh INTO the caches rather than emptying them first. An empty
+  // cache makes the views paint "Loading" over a page somebody is
+  // reading, and the repaint after it lands at the top of the list.
+  // This way the page only changes when the ship's answer does, and
+  // render() leaves the DOM alone when it has not.
+  function catchUp() {
     if (document.hidden || editing()) return;
-    roster = null; countsDoc = null;
-    refresh();
-  }, 60000);
+    Promise.all([needRoster(), read('/counts').then(function (d) { countsDoc = d; })])
+      .then(refresh, function () { });
+  }
+  // coming back to a tab left open is the moment the data on screen is
+  // most likely to be old, so that reads too rather than just repainting
+  document.addEventListener('visibilitychange', catchUp);
+  setInterval(catchUp, 60000);
   drawActor();
   refresh();
   stream();
