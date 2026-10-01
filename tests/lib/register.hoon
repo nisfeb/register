@@ -1413,6 +1413,21 @@
     (expect-eq !>(`(unit @ud)`[~ 1]) !>((gn:reg me 'sat')))
     (expect-eq !>(`(unit @ud)`[~ 0]) !>((gn:reg me 'fri')))
   ==
+::  an address with a space in it is not an address. It reached a live
+::  registration that then could not pay: Stripe refuses the address, so
+::  the checkout never opens and the pilgrim is stuck at the payment step
+::  with no way forward and nothing on the form to tell her why.
+::
+++  test-email-rejects-whitespace
+  ;:  weld
+    (expect !>((is-email:reg 'ana@example.com')))
+    (expect !>(!(is-email:reg 'weezruss12@ gmail.com')))
+    (expect !>(!(is-email:reg ' ana@example.com')))
+    (expect !>(!(is-email:reg 'ana@example.com ')))
+    (expect !>(!(is-email:reg 'an a@example.com')))
+    ::  and the plus and dot addresses people really use still pass
+    (expect !>((is-email:reg 'ana.silva+camino@example.co.uk')))
+  ==
 ::  +owed: what a registration has still to pay, and the door a paid
 ::  one that grew a person goes back through
 ::

@@ -460,6 +460,12 @@
   |=  t=@t
   ^-  ?
   =/  tap=tape  (trip t)
+  ::  no space, tab or control character anywhere in it. This looks
+  ::  pedantic and is not: 'weezruss12@ gmail.com' passed every other
+  ::  test here, so the registration was taken, and then Stripe refused
+  ::  the address and the pilgrim could not pay at all. Five attempts,
+  ::  all answered 502, and nothing on the form to tell her why.
+  ?:  (lien tap |=(c=@tD (lte c 32)))  |
   =/  at=(unit @ud)  (find "@" tap)
   ?~  at  |
   ?:  =(0 u.at)  |
