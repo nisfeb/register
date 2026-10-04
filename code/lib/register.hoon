@@ -159,7 +159,7 @@
       mode=@tas                                 ::  %live or %stub
       offset=@sd                                ::  hours from UTC: -5 is Eastern in December
       owed=(map @ta @ud)                        ::  an organizer's own fee for one party, by rid
-      at-capacity=?                             ::  the organizers have called the event full
+      at-capacity=[full=? bambino=?]            ::  a track the organizers have called full
   ==
 +$  counts  [full=@ud bambino=@ud social-fri=@ud social-sat=@ud late=@ud waitlist=@ud]
 ::  ==  caps, the spec's
@@ -649,8 +649,17 @@
       ?:(=('live' mode) %live %stub)
       offset
       (de-owed (gj jon 'fee_overrides'))
-      (gb jon 'at_capacity')
+      (de-capacity (gj jon 'at_capacity'))
   ==
+::  +de-capacity: which tracks the organizers have called full. An object
+::  names them one at a time; a bare boolean, which is how the setting
+::  was first written, means both.
+::
+++  de-capacity
+  |=  jon=json
+  ^-  [full=? bambino=?]
+  =/  both=?  ?:(?=([%b *] jon) p.jon |)
+  [|(both (gb jon 'full')) |(both (gb jon 'bambino'))]
 ::  +de-owed: the organizers' own figure for a party, by registration, in
 ::  cents. A key that is not a rid, or a value that is not a number, is
 ::  dropped rather than refusing the whole document.
@@ -767,14 +776,19 @@
   ^-  ?(%waiver %waitlist)
   =/  w=@ud  (walkers track people)
   ?:  =(0 w)  %waiver
-  ::  The organizers can call the event full. Then a new party joins the
-  ::  wait list whatever the arithmetic says, so a place freed by a hold
-  ::  that lapsed goes to somebody who has been waiting for one rather
-  ::  than to whoever happens to be on the page. A party that walks on no
-  ::  day is let through above: it takes no walking place.
-  ?:  at-capacity.s  %waitlist
+  ::  The organizers can call a track full. Then a new party on it joins
+  ::  the wait list whatever the arithmetic says, so a place freed by a
+  ::  hold that lapsed goes to somebody who has been waiting rather than
+  ::  to whoever happens to be on the page.
+  ::
+  ::  Per track, and below this split, on purpose: the wait list is a
+  ::  queue per track, and closing a track nobody is queued for would
+  ::  turn registrations away to protect nothing. A party that walks on
+  ::  no day is let through above either way: it takes no walking place.
   ?:  =(%bambino track)
+    ?:  bambino.at-capacity.s  %waitlist
     ?:((lte (add bambino.c w) bambino.caps.s) %waiver %waitlist)
+  ?:  full.at-capacity.s  %waitlist
   ?:((lte (add full.c w) full.caps.s) %waiver %waitlist)
 ::  +room-for: does this registration have a spot right now? A counted
 ::  hold has it by definition. A lapsed one is decided again against
@@ -789,7 +803,7 @@
   ::  hold newcomers out, not to throw out somebody who is already part
   ::  way through; whether their own lapsed hold still has a place is a
   ::  question about the caps alone.
-  =(%waiver (decide-submit s(at-capacity |) (tally s others now) track.r people.r))
+  =(%waiver (decide-submit s(at-capacity [| |]) (tally s others now) track.r people.r))
 ::  +position-of: where a wait listed registration stands, oldest
 ::  first, ties broken by id. 0 when it is not on the wait list.
 ::
@@ -1817,8 +1831,11 @@
       ['open' b+(window-open s now)]
       ['changes_open' b+(changes-open s now)]
       ::  the same fact the counts already tell: the page offers the wait
-      ::  list rather than a place
-      ['at_capacity' b+at-capacity.s]
+      ::  list rather than a place, per track
+      :-  'at_capacity'
+      %-  pairs:enjs:format
+      :~  ['full' b+full.at-capacity.s]  ['bambino' b+bambino.at-capacity.s]
+      ==
       ['window' (gj sj 'window')]
       ['event' (gj sj 'event')]
       ['orgs' (gj sj 'orgs')]

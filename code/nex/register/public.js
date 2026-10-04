@@ -353,10 +353,10 @@
   function fees(m) { return feesTotal(lines(m)); }
   function soldOut(which) { return status.counts[which] >= status.caps[which]; }
   function trackFull(track) {
-    // the organizers can call the event full whatever the counts say, so
-    // a place freed by a lapsed hold is offered to the wait list rather
+    // the organizers can call a track full whatever the counts say, so a
+    // place freed by a lapsed hold is offered to the wait list rather
     // than to whoever is reading this page
-    if (status.at_capacity) return true;
+    if ((status.at_capacity || {})[track]) return true;
     return track === 'bambino' ? status.counts.bambino >= status.caps.bambino : status.counts.full >= status.caps.full;
   }
   function trackWords(track) { return t(track === 'bambino' ? 'track.bambino' : 'track.full'); }

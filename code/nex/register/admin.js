@@ -1379,11 +1379,14 @@
       field('window.close', 'Closes', toLocal(getPath(s, 'window.close')), 'datetime-local') +
       field('window.change_cutoff', 'Changes close', toLocal(getPath(s, 'window.change_cutoff')), 'datetime-local') + '</div>' +
       field('hold_hours', 'Hold hours', s.hold_hours, 'number') +
-      box('at_capacity', 'The event is at capacity', getPath(s, 'at_capacity')) +
-      '<p class="help">Ticked, every new party joins the wait list however the counts read. ' +
-      'Use it when places have been freed by holds that lapsed and you want them to go to ' +
-      'the people already waiting rather than to whoever is on the page. It does not move ' +
-      'anybody already part way through, and you can still offer a spot from the wait list.</p></div>';
+      box('at_capacity.full', 'The full Camino is at capacity', getPath(s, 'at_capacity.full')) +
+      box('at_capacity.bambino', 'The Bambino Camino is at capacity', getPath(s, 'at_capacity.bambino')) +
+      '<p class="help">Ticked, every new party on that track joins the wait list however the ' +
+      'counts read. Use it when places have been freed by holds that lapsed and you want them ' +
+      'to go to the people already waiting rather than to whoever is on the page. Tick only the ' +
+      'track with people queued for it: closing one nobody is waiting for turns registrations ' +
+      'away to protect nothing. It does not move anybody already part way through, and you can ' +
+      'still offer a spot from the wait list.</p></div>';
     out += '<div class="card"><h3>Organizations the form suggests</h3>' +
       '<label>One per line<textarea data-k="orgs">' + esc((s.orgs || []).join('\n')) + '</textarea></label></div>';
     out += '<div class="card"><h3>Providers</h3>' +

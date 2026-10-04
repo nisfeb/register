@@ -1435,7 +1435,8 @@
 ::
 ++  test-at-capacity
   =/  s0=settings:reg  st
-  =/  shut=settings:reg  s0(at-capacity &)
+  =/  shut=settings:reg  s0(at-capacity [full=& bambino=|])
+  =/  babs=settings:reg  s0(at-capacity [full=| bambino=&])
   =/  room=counts:reg  *counts:reg
   =/  p0=person:reg  some-person
   =/  one=(list person:reg)  ~[p0]
@@ -1446,14 +1447,19 @@
   =/  mid=reg:reg  (some-reg %a %payment %full 1 t0)
   =/  tight=settings:reg  shut(full.caps 0)
   ;:  weld
-    ::  with room and the gate open, a new party gets a place
+    ::  with room and both gates open, a new party gets a place
     (expect-eq !>(%waiver) !>((decide-submit:reg s0 room %full one)))
-    ::  the same party, with the event called full, waits
+    (expect-eq !>(%waiver) !>((decide-submit:reg s0 room %bambino one)))
+    ::  the full track called full: that track waits, the other does not
     (expect-eq !>(%waitlist) !>((decide-submit:reg shut room %full one)))
-    (expect-eq !>(%waitlist) !>((decide-submit:reg shut room %bambino one)))
+    (expect-eq !>(%waiver) !>((decide-submit:reg shut room %bambino one)))
+    ::  and the other way round
+    (expect-eq !>(%waitlist) !>((decide-submit:reg babs room %bambino one)))
+    (expect-eq !>(%waiver) !>((decide-submit:reg babs room %full one)))
     ::  somebody who walks on no day takes no walking place, so they are
-    ::  let through either way
+    ::  let through on either track whatever is called full
     (expect-eq !>(%waiver) !>((decide-submit:reg shut room %full idle)))
+    (expect-eq !>(%waiver) !>((decide-submit:reg babs room %bambino idle)))
     ::  and it does not evict a party already in the flow: a lapsed hold
     ::  is still judged on the caps alone
     (expect !>((room-for:reg shut ~[mid] mid late)))
@@ -1480,19 +1486,26 @@
   ::  bound, not reached through the arm: a wing path into an arm's
   ::  product is not the same thing as a field of a value
   =/  base=settings:reg  st
+  =/  older=settings:reg  (de-settings:reg (jo '{"at_capacity": true}'))
+  =/  both-shut=?  &(full.at-capacity.older bambino.at-capacity.older)
   =/  good=settings:reg
     %-  de-settings:reg
     %-  jo
     '''
     {"fee_overrides": {"abc1234567": 5000, "nope": 1, "bad0000000": "x"},
-     "at_capacity": true}
+     "at_capacity": {"full": true}}
     '''
   ;:  weld
     (expect-eq !>(`(unit @ud)`[~ 5.000]) !>((~(get by owed.good) %abc1234567)))
     (expect-eq !>(`@ud`1) !>(~(wyt by owed.good)))
-    (expect !>(at-capacity.good))
-    ::  and a document that says nothing leaves both alone
-    (expect !>(!at-capacity.base))
+    ::  named one at a time, and the one not named stays open
+    (expect !>(full.at-capacity.good))
+    (expect !>(!bambino.at-capacity.good))
+    ::  a bare boolean, how the setting was first written, means both
+    (expect !>(both-shut))
+    ::  and a document that says nothing leaves everything alone
+    (expect !>(!full.at-capacity.base))
+    (expect !>(!bambino.at-capacity.base))
     (expect-eq !>(`@ud`0) !>(~(wyt by owed.base)))
   ==
 ::  +owed: what a registration has still to pay, and the door a paid
