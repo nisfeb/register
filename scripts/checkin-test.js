@@ -412,12 +412,14 @@ ok('the whole weekend reads as one sentence each',
 ok('Mass on the other two days is its own sentence',
   pub.weekendWords(walker({ days: { fri: false, sat: true, sun: true }, mass_sat: true, mass_sun: true }), 'full') ===
   'Walking Saturday and Sunday, the last 2.5 miles on Sunday. Mass on Saturday and Sunday.');
+// the trolley became a two-way service to Mass at the Cathedral and
+// back, so these read the way the form now words it
 ok('the trolley is named beside the bus',
   pub.weekendWords(walker({ days: { sun: true }, bus: true, trolley: true }), 'full') ===
-  'Walking Sunday, the last 2.5 miles on Sunday. Needs the bus and the trolley on Sunday.');
+  'Walking Sunday, the last 2.5 miles on Sunday. Needs the bus and the Sunday trolley to the Cathedral and back.');
 ok('the trolley alone reads on its own',
   pub.weekendWords(walker({ days: { sun: true }, trolley: true }), 'bambino') ===
-  'Walking the last 2.5 miles on Sunday. Needs the trolley on Sunday.');
+  'Walking the last 2.5 miles on Sunday. Needs the Sunday trolley to the Cathedral and back.');
 ok('one day alone is one clause',
   pub.weekendWords(walker({ days: { fri: false, sat: true, sun: false } }), 'full') ===
   'Walking Saturday.');
@@ -540,5 +542,27 @@ ok('the total is every line added up', pub.feesTotal(full) === 22500);
 const bam = pub.feeLines([feeFolk[0]], 'bambino', { full: 7500, bambino: 2500 });
 ok('the Bambino line is the Bambino fee', bam[0].kind === 'bambino' && bam[0].each === 2500);
 ok('no people is no fee', pub.feesTotal(pub.feeLines([], 'full', { full: 7500 })) === 0);
+
+// ---- setPath down a dotted settings path ----
+// A truthy non-object used to be walked into rather than replaced, and
+// assigning a property to a primitive is a silent no-op outside strict
+// mode. at_capacity was stored as a bare boolean for a day, so ticking
+// at_capacity.full on top of it did nothing and the Save wrote the old
+// value back: the box came up unticked on an event that was closed.
+const sp = (o, p, v) => { back.setPath(o, p, v); return o; };
+ok('a dotted path builds the objects it needs',
+  JSON.stringify(sp({}, 'at_capacity.full', true)) === '{"at_capacity":{"full":true}}');
+ok('a boolean in the way is replaced, not written through',
+  JSON.stringify(sp({ at_capacity: true }, 'at_capacity.full', true)) === '{"at_capacity":{"full":true}}');
+ok('and so is a string, a number and null',
+  JSON.stringify(sp({ a: 'x' }, 'a.b', 1)) === '{"a":{"b":1}}' &&
+  JSON.stringify(sp({ a: 7 }, 'a.b', 1)) === '{"a":{"b":1}}' &&
+  JSON.stringify(sp({ a: null }, 'a.b', 1)) === '{"a":{"b":1}}');
+ok('an object already there is kept and added to',
+  JSON.stringify(sp({ a: { c: 2 } }, 'a.b', 1)) === '{"a":{"c":2,"b":1}}');
+ok('a one-step path still just sets the key',
+  JSON.stringify(sp({}, 'hold_hours', 48)) === '{"hold_hours":48}');
+ok('and what was set reads back',
+  back.getPath(sp({ at_capacity: true }, 'at_capacity.bambino', false), 'at_capacity.bambino') === false);
 
 console.log('ALL OK (' + n + ' checks)');

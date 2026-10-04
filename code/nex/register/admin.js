@@ -309,6 +309,7 @@
   }
 
   var pure = {
+    setPath: setPath, getPath: getPath,
     esc: esc, money: money, varsOf: varsOf, missingVars: missingVars, mailGroups: mailGroups,
     ageText: ageText, patchReg: patchReg, settled: settled, patchRow: patchRow,
     verdict: verdict, addedText: addedText, HOLD: HOLD,
@@ -473,7 +474,17 @@
   }
   function setPath(obj, path, val) {
     var ks = String(path).split('.'), o = obj;
-    for (var i = 0; i < ks.length - 1; i++) { if (!o[ks[i]]) o[ks[i]] = {}; o = o[ks[i]]; }
+    for (var i = 0; i < ks.length - 1; i++) {
+      // A non-object on the way down is replaced, not walked into. It
+      // used to be walked into when it was truthy, and assigning a
+      // property to a primitive is a silent no-op outside strict mode:
+      // the edit vanished and the Save wrote the old value straight
+      // back. `at_capacity` was stored as a bare boolean for a day, so
+      // ticking at_capacity.full on top of it did nothing at all and
+      // the box came back unticked.
+      if (!o[ks[i]] || typeof o[ks[i]] !== 'object') o[ks[i]] = {};
+      o = o[ks[i]];
+    }
     o[ks[ks.length - 1]] = val;
   }
 
@@ -1347,6 +1358,13 @@
     // often arrives without it. Seed it, or the first Save stores 0.
     if (getPath(s, 'caps.sunday') === undefined || getPath(s, 'caps.sunday') === null) {
       setPath(s, 'caps.sunday', SHRINE);
+    }
+    // at_capacity was one boolean for the whole event before it was per
+    // track. A document still holding the boolean means both tracks, so
+    // seed that shape or the boxes would read as unticked on a closed
+    // event and the next Save would reopen it.
+    if (typeof s.at_capacity === 'boolean') {
+      s.at_capacity = { full: s.at_capacity, bambino: s.at_capacity };
     }
     var out = '<h1>Settings</h1>';
     out += '<div class="card"><h3>Event</h3>' +
