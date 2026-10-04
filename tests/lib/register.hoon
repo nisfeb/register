@@ -1428,6 +1428,73 @@
     ::  and the plus and dot addresses people really use still pass
     (expect !>((is-email:reg 'ana.silva+camino@example.co.uk')))
   ==
+::  the organizers can call the event full. Then a new party joins the
+::  wait list however the counts read, so a place freed by a lapsed hold
+::  goes to somebody who has been waiting rather than to whoever is on
+::  the page. It must not throw out anybody already part way through.
+::
+++  test-at-capacity
+  =/  s0=settings:reg  st
+  =/  shut=settings:reg  s0(at-capacity &)
+  =/  room=counts:reg  *counts:reg
+  =/  p0=person:reg  some-person
+  =/  one=(list person:reg)  ~[p0]
+  ::  bound first: some-person is an arm, and mutating an arm's product
+  ::  without binding it reaches for the arm's subject instead
+  =/  idle=(list person:reg)  ~[p0(days [fri=| sat=| sun=|])]
+  =/  late=@da  (add t0 ~d30)
+  =/  mid=reg:reg  (some-reg %a %payment %full 1 t0)
+  =/  tight=settings:reg  shut(full.caps 0)
+  ;:  weld
+    ::  with room and the gate open, a new party gets a place
+    (expect-eq !>(%waiver) !>((decide-submit:reg s0 room %full one)))
+    ::  the same party, with the event called full, waits
+    (expect-eq !>(%waitlist) !>((decide-submit:reg shut room %full one)))
+    (expect-eq !>(%waitlist) !>((decide-submit:reg shut room %bambino one)))
+    ::  somebody who walks on no day takes no walking place, so they are
+    ::  let through either way
+    (expect-eq !>(%waiver) !>((decide-submit:reg shut room %full idle)))
+    ::  and it does not evict a party already in the flow: a lapsed hold
+    ::  is still judged on the caps alone
+    (expect !>((room-for:reg shut ~[mid] mid late)))
+    ::  a full cap still turns one away, called full or not
+    (expect !>(!(room-for:reg tight ~[mid] mid late)))
+  ==
+++  test-fee-by-hand
+  =/  r=reg:reg  (some-reg %abc123 %waitlist %full 3 t0)
+  =/  s0=settings:reg  st
+  =/  cut=settings:reg  s0(owed (~(put by *(map @ta @ud)) %abc123 5.000))
+  =/  free=settings:reg  s0(owed (~(put by *(map @ta @ud)) %abc123 0))
+  =/  other=settings:reg  s0(owed (~(put by *(map @ta @ud)) %zzz999 5.000))
+  =/  part=reg:reg  r(payment [%check 2.000 0 `t0 '' | ''])
+  ;:  weld
+    (expect-eq !>(22.500) !>((fees-total:reg s0 r)))
+    (expect-eq !>(5.000) !>((fees-total:reg cut r)))
+    (expect-eq !>(5.000) !>((owed:reg cut r)))
+    (expect-eq !>(0) !>((fees-total:reg free r)))
+    (expect-eq !>(0) !>((owed:reg free r)))
+    (expect-eq !>(22.500) !>((fees-total:reg other r)))
+    (expect-eq !>(3.000) !>((owed:reg cut part)))
+  ==
+++  test-de-owed
+  ::  bound, not reached through the arm: a wing path into an arm's
+  ::  product is not the same thing as a field of a value
+  =/  base=settings:reg  st
+  =/  good=settings:reg
+    %-  de-settings:reg
+    %-  jo
+    '''
+    {"fee_overrides": {"abc1234567": 5000, "nope": 1, "bad0000000": "x"},
+     "at_capacity": true}
+    '''
+  ;:  weld
+    (expect-eq !>(`(unit @ud)`[~ 5.000]) !>((~(get by owed.good) %abc1234567)))
+    (expect-eq !>(`@ud`1) !>(~(wyt by owed.good)))
+    (expect !>(at-capacity.good))
+    ::  and a document that says nothing leaves both alone
+    (expect !>(!at-capacity.base))
+    (expect-eq !>(`@ud`0) !>(~(wyt by owed.base)))
+  ==
 ::  +owed: what a registration has still to pay, and the door a paid
 ::  one that grew a person goes back through
 ::

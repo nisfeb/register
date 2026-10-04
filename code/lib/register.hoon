@@ -158,6 +158,8 @@
       cutoff=(unit @da)
       mode=@tas                                 ::  %live or %stub
       offset=@sd                                ::  hours from UTC: -5 is Eastern in December
+      owed=(map @ta @ud)                        ::  an organizer's own fee for one party, by rid
+      at-capacity=?                             ::  the organizers have called the event full
   ==
 +$  counts  [full=@ud bambino=@ud social-fri=@ud social-sat=@ud late=@ud waitlist=@ud]
 ::  ==  caps, the spec's
@@ -646,7 +648,26 @@
       (gt wj 'change_cutoff')
       ?:(=('live' mode) %live %stub)
       offset
+      (de-owed (gj jon 'fee_overrides'))
+      (gb jon 'at_capacity')
   ==
+::  +de-owed: the organizers' own figure for a party, by registration, in
+::  cents. A key that is not a rid, or a value that is not a number, is
+::  dropped rather than refusing the whole document.
+::
+++  de-owed
+  |=  jon=json
+  ^-  (map @ta @ud)
+  ?.  ?=([%o *] jon)  ~
+  %-  ~(gas by *(map @ta @ud))
+  %+  murn  ~(tap by p.jon)
+  |=  [k=@t v=json]
+  ^-  (unit [@ta @ud])
+  ?.  (ok-rid k)  ~
+  ?.  ?=([%n *] v)  ~
+  =/  n=(unit @ud)  (rush p.v dem)
+  ?~  n  ~
+  `[`@ta`k u.n]
 ++  window-open
   |=  [s=settings now=@da]
   ^-  ?
@@ -680,6 +701,15 @@
 ++  fees-total
   |=  [s=settings r=reg]
   ^-  @ud
+  ::  An organizer's own figure stands instead of the sum: a part
+  ::  scholarship, or a figure agreed with somebody on the wait list.
+  ::  It is set per registration and it does not move when the party
+  ::  does, so adding a person to a party whose fee was set by hand does
+  ::  not quietly undo the decision. Every fee the app shows or charges
+  ::  comes through here, so the figure reaches the roster, the reports,
+  ::  the spreadsheets, what is owed and what Stripe is asked for.
+  =/  hit=(unit @ud)  (~(get by owed.s) id.r)
+  ?^  hit  u.hit
   (roll (turn people.r |=(p=person (fee s track.r p))) add)
 ::  +owed: what is still to be paid. The fee for the party as it stands
 ::  now, less what has already been taken. An edit that adds a person
@@ -737,6 +767,12 @@
   ^-  ?(%waiver %waitlist)
   =/  w=@ud  (walkers track people)
   ?:  =(0 w)  %waiver
+  ::  The organizers can call the event full. Then a new party joins the
+  ::  wait list whatever the arithmetic says, so a place freed by a hold
+  ::  that lapsed goes to somebody who has been waiting for one rather
+  ::  than to whoever happens to be on the page. A party that walks on no
+  ::  day is let through above: it takes no walking place.
+  ?:  at-capacity.s  %waitlist
   ?:  =(%bambino track)
     ?:((lte (add bambino.c w) bambino.caps.s) %waiver %waitlist)
   ?:((lte (add full.c w) full.caps.s) %waiver %waitlist)
@@ -749,7 +785,11 @@
   ^-  ?
   ?:  (counted s r now)  &
   =/  others=(list reg)  (skip regs |=(o=reg =(id.r id.o)))
-  =(%waiver (decide-submit s (tally s others now) track.r people.r))
+  ::  at-capacity is cleared for this question on purpose. It is there to
+  ::  hold newcomers out, not to throw out somebody who is already part
+  ::  way through; whether their own lapsed hold still has a place is a
+  ::  question about the caps alone.
+  =(%waiver (decide-submit s(at-capacity |) (tally s others now) track.r people.r))
 ::  +position-of: where a wait listed registration stands, oldest
 ::  first, ties broken by id. 0 when it is not on the wait list.
 ::
@@ -1776,6 +1816,9 @@
       ==
       ['open' b+(window-open s now)]
       ['changes_open' b+(changes-open s now)]
+      ::  the same fact the counts already tell: the page offers the wait
+      ::  list rather than a place
+      ['at_capacity' b+at-capacity.s]
       ['window' (gj sj 'window')]
       ['event' (gj sj 'event')]
       ['orgs' (gj sj 'orgs')]

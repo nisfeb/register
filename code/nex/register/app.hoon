@@ -188,6 +188,7 @@
   ?:  =('set-settings' op)  (do-set-doc %'settings.json' 'set-settings' jon)
   ?:  =('set-copy' op)  (do-set-doc %'copy.json' 'set-copy' jon)
   ?:  =('set-copy-key' op)  (do-set-copy-key jon)
+  ?:  =('set-owed' op)  (do-set-owed jon)
   ?:  =('set-counts' op)  (do-set-doc %'counts.json' 'set-counts' jon)
   (refuse op 'unknown op')
 ::  +refuse: a refusal that leaves the writer standing
@@ -501,6 +502,39 @@
 ::  because the document may have moved under the answer. The ring
 ::  entry carries the key as its why, so the log names what changed.
 ::
+++  do-set-owed
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  rid=@ta  (rid-of jon)
+  ::  not named `by`: that would shadow the map door used below
+  =/  who=@t  (by-of jon)
+  ?:  =(%$ rid)  (refuse 'set-owed' 'rid: required')
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
+  ?~  cur  (refuse 'set-owed' 'no such registration')
+  ::  clear puts the computed fee back; otherwise an amount in cents,
+  ::  which may be 0 for a party the organizers are not charging
+  =/  clear=?  (gb:reg jon 'clear')
+  =/  amt=(unit @ud)  (gn:reg jon 'amount')
+  ?:  &(!clear ?=(~ amt))  (refuse 'set-owed' 'amount: a whole number of cents is required')
+  ?:  &(!clear (gth (need amt) 1.000.000))  (refuse 'set-owed' 'amount: over $10,000')
+  ;<  raw=json  bind:m  (read-json (rf 0 / %'settings.json'))
+  ?.  ?=([%o *] raw)  (refuse 'set-owed' 'settings: an object is required')
+  =/  was=json  (gj:reg raw 'fee_overrides')
+  =/  m0=(map @t json)  ?:(?=([%o *] was) p.was ~)
+  =/  m1=(map @t json)
+    ?:  clear  (~(del by m0) `@t`rid)
+    (~(put by m0) `@t`rid (en-num:reg (need amt)))
+  =/  doc=json  [%o (~(put by p.raw) 'fee_overrides' [%o m1])]
+  ;<  ~  bind:m  (over:io (rf 0 / %'settings.json') [[/ %json] doc])
+  ;<  now=@da  bind:m  get-time:io
+  =/  what=@t
+    ?:  clear  'fee put back to the computed one'
+    (rap 3 ~['fee set by hand to $' (dollars:reg (need amt))])
+  =/  r=reg:reg  (note-hist:reg u.cur who what now)
+  ;<  ~  bind:m  (write-reg 0 r |)
+  ;<  ~  bind:m  (note-rid 'set-owed' & what who rid)
+  (pure:m &)
 ++  do-set-copy-key
   |=  jon=json
   =/  m  (fiber:fiber:nexus ,?)
@@ -1526,6 +1560,14 @@
           ['late_adds' (en-num:reg late.caps.s)]  ['party' (en-num:reg max-party:reg)]
       ==
       ['now' (en-time:reg now)]
+      ::  which parties have a fee an organizer set by hand, so the page
+      ::  can show that the figure is a decision and not a sum. Organizer
+      ::  route only: this never goes out on the public status.
+      :-  'fee_overrides'
+      :-  %o
+      %-  ~(gas by *(map @t json))
+      %+  turn  ~(tap by owed.s)
+      |=([k=@ta v=@ud] [`@t`k (en-num:reg v)])
   ==
 ++  serve-admin-reg
   |=  [eyre-id=@ta rid=@t]
@@ -1560,6 +1602,15 @@
   ?:  &(=('pay' op) !?=(?(%check %cash %other) meth))
     (send-err eyre-id 400 'method: check, cash or other')
   ?:  &(=('waiver-paper' op) !(active:reg r))  (send-err eyre-id 409 'not active')
+  ?:  &(=('owed' op) !(active:reg r))  (send-err eyre-id 409 'not active')
+  ::  Checked here, like the payment method above, so the organizer gets
+  ::  a reason rather than a silent refusal in the ring. And because the
+  ::  poke below defaults a missing amount to nothing: without this, a
+  ::  figure that did not parse would quietly set the fee to zero.
+  ?:  ?&(=('owed' op) !(gb:reg jon 'clear') ?=(~ (gn:reg jon 'amount')))
+    (send-err eyre-id 400 'amount: a whole number of cents, or clear')
+  ?:  ?&(=('owed' op) (gth (fall (gn:reg jon 'amount') 0) 1.000.000))
+    (send-err eyre-id 400 'amount: over $10,000')
   ?:  &(=('refund' op) =(%none method.payment.r))  (send-err eyre-id 409 'no payment to refund')
   ?:  &(=('reinstate' op) !=(%cancelled status.r))  (send-err eyre-id 409 'not cancelled')
   ?:  &(=('reinstate' op) =(%$ prior.r))  (send-err eyre-id 409 'nothing to reinstate to')
@@ -1586,6 +1637,15 @@
       `(pairs:enjs:format ~[['op' s+'reinstate'] ['rid' s+id.r] ['by' s+by]])
     ?:  =('note' op)
       `(pairs:enjs:format ~[['op' s+'set-notes'] ['rid' s+id.r] ['by' s+by] ['notes' s+(gs:reg jon 'notes')]])
+    ::  the fee for one party, by hand. 'clear' puts the computed one
+    ::  back; otherwise 'amount' is cents, and 0 is a real answer
+    ?:  =('owed' op)
+      :-  ~
+      %-  pairs:enjs:format
+      :~  ['op' s+'set-owed']  ['rid' s+id.r]  ['by' s+by]
+          ['clear' b+(gb:reg jon 'clear')]
+          ['amount' (en-num:reg (fall (gn:reg jon 'amount') 0))]
+      ==
     ~
   ?~  pk  (send-err eyre-id 400 'op: not an organizer op this ship knows')
   ;<  err=(unit tang)  bind:m  (poke-writer u.pk)

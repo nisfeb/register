@@ -93,6 +93,11 @@
         ref: body.ref, note: body.note, at: at, refunded: false };
       out.status = 'complete';
       what = 'payment recorded';
+    } else if (op === 'owed') {
+      // the fee is what the ship computes unless an organizer says
+      // otherwise, so the painted row carries the figure straight away
+      if (!body.clear) out.fees = body.amount;
+      what = body.clear ? 'fee put back to the computed one' : 'fee set by hand';
     } else if (op === 'waiver-paper') {
       out.waiver = Object.assign({}, out.waiver, { method: 'paper', status: 'completed', at: at });
       what = 'waiver signed on paper';
@@ -151,6 +156,9 @@
     if (op === 'reinstate') return r.status !== 'cancelled';
     if (op === 'cancel') return r.status === 'cancelled';
     if (op === 'note') return String(r.notes || '') === String(body.notes || '');
+    // a cleared fee goes back to the computed one, which this page does
+    // not know, so the read is taken as settled either way
+    if (op === 'owed') return body.clear ? true : Number(r.fees) === Number(body.amount);
     return true;
   }
   // how long a painted action may wait for the ship to show it. The
@@ -789,6 +797,31 @@
     }
     return out + '</div></div>';
   }
+  // has an organizer set this party's fee themselves? The roster payload
+  // carries the ones that have, so the figure can be shown as a decision
+  // rather than a sum.
+  function byHand(rid) {
+    var o = (roster || {}).fee_overrides || {};
+    return Object.prototype.hasOwnProperty.call(o, String(rid));
+  }
+  // Setting the fee by hand, offered where the decision gets made: a
+  // part scholarship for somebody on the financial aid list, or a figure
+  // agreed with somebody on the wait list. It is the fee for the whole
+  // party, in dollars, and it stands until it is put back.
+  function feeByHand(r) {
+    if (r.status !== 'waitlist' && r.status !== 'assistance') return '';
+    var set = byHand(r.id);
+    return '<h3>The fee for this party</h3>' +
+      '<label>Fee in dollars<input type="number" id="owed-amount" step="0.01" min="0" value="' +
+      esc((Number(r.fees) / 100).toFixed(2)) + '"></label>' +
+      '<p class="actions"><button type="button" class="btn small" data-act="owed-set">Set this fee</button>' +
+      (set ? '<button type="button" class="btn quiet small" data-act="owed-clear">Put the computed fee back</button>' : '') +
+      '</p><p class="help">' +
+      (set ? 'This fee was set by hand. The computed one comes back if you put it back.'
+           : 'The fee is worked out from the party and the track. Setting it here overrides that.') +
+      ' It covers the whole party and does not move when the party does, so adding somebody later ' +
+      'will not undo it. Zero is a real answer: it means they owe nothing.</p>';
+  }
   function actionsCard(r) {
     var out = '<div class="card"><h3>Actions</h3><div class="actions">';
     if (r.status === 'waitlist') out += '<button type="button" class="btn small" data-act="promote">Offer them a spot</button>';
@@ -855,11 +888,12 @@
       (r.pending ? ' <span class="tag">saving</span>' : '') + '</p>' +
       '<dl class="kv"><dt>Track</dt><dd>' + esc(r.track) + '</dd>' +
       '<dt>Came from</dt><dd>' + esc(r.source) + '</dd>' +
-      '<dt>Fees</dt><dd>' + esc(money(r.fees)) + '</dd>' +
+      '<dt>Fees</dt><dd>' + esc(money(r.fees)) +
+        (byHand(r.id) ? ' <span class="tag">set by hand</span>' : '') + '</dd>' +
       '<dt>Created</dt><dd>' + esc(when(r.created)) + '</dd>' +
       '<dt>Last changed</dt><dd>' + esc(when(r.updated)) + '</dd>' +
       '<dt>Exempt from the caps</dt><dd>' + (r.exempt ? 'yes' : 'no') + '</dd>' +
-      (r.prior ? '<dt>Was</dt><dd>' + esc(r.prior) + '</dd>' : '') + '</dl></div>';
+      (r.prior ? '<dt>Was</dt><dd>' + esc(r.prior) + '</dd>' : '') + '</dl>' + feeByHand(r) + '</div>';
     out += paymentCard(r) + waiverCard(r) + actionsCard(r) + checkinCard(r) + historyCard(r);
     return out + '</div></div>';
   }
@@ -1344,7 +1378,12 @@
       field('window.open', 'Opens', toLocal(getPath(s, 'window.open')), 'datetime-local') +
       field('window.close', 'Closes', toLocal(getPath(s, 'window.close')), 'datetime-local') +
       field('window.change_cutoff', 'Changes close', toLocal(getPath(s, 'window.change_cutoff')), 'datetime-local') + '</div>' +
-      field('hold_hours', 'Hold hours', s.hold_hours, 'number') + '</div>';
+      field('hold_hours', 'Hold hours', s.hold_hours, 'number') +
+      box('at_capacity', 'The event is at capacity', getPath(s, 'at_capacity')) +
+      '<p class="help">Ticked, every new party joins the wait list however the counts read. ' +
+      'Use it when places have been freed by holds that lapsed and you want them to go to ' +
+      'the people already waiting rather than to whoever is on the page. It does not move ' +
+      'anybody already part way through, and you can still offer a spot from the wait list.</p></div>';
     out += '<div class="card"><h3>Organizations the form suggests</h3>' +
       '<label>One per line<textarea data-k="orgs">' + esc((s.orgs || []).join('\n')) + '</textarea></label></div>';
     out += '<div class="card"><h3>Providers</h3>' +
@@ -1905,6 +1944,12 @@
     }
     if (a === 'waiver-paper') return act(function () { post({ op: 'waiver-paper' }); });
     if (a === 'promote') return act(function () { post({ op: 'promote' }); });
+    if (a === 'owed-set') {
+      var amt = cents(pick('owed-amount'));
+      if (!window.confirm('Set the fee for this whole party to ' + money(amt) + '? It stands until you put the computed fee back.')) return;
+      return act(function () { post({ op: 'owed', amount: amt }); });
+    }
+    if (a === 'owed-clear') return act(function () { post({ op: 'owed', clear: true }); });
     if (a === 'assist-yes') return act(function () { post({ op: 'assist', approve: true }); });
     if (a === 'assist-no') return act(function () { post({ op: 'assist', approve: false }); });
     if (a === 'cancel') {
