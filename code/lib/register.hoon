@@ -821,12 +821,20 @@
 ::  +socials-ok: ~, or the social that is sold out
 ::
 ++  socials-ok
-  |=  [s=settings c=counts people=(list person)]
+  |=  [s=settings c=counts people=(list person) was=(list person)]
   ^-  (unit @t)
   =/  sf=@ud  (lent (skim people |=(p=person social-fri.p)))
   =/  ss=@ud  (lent (skim people |=(p=person social-sat.p)))
-  ?:  (gth (add social-fri.c sf) social-fri.caps.s)  `'social_fri: sold out'
-  ?:  (gth (add social-sat.c ss) social-sat.caps.s)  `'social_sat: sold out'
+  ::  `was` is what this party already holds, so an edit is judged on
+  ::  what it ADDS. A social can end up over its cap - +do-promote
+  ::  checks none of them - and when it does, refusing on the total
+  ::  alone froze every registration on the ship, including the ones
+  ::  taking no seat at that social at all. A new party passes ~ here
+  ::  and is judged on the whole of what it asks for, as before.
+  =/  wf=@ud  (lent (skim was |=(p=person social-fri.p)))
+  =/  ws=@ud  (lent (skim was |=(p=person social-sat.p)))
+  ?:  ?&((gth sf wf) (gth (add social-fri.c sf) social-fri.caps.s))  `'social_fri: sold out'
+  ?:  ?&((gth ss ws) (gth (add social-sat.c ss) social-sat.caps.s))  `'social_sat: sold out'
   ~
 ::  ==  the status machine
 ::

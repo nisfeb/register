@@ -296,7 +296,7 @@
   =/  dup=(unit reg:reg)  (dup-of regs email.contact.base rid)
   ?^  dup  (refuse 'submit' 'email: already registered')
   =/  c=counts:reg  (tally:reg s regs now)
-  =/  sold=(unit @t)  (socials-ok:reg s c people.base)
+  =/  sold=(unit @t)  (socials-ok:reg s c people.base ~)
   ?^  sold  (refuse 'submit' u.sold)
   =/  to=@tas  (decide-submit:reg s c track.base people.base)
   =/  r=reg:reg
@@ -1032,7 +1032,7 @@
     %^  send-json  eyre-id  409
     (pairs:enjs:format ~[['error' s+'email: already registered'] ['code' s+'duplicate']])
   =/  c=counts:reg  (tally:reg s regs now)
-  =/  sold=(unit @t)  (socials-ok:reg s c people.p.got)
+  =/  sold=(unit @t)  (socials-ok:reg s c people.p.got ~)
   ?^  sold  (send-err eyre-id 400 u.sold)
   =/  to=@tas  (decide-submit:reg s c track.p.got people.p.got)
   =/  pk=json
@@ -1123,7 +1123,7 @@
     %^  send-json  eyre-id  409
     (pairs:enjs:format ~[['error' s+'email: already registered'] ['code' s+'duplicate']])
   =/  c=counts:reg  (tally:reg s (without regs id.u.cur) now)
-  =/  sold=(unit @t)  (socials-ok:reg s c people.p.got)
+  =/  sold=(unit @t)  (socials-ok:reg s c people.p.got people.u.cur)
   ?^  sold  (send-err eyre-id 400 u.sold)
   ?:  ?&  !=(%waitlist status.u.cur)
           ::  at-capacity cleared on purpose, exactly as +room-for does.

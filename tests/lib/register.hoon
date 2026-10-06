@@ -345,10 +345,22 @@
   ==
 ++  test-socials
   =/  p=person:reg  some-person
+  ::  somebody taking neither social, for the over-cap cases
+  =/  quiet=person:reg  p(social-fri |, social-sat |)
   ;:  weld
-    (expect-eq !>(`(unit @t)`~) !>((socials-ok:reg st [0 0 298 198 0 0] ~[p p])))
-    (expect-eq !>(`(unit @t)`[~ 'social_sat: sold out']) !>((socials-ok:reg st [0 0 0 199 0 0] ~[p p])))
-    (expect-eq !>(`(unit @t)`[~ 'social_fri: sold out']) !>((socials-ok:reg st [0 0 300 0 0 0] ~[p])))
+    (expect-eq !>(`(unit @t)`~) !>((socials-ok:reg st [0 0 298 198 0 0] ~[p p] ~)))
+    (expect-eq !>(`(unit @t)`[~ 'social_sat: sold out']) !>((socials-ok:reg st [0 0 0 199 0 0] ~[p p] ~)))
+    (expect-eq !>(`(unit @t)`[~ 'social_fri: sold out']) !>((socials-ok:reg st [0 0 300 0 0 0] ~[p] ~)))
+    ::  a social already over its cap must not freeze a party that is
+    ::  taking no seat at it, nor one that is not asking for more than
+    ::  it already holds. +do-promote checks no social cap, so going
+    ::  over is a real state the ship reaches.
+    (expect-eq !>(`(unit @t)`~) !>((socials-ok:reg st [0 0 0 202 0 0] ~[quiet quiet] ~[quiet quiet])))
+    (expect-eq !>(`(unit @t)`~) !>((socials-ok:reg st [0 0 0 200 0 0] ~[p p] ~[p p])))
+    ::  but one more seat at a full social still is refused
+    (expect-eq !>(`(unit @t)`[~ 'social_sat: sold out']) !>((socials-ok:reg st [0 0 0 200 0 0] ~[p p] ~[p])))
+    ::  and giving a seat up is always allowed
+    (expect-eq !>(`(unit @t)`~) !>((socials-ok:reg st [0 0 0 202 0 0] ~[p] ~[p p])))
   ==
 ++  test-room-for
   =/  now=@da  (add t0 ~h1)
