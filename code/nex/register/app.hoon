@@ -1126,7 +1126,13 @@
   =/  sold=(unit @t)  (socials-ok:reg s c people.p.got)
   ?^  sold  (send-err eyre-id 400 u.sold)
   ?:  ?&  !=(%waitlist status.u.cur)
-          =(%waitlist (decide-submit:reg s c track.p.got people.p.got))
+          ::  at-capacity cleared on purpose, exactly as +room-for does.
+          ::  It is there to hold NEWCOMERS out; a registration that
+          ::  already exists changing its own details is not one, and
+          ::  leaving it set refused every edit to every full-track
+          ::  party, for organizers as well as pilgrims. The cap itself
+          ::  is still checked below it, so a party cannot grow past it.
+          =(%waitlist (decide-submit:reg s(at-capacity [| |]) c track.p.got people.p.got))
       ==
     (send-err eyre-id 409 'people: no room for the added people')
   =/  pk=json
