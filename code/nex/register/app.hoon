@@ -2525,6 +2525,9 @@
     ==
   ?.  known
     (send-err eyre-id 400 'template: not one this ship sends')
+  ::  and that it would be true of this registration
+  =/  untrue=(unit @t)  (tpl-ok:reg tpl r)
+  ?^  untrue  (send-err eyre-id 409 u.untrue)
   ;<  raw-cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
   ;<  now=@da  bind:m  get-time:io

@@ -1520,6 +1520,37 @@
     (expect !>(!bambino.at-capacity.base))
     (expect-eq !>(`@ud`0) !>(~(wyt by owed.base)))
   ==
+::  a template that says where somebody stands must not go out when the
+::  record says otherwise. "A spot opened for you" reached Meg Lyons
+::  three times while she sat on the wait list.
+::
+++  test-tpl-ok
+  =/  wl=reg:reg    (some-reg %a %waitlist %full 1 t0)
+  =/  wv=reg:reg    (some-reg %a %waiver %full 1 t0)
+  =/  pay=reg:reg   (some-reg %a %payment %full 1 t0)
+  =/  done=reg:reg  (some-reg %a %complete %full 1 t0)
+  =/  gone=reg:reg  (some-reg %a %cancelled %full 1 t0)
+  =/  dr=reg:reg    (some-reg %a %draft %full 1 t0)
+  ;:  weld
+    (expect !>(?=(^ (tpl-ok:reg 'promoted' wl))))
+    (expect !>(?=(^ (tpl-ok:reg 'promoted' gone))))
+    (expect !>(?=(^ (tpl-ok:reg 'promoted' dr))))
+    (expect !>(!?=(^ (tpl-ok:reg 'promoted' wv))))
+    (expect !>(!?=(^ (tpl-ok:reg 'promoted' pay))))
+    (expect !>(!?=(^ (tpl-ok:reg 'promoted' done))))
+    (expect !>(!?=(^ (tpl-ok:reg 'waitlist' wl))))
+    (expect !>(?=(^ (tpl-ok:reg 'waitlist' done))))
+    (expect !>(!?=(^ (tpl-ok:reg 'confirmation' done))))
+    (expect !>(?=(^ (tpl-ok:reg 'confirmation' pay))))
+    (expect !>(!?=(^ (tpl-ok:reg 'cancelled' gone))))
+    (expect !>(?=(^ (tpl-ok:reg 'cancelled' done))))
+    (expect !>(!?=(^ (tpl-ok:reg 'manage' wl))))
+    (expect !>(!?=(^ (tpl-ok:reg 'manage' done))))
+    (expect !>(!?=(^ (tpl-ok:reg 'reminder' wl))))
+    (expect !>(!?=(^ (tpl-ok:reg 'reminder' pay))))
+    (expect !>(!?=(^ (tpl-ok:reg 'assistance_approved' done))))
+    (expect !>(!?=(^ (tpl-ok:reg 'assistance_declined' pay))))
+  ==
 ::  +owed: what a registration has still to pay, and the door a paid
 ::  one that grew a person goes back through
 ::

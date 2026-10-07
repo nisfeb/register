@@ -818,6 +818,36 @@
   ?.  =(%waitlist status.o)  |
   ?:  (lth created.o created.r)  &
   &(=(created.o created.r) (lth id.o id.r))
+::  +tpl-ok: ~, or why this template must not go to this registration.
+::
+::  A template that makes a claim about where somebody stands is refused
+::  when the record says otherwise. "A spot opened for you on the Baby
+::  Steps Camino" went to Meg Lyons three times while she sat on the
+::  wait list, because resending a template asked only whether the ship
+::  knows the name, not whether the thing it says is true.
+::
+::  Only the four that assert a status. `manage` is a link and `reminder`
+::  says they are not finished; both are true in any state. The two
+::  assistance ones are a judgement an organizer may want to repeat, so
+::  they are left alone.
+::
+++  tpl-ok
+  |=  [tpl=@t r=reg]
+  ^-  (unit @t)
+  ?:  =('promoted' tpl)
+    ?.  ?=(?(%waiver %payment %assistance %complete) status.r)
+      `'promoted: no spot has opened for them, so that email would not be true'
+    ~
+  ?:  =('waitlist' tpl)
+    ?.  =(%waitlist status.r)  `'waitlist: they are not on the wait list'
+    ~
+  ?:  =('confirmation' tpl)
+    ?.  =(%complete status.r)  `'confirmation: their registration is not complete'
+    ~
+  ?:  =('cancelled' tpl)
+    ?.  =(%cancelled status.r)  `'cancelled: their registration is not cancelled'
+    ~
+  ~
 ::  +socials-ok: ~, or the social that is sold out
 ::
 ++  socials-ok

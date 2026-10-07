@@ -884,6 +884,20 @@
     look('the Saturday social', c.social_sat, k.social_sat, ss);
     return out;
   }
+  // the four templates that assert where somebody stands, against the
+  // status that would make each one true. manage and reminder are true
+  // in any state; the assistance pair is a judgement an organizer may
+  // want to repeat.
+  function templatesFor(r) {
+    var s = r.status;
+    return TEMPLATES.filter(function (t) {
+      if (t === 'promoted') return ['waiver', 'payment', 'assistance', 'complete'].indexOf(s) >= 0;
+      if (t === 'waitlist') return s === 'waitlist';
+      if (t === 'confirmation') return s === 'complete';
+      if (t === 'cancelled') return s === 'cancelled';
+      return true;
+    });
+  }
   function actionsCard(r) {
     var out = '<div class="card"><h3>Actions</h3><div class="actions">';
     if (r.status === 'waitlist') out += '<button type="button" class="btn small" data-act="promote">Offer them a spot</button>';
@@ -910,9 +924,19 @@
     if (r.status !== 'draft' && r.status !== 'cancelled') {
       out += '<label>Cancellation note<input type="text" id="cancel-note"></label>';
     }
+    // only the templates that would be TRUE of this registration. The
+    // ship refuses the others too; this is so nobody has to know the
+    // rule. "A spot opened for you" went to a wait-listed pilgrim three
+    // times because the list offered it.
+    var tpls = templatesFor(r);
     out += '<h3>Email</h3><div class="actions">' +
-      '<select id="tpl">' + TEMPLATES.map(function (t) { return '<option value="' + t + '">' + esc(t) + '</option>'; }).join('') + '</select>' +
+      '<select id="tpl">' + tpls.map(function (t) { return '<option value="' + t + '">' + esc(t) + '</option>'; }).join('') + '</select>' +
       '<button type="button" class="btn small" data-act="resend">Send this email again</button></div>';
+    var hidden = TEMPLATES.filter(function (t) { return tpls.indexOf(t) < 0; });
+    if (hidden.length) {
+      out += '<p class="help">Not offered here, because it would not be true of this ' +
+        'registration as it stands: ' + esc(hidden.join(', ')) + '.</p>';
+    }
     return out + '</div>';
   }
   // +en-person carries each person's check-ins, so the organizer sees

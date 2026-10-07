@@ -395,6 +395,7 @@ def run():
 
     growing()
     partial()
+    truthful()
     checkin(ana_rid, w2_rid)
     selfcheckin(ana_rid, ana_tok)
     backoffice(ana_rid)
@@ -563,6 +564,53 @@ def partial():
     admin('POST', '/reg/' + d_rid, {'op': 'owed', 'clear': True})
     admin('POST', '/reg/' + d_rid, {'op': 'cancel', 'note': 'matrix cleanup'})
     settle()
+
+
+def truthful():
+    """A template that says where somebody stands is refused when the
+    record says otherwise. "A spot opened for you on the Baby Steps
+    Camino" went to a wait-listed pilgrim three times, because resending
+    asked only whether the ship knows the template's name."""
+    # a wait-listed party: the state Meg Lyons was in. The cap is pulled
+    # down to what is already counted, the same way the wait-list block
+    # above does it - a big party is not enough on an empty test ship.
+    s0 = status()
+    settings['caps']['full'] = s0['counts']['full']
+    admin('PUT', '/settings', settings); settle()
+    code, d = curl('POST', API + '/submit',
+                   party('full', 'matrix-truth-wl@example.com', [person('Meg', 'Waiting'), person('Noelle', 'Waiting')]))
+    check('a party over the cap is wait listed', code == 200 and d['status'] == 'waitlist', (code, d.get('status')))
+    w_rid = d['rid']
+    settle()
+    code, d = admin('POST', '/reg/' + w_rid, {'op': 'resend', 'template': 'promoted'})
+    check('"a spot opened for you" is refused to somebody on the wait list',
+          code == 409 and 'not be true' in str(d.get('error', '')), (code, d))
+    code, d = admin('POST', '/reg/' + w_rid, {'op': 'resend', 'template': 'confirmation'})
+    check('"you are registered" is refused to them too', code == 409, (code, d))
+    code, d = admin('POST', '/reg/' + w_rid, {'op': 'resend', 'template': 'cancelled'})
+    check('and so is "your registration was cancelled"', code == 409, (code, d))
+    code, d = admin('POST', '/reg/' + w_rid, {'op': 'resend', 'template': 'waitlist'})
+    check('but the wait-list email itself is allowed', code == 200, (code, d))
+    code, d = admin('POST', '/reg/' + w_rid, {'op': 'resend', 'template': 'manage'})
+    check('a link is true in any state', code == 200, (code, d))
+    code, d = admin('POST', '/reg/' + w_rid, {'op': 'resend', 'template': 'reminder'})
+    check('so is a nudge that they are not finished', code == 200, (code, d))
+    # once they really have a spot, the promotion email is true
+    code, d = admin('POST', '/reg/' + w_rid, {'op': 'promote'})
+    check('offering them a spot works', code == 200, (code, d))
+    settle()
+    code, d = admin('POST', '/reg/' + w_rid, {'op': 'resend', 'template': 'promoted'})
+    check('and now "a spot opened for you" is allowed', code == 200, (code, d))
+    code, d = admin('POST', '/reg/' + w_rid, {'op': 'resend', 'template': 'waitlist'})
+    check('while the wait-list email is refused, because they are not', code == 409, (code, d))
+    admin('POST', '/reg/' + w_rid, {'op': 'cancel', 'note': 'matrix cleanup'})
+    settle()
+    code, d = admin('POST', '/reg/' + w_rid, {'op': 'resend', 'template': 'cancelled'})
+    check('a cancelled registration may be told it was cancelled', code == 200, (code, d))
+    code, d = admin('POST', '/reg/' + w_rid, {'op': 'resend', 'template': 'promoted'})
+    check('and may not be told a spot opened', code == 409, (code, d))
+    settings['caps']['full'] = 325
+    admin('PUT', '/settings', settings); settle()
 
 
 def checkin(done_rid, waiting_rid):
