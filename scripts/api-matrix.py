@@ -5,7 +5,22 @@ backoffice in stub mode against a fake ship. HOST like
 http://localhost:8080; JAR a curl cookie jar with the owner cookie.
 Exits 1 on any failure. Safe to rerun: it cancels what an earlier run
 left and restores the settings and the counts it changed.
-Two runs must never overlap: both write the same ship."""
+Two runs must never overlap: both write the same ship.
+
+Rerunning does not shrink the ship, though. Nothing deletes a
+registration - cancel is the soft delete - so every run leaves its rows
+behind, and the backup block writes the WHOLE tree in one request. At
+625 registrations on the test ship (587 of them cancelled leftovers)
+that request stopped finishing and the block reported a failure that was
+really a timeout. When the restore checks start failing with a 0 status,
+empty the test ship first:
+
+  GET  /api/admin/export/bundle.json
+  POST /api/admin/import?dry=1              {"bundle": <that, regs: []>}
+  POST /api/admin/import?wipe=1&confirm=..  {"bundle": <same>}
+
+wipe=1 culls everything not in the bundle and keeps the settings, the
+copy and the counts."""
 import base64, csv, json, os, subprocess, sys, tempfile, time, traceback
 
 HOST, JAR = sys.argv[1:3]
@@ -69,8 +84,8 @@ def check(label, cond, detail=''):
         fails.append(label)
 
 
-def admin(method, path, body=None):
-    return curl(method, API + '/admin' + path, body, jar=JAR, actor=ACTOR)
+def admin(method, path, body=None, timeout=60):
+    return curl(method, API + '/admin' + path, body, jar=JAR, actor=ACTOR, timeout=timeout)
 
 
 def settle():
@@ -379,6 +394,7 @@ def run():
     check('cancelling twice is 409', code == 409, code)
 
     growing()
+    partial()
     checkin(ana_rid, w2_rid)
     selfcheckin(ana_rid, ana_tok)
     backoffice(ana_rid)
@@ -467,6 +483,85 @@ def growing():
     code, d = reg(a_rid, a_tok)
     check('so it is left complete, not sent back to pay', d['status'] == 'complete', d['status'])
     admin('POST', '/reg/' + a_rid, {'op': 'cancel', 'note': 'matrix cleanup'})
+    settle()
+
+
+def partial():
+    """A part scholarship. Approving honours the fee an organizer set:
+    they go to the payment step owing it. Approving with no fee set
+    waives the whole thing, which is what full assistance is and must
+    stay. +do-fee-due is the way back from a waiver that should not have
+    been, and it must never unpick a card payment."""
+    p = party('full', 'matrix-partial@example.com', [person('Kay', 'Partial')], assistance=True)
+    code, d = curl('POST', API + '/submit', p)
+    r_rid, r_tok = d['rid'], d['token']
+    settle()
+    curl('POST', API + f'/reg/{r_rid}/sign?t={r_tok}', {})
+    settle()
+    code, d = reg(r_rid, r_tok)
+    check('asking for help lands at the assistance step', d['status'] == 'assistance', d['status'])
+    admin('POST', '/reg/' + r_rid, {'op': 'owed', 'amount': 3000})
+    settle()
+    code, d = reg(r_rid, r_tok)
+    check('the fee agreed by hand is what they owe', d['fees'] == 3000, d['fees'])
+    admin('POST', '/reg/' + r_rid, {'op': 'assist', 'approve': True})
+    settle()
+    code, d = reg(r_rid, r_tok)
+    check('approving a set fee sends them to pay it, not to complete',
+          d['status'] == 'payment' and d['fees'] == 3000 and d['payment']['method'] == 'none',
+          (d['status'], d['fees'], d['payment']['method']))
+    code, h = admin('GET', '/reg/' + r_rid)
+    check('and the record says the set fee is due',
+          any('fee set by hand is due' in st['what'] for st in h['history']),
+          [st['what'] for st in h['history']])
+    code, d = curl('POST', API + f'/reg/{r_rid}/pay?t={r_tok}', {})
+    check('they can pay the reduced fee', code == 200, (code, d))
+    settle()
+    code, d = reg(r_rid, r_tok)
+    check('complete, having paid it', d['payment']['amount'] == 3000, d['payment'])
+    check('a card payment is never unpicked by fee-due',
+          admin('POST', '/reg/' + r_rid, {'op': 'fee-due'})[0] == 409, '')
+    admin('POST', '/reg/' + r_rid, {'op': 'owed', 'clear': True})
+    admin('POST', '/reg/' + r_rid, {'op': 'cancel', 'note': 'matrix cleanup'})
+    settle()
+    # full assistance: no figure set, so the whole fee goes
+    p2 = party('full', 'matrix-whole@example.com', [person('Wil', 'Whole')], assistance=True)
+    code, d = curl('POST', API + '/submit', p2)
+    w_rid, w_tok = d['rid'], d['token']
+    settle()
+    curl('POST', API + f'/reg/{w_rid}/sign?t={w_tok}', {})
+    settle()
+    admin('POST', '/reg/' + w_rid, {'op': 'assist', 'approve': True})
+    settle()
+    code, d = reg(w_rid, w_tok)
+    check('no fee set: approving waives the whole fee',
+          d['status'] == 'complete' and d['payment']['method'] == 'assistance' and d['payment']['amount'] == 0,
+          (d['status'], d['payment']))
+    code, d = admin('POST', '/reg/' + w_rid, {'op': 'fee-due'})
+    check('a waiver can be undone when it should not have been', code == 200, (code, d))
+    settle()
+    code, d = reg(w_rid, w_tok)
+    check('which asks them for the whole fee',
+          d['status'] == 'payment' and d['fees'] == 7500 and d['payment']['method'] == 'none',
+          (d['status'], d['fees'], d['payment']['method']))
+    admin('POST', '/reg/' + w_rid, {'op': 'cancel', 'note': 'matrix cleanup'})
+    settle()
+    # declining, with a fee set, asks for that figure too
+    p3 = party('full', 'matrix-declined@example.com', [person('Dee', 'Declined')], assistance=True)
+    code, d = curl('POST', API + '/submit', p3)
+    d_rid, d_tok = d['rid'], d['token']
+    settle()
+    curl('POST', API + f'/reg/{d_rid}/sign?t={d_tok}', {})
+    settle()
+    admin('POST', '/reg/' + d_rid, {'op': 'owed', 'amount': 3000})
+    settle()
+    admin('POST', '/reg/' + d_rid, {'op': 'assist', 'approve': False})
+    settle()
+    code, d = reg(d_rid, d_tok)
+    check('declining sends them to pay, the set figure as well',
+          d['status'] == 'payment' and d['fees'] == 3000, (d['status'], d['fees']))
+    admin('POST', '/reg/' + d_rid, {'op': 'owed', 'clear': True})
+    admin('POST', '/reg/' + d_rid, {'op': 'cancel', 'note': 'matrix cleanup'})
     settle()
 
 
@@ -1135,7 +1230,9 @@ def backoffice(live_rid):
     code, d = admin('POST', '/import?wipe=0&confirm=deadbeef', {'jam': b64})
     check('an apply with a stale confirm token is 400',
           code == 400 and 'confirm' in str((d or {}).get('error', '')), (code, d))
-    code, d = admin('POST', '/import?wipe=0&confirm=' + dry1['confirm'], {'jam': b64})
+    # a whole-tree write, so it gets longer than the default minute: a
+    # timeout here reads as a failure and is not one
+    code, d = admin('POST', '/import?wipe=0&confirm=' + dry1['confirm'], {'jam': b64}, timeout=300)
     check('the apply answers how many it wrote', code == 200 and d.get('applied') == len(roster['regs']), (code, d))
     time.sleep(15)
     code, after = admin('GET', '/regs')
@@ -1150,7 +1247,7 @@ def backoffice(live_rid):
     code, dry2 = admin('POST', '/import?dry=1', {'jam': b64})
     check('a fresh dry run answers a token for the tree as it stands now',
           code == 200 and len(str(dry2.get('confirm', ''))) == 8, (code, dry2))
-    code, d = admin('POST', '/import?wipe=0&confirm=' + dry2['confirm'], {'jam': b64})
+    code, d = admin('POST', '/import?wipe=0&confirm=' + dry2['confirm'], {'jam': b64}, timeout=300)
     check('the same jam applies again', code == 200, (code, d))
     time.sleep(15)
     code, d = admin('GET', '/reg/' + ck_rid)

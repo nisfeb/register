@@ -83,16 +83,25 @@
       out.position = 0;
       what = 'promoted from the wait list';
     } else if (op === 'assist') {
-      out.status = body.approve ? 'complete' : 'payment';
-      if (body.approve) {
+      // approving a party whose fee was set by hand lowers it rather
+      // than waiving it, so they land at the payment step owing it
+      var waive = body.approve && !body.lower;
+      out.status = waive ? 'complete' : 'payment';
+      if (waive) {
         out.payment = Object.assign({}, out.payment, { method: 'assistance', amount: 0, gift: 0, at: at, refunded: false });
       }
-      what = body.approve ? 'assistance approved' : 'assistance declined';
+      what = body.approve
+        ? (body.lower ? 'assistance approved: the fee set by hand is due' : 'assistance approved: the fee is waived')
+        : 'assistance declined';
     } else if (op === 'pay') {
       out.payment = { method: body.method, amount: body.amount, gift: body.gift,
         ref: body.ref, note: body.note, at: at, refunded: false };
       out.status = 'complete';
       what = 'payment recorded';
+    } else if (op === 'fee-due') {
+      out.status = 'payment';
+      out.payment = Object.assign({}, out.payment, { method: 'none', amount: 0, gift: 0, at: null });
+      what = 'the waived fee is due after all';
     } else if (op === 'owed') {
       // the fee is what the ship computes unless an organizer says
       // otherwise, so the painted row carries the figure straight away
@@ -148,7 +157,7 @@
     var op = (body || {}).op;
     if (!r) return false;
     if (op === 'promote') return r.status === 'waiver';
-    if (op === 'assist') return r.status === (body.approve ? 'complete' : 'payment');
+    if (op === 'assist') return r.status === (body.approve && !body.lower ? 'complete' : 'payment');
     if (op === 'pay') return (r.payment || {}).method === body.method;
     if (op === 'waiver-paper') return (r.waiver || {}).status === 'completed';
     if (op === 'refund') return !!(r.payment || {}).refunded;
@@ -158,6 +167,7 @@
     if (op === 'note') return String(r.notes || '') === String(body.notes || '');
     // a cleared fee goes back to the computed one, which this page does
     // not know, so the read is taken as settled either way
+    if (op === 'fee-due') return r.status === 'payment' && (r.payment || {}).method !== 'assistance';
     if (op === 'owed') return body.clear ? true : Number(r.fees) === Number(body.amount);
     return true;
   }
@@ -833,12 +843,64 @@
       ' It covers the whole party and does not move when the party does, so adding somebody later ' +
       'will not undo it. Zero is a real answer: it means they owe nothing.</p>';
   }
+  // what Approve and Decline will do to this party, in figures
+  function assistWords(r) {
+    var set = byHand(r.id);
+    var fee = Number(r.fees) || 0;
+    var approve = !set
+      ? '<b>Approve</b> will <b>waive</b> their whole fee of ' + esc(money(fee)) +
+        '. They will owe nothing. To grant a reduced rate instead, set the fee under ' +
+        '<b>The fee for this party</b> above, then press Approve.'
+      : (fee === 0
+        ? '<b>Approve</b> will <b>waive</b> their fee: you have set it to nothing, so they will owe nothing.'
+        : '<b>Approve</b> will <b>lower</b> their fee to ' + esc(money(fee)) +
+          ', which you set by hand. They go to the payment step and pay that.');
+    return '<p class="help">' + approve + '<br>' +
+      '<b>Decline</b> sends them to the payment step owing ' + esc(money(fee)) +
+      (set ? ', the figure you set.' : '.') + '</p>';
+  }
+  // which caps a promotion would take past their limit, in figures.
+  // Nothing refuses it; this only makes sure it is a decision.
+  function promoteOver(r) {
+    var c = (roster || {}).counts || {}, k = (roster || {}).caps || {};
+    var ppl = r.people || [];
+    var walk = ppl.filter(function (p) {
+      var d = p.days || {};
+      return r.track === 'bambino' ? !!d.sun : !!(d.fri || d.sat || d.sun);
+    }).length;
+    var sf = ppl.filter(function (p) { return p.social_fri; }).length;
+    var ss = ppl.filter(function (p) { return p.social_sat; }).length;
+    var out = [];
+    function look(label, have, cap, add) {
+      if (!cap || !add) return;
+      if ((Number(have) || 0) + add > Number(cap)) {
+        out.push('  ' + label + ': ' + ((Number(have) || 0) + add) + ' of ' + cap +
+          ' (adding ' + add + ')');
+      }
+    }
+    look(r.track === 'bambino' ? 'Bambino' : 'the full Camino', c[r.track === 'bambino' ? 'bambino' : 'full'],
+         k[r.track === 'bambino' ? 'bambino' : 'full'], walk);
+    look('the Friday social', c.social_fri, k.social_fri, sf);
+    look('the Saturday social', c.social_sat, k.social_sat, ss);
+    return out;
+  }
   function actionsCard(r) {
     var out = '<div class="card"><h3>Actions</h3><div class="actions">';
     if (r.status === 'waitlist') out += '<button type="button" class="btn small" data-act="promote">Offer them a spot</button>';
     if (r.status === 'assistance') {
       out += '<button type="button" class="btn small" data-act="assist-yes">Approve assistance</button>' +
         '<button type="button" class="btn quiet small" data-act="assist-no">Decline assistance</button>';
+    }
+    // Spell out what each button will do to THIS party, rather than
+    // leaving the organizer to work it out. Four live records were
+    // waived for $360 by somebody reasonably reading "approve" as
+    // "grant the reduced rate we agreed".
+    if (r.status === 'assistance') {
+      out += '</div>' + assistWords(r) + '<div class="actions">';
+    }
+    // and the way back, when a fee was waived that should not have been
+    if (r.status === 'complete' && (r.payment || {}).method === 'assistance') {
+      out += '<button type="button" class="btn small" data-act="fee-due">The waived fee is due after all</button>';
     }
     if (r.status !== 'draft' && r.status !== 'cancelled') {
       out += '<button type="button" class="btn danger small" data-act="cancel">Cancel this registration</button>';
@@ -1427,6 +1489,7 @@
   var LOG_WHAT = {
     submit: 'signed up', advance: 'moved on', cancel: 'cancelled',
     reinstate: 'put back', promote: 'offered a spot', assist: 'assistance decided',
+    'fee-due': 'waived fee asked for', 'set-owed': 'fee set by hand',
     pay: 'payment recorded', refund: 'marked refunded', exempt: 'cap exemption',
     edit: 'changed', add: 'added by an organizer', note: 'note',
     'set-notes': 'note changed', 'set-waiver': 'waiver recorded',
@@ -1964,14 +2027,33 @@
       });
     }
     if (a === 'waiver-paper') return act(function () { post({ op: 'waiver-paper' }); });
-    if (a === 'promote') return act(function () { post({ op: 'promote' }); });
+    if (a === 'promote') {
+      // the ship does not check a cap on a promotion, by design: an
+      // organizer may overfill deliberately. But it should never be an
+      // accident, so the figures are put in front of them first. The
+      // Saturday social reached 202 of 200 this way.
+      var over = promoteOver(detail);
+      if (over.length && !window.confirm('Offering this party a spot takes you over:\n\n' +
+          over.join('\n') + '\n\nGo ahead anyway?')) return;
+      return act(function () { post({ op: 'promote' }); });
+    }
     if (a === 'owed-set') {
       var amt = cents(pick('owed-amount'));
       if (!window.confirm('Set the fee for this whole party to ' + money(amt) + '? It stands until you put the computed fee back.')) return;
       return act(function () { post({ op: 'owed', amount: amt }); });
     }
     if (a === 'owed-clear') return act(function () { post({ op: 'owed', clear: true }); });
-    if (a === 'assist-yes') return act(function () { post({ op: 'assist', approve: true }); });
+    if (a === 'fee-due') {
+      if (!window.confirm('Ask this party for their fee after all? The fee was waived; this puts them back at the payment step owing ' + money(detail.fees) + '. Send them the link afterwards.')) return;
+      return act(function () { post({ op: 'fee-due' }); });
+    }
+    if (a === 'assist-yes') {
+      var lower = byHand(detail.id) && Number(detail.fees) > 0;
+      if (!window.confirm(lower
+        ? 'Approve assistance and LOWER their fee to ' + money(detail.fees) + '? They go to the payment step and pay that.'
+        : 'Approve assistance and WAIVE their whole fee of ' + money(detail.fees) + '? They will owe nothing.')) return;
+      return act(function () { post({ op: 'assist', approve: true, lower: lower }); });
+    }
     if (a === 'assist-no') return act(function () { post({ op: 'assist', approve: false }); });
     if (a === 'cancel') {
       if (!window.confirm('Cancel this registration for everyone in the party? Their spots are released. You can put it back afterwards.')) return;

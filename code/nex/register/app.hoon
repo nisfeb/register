@@ -175,6 +175,7 @@
   ?:  =('ask-assist' op)  (do-ask-assist jon)
   ?:  =('promote' op)  (do-promote jon)
   ?:  =('assist' op)  (do-assist jon)
+  ?:  =('fee-due' op)  (do-fee-due jon)
   ?:  =('note' op)  (do-note jon)
   ?:  =('pay' op)  (do-pay jon)
   ?:  =('set-waiver' op)  (do-set-waiver jon)
@@ -430,21 +431,67 @@
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
   =/  rid=@ta  (rid-of jon)
-  =/  by=@t  (by-of jon)
+  ::  not named `by`: that would shadow the map door used below
+  =/  who=@t  (by-of jon)
   =/  approve=?  (gb:reg jon 'approve')
   ;<  now=@da  bind:m  get-time:io
   ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
   ?~  cur  (refuse 'assist' 'no such registration')
   ?.  =(%assistance status.u.cur)  (refuse 'assist' 'not awaiting assistance')
+  ;<  s=settings:reg  bind:m  (read-settings 0)
+  ::  Approving honours the fee an organizer set for this party: that IS
+  ::  the help. A fee set by hand means they pay it, so they go to the
+  ::  payment step owing it; no fee set means the whole thing is waived,
+  ::  which is what approving has always done and what full assistance
+  ::  still is. The organizers' own approval email says "you may complete
+  ::  your payment", so this is the reading they were already working to.
+  ::
+  ::  Keyed on whether a fee was SET, not on whether it is above zero: a
+  ::  party given full assistance has no figure set and a computed fee
+  ::  above zero, and must not be asked for it.
+  =/  set=?  (~(has by owed.s) id.u.cur)
+  =/  due=@ud  (fees-total:reg s u.cur)
   =/  r=reg:reg
-    ?:  approve
-      %-  set-status:reg
-      :*  u.cur(payment [%assistance 0 0 `now '' | ''])
-          %complete  by  'assistance approved'  now
-      ==
-    (set-status:reg u.cur %payment by 'assistance declined' now)
+    ?.  approve
+      (set-status:reg u.cur %payment who 'assistance declined' now)
+    ?:  &(set (gth due 0))
+      (set-status:reg u.cur %payment who 'assistance approved: the fee set by hand is due' now)
+    %-  set-status:reg
+    :*  u.cur(payment [%assistance 0 0 `now '' | ''])
+        %complete  who  'assistance approved: the fee is waived'  now
+    ==
   ;<  ~  bind:m  (write-reg 0 r |)
-  ;<  ~  bind:m  (note-rid 'assist' & ?:(approve 'approved' 'declined') by rid)
+  ;<  ~  bind:m  (note-rid 'assist' & ?:(approve ?:(&(set (gth due 0)) 'approved, fee lowered' 'approved, fee waived') 'declined') who rid)
+  (pure:m &)
+::  +do-fee-due: a waived fee that is due after all. Approving
+::  assistance writes the fee off and completes the registration, so a
+::  party granted a REDUCED fee by hand and then approved ends up owing
+::  nothing - which is not what anybody meant. This puts them back at
+::  the payment step for whatever their fee now says, and the fee set by
+::  hand is untouched, so it is the reduced figure they are asked for.
+::
+::  Only from %complete and only when the fee was waived: a card payment
+::  is never unpicked this way.
+::
+++  do-fee-due
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  rid=@ta  (rid-of jon)
+  =/  who=@t  (by-of jon)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
+  ?~  cur  (refuse 'fee-due' 'no such registration')
+  ?.  =(%complete status.u.cur)  (refuse 'fee-due' 'not a complete registration')
+  ?.  =(%assistance method.payment.u.cur)
+    (refuse 'fee-due' 'the fee was not waived, so there is nothing to undo')
+  =/  r=reg:reg
+    %-  set-status:reg
+    :*  u.cur(payment [%none 0 0 ~ '' | ''])
+        %payment  who  'the waived fee is due after all'  now
+    ==
+  ;<  ~  bind:m  (write-reg 0 r |)
+  ;<  ~  bind:m  (note-rid 'fee-due' & 'the waived fee is due after all' who rid)
   (pure:m &)
 ::  +do-note: a request fiber's outcome, in the ring. A stub email lands
 ::  here so a rehearsal can read what would have been sent.
@@ -1603,6 +1650,9 @@
   =/  meth=@t  (gs:reg jon 'method')
   ?:  &(=('promote' op) !=(%waitlist status.r))  (send-err eyre-id 409 'not on the wait list')
   ?:  &(=('assist' op) !=(%assistance status.r))  (send-err eyre-id 409 'not awaiting assistance')
+  ?:  &(=('fee-due' op) !=(%complete status.r))  (send-err eyre-id 409 'not a complete registration')
+  ?:  &(=('fee-due' op) !=(%assistance method.payment.r))
+    (send-err eyre-id 409 'the fee was not waived, so there is nothing to undo')
   ?:  &(=('pay' op) !?=(?(%payment %assistance) status.r))
     (send-err eyre-id 409 'not awaiting payment')
   ?:  &(=('pay' op) !?=(?(%check %cash %other) meth))
@@ -1625,6 +1675,8 @@
       `(pairs:enjs:format ~[['op' s+'promote'] ['rid' s+id.r] ['by' s+by]])
     ?:  =('assist' op)
       `(pairs:enjs:format ~[['op' s+'assist'] ['rid' s+id.r] ['by' s+by] ['approve' b+(gb:reg jon 'approve')]])
+    ?:  =('fee-due' op)
+      `(pairs:enjs:format ~[['op' s+'fee-due'] ['rid' s+id.r] ['by' s+by]])
     ?:  =('pay' op)
       :-  ~
       %-  pairs:enjs:format

@@ -54,7 +54,9 @@ async function main() {
     // not networkidle: the shortened timer keeps the page talking to the
     // ship, so the network is never idle and the wait would never end
     await page.goto(BASE + '/apps/register/admin', { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#view table tbody tr', { timeout: 20000 });
+    // the segment control, not a row: the default segment is the active
+    // rows, and a test ship can legitimately have none of those
+    await page.waitForSelector('#f-seg', { timeout: 20000 });
     await sleep(1200);
 
     // the default segment is the active rows. A test ship's are mostly
@@ -62,8 +64,10 @@ async function main() {
     // window before scrolling it means anything.
     await page.select('#f-seg', 'all');
     await sleep(2000);
+    await page.waitForSelector('#view table tbody tr', { timeout: 20000 });
     const rows = await page.evaluate(() => document.querySelectorAll('#view table tbody tr').length);
-    check('there are rows enough to scroll', rows > 20, rows);
+    check('there are rows enough to scroll', rows > 20,
+          rows + ' rows: this needs a test ship with some registrations on it');
 
     // every rewrite of the view from here on is counted, and what it
     // painted is kept: a count alone hid the bug this test exists for,
