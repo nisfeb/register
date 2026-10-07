@@ -1172,13 +1172,27 @@
   =/  c=counts:reg  (tally:reg s (without regs id.u.cur) now)
   =/  sold=(unit @t)  (socials-ok:reg s c people.p.got people.u.cur)
   ?^  sold  (send-err eyre-id 400 u.sold)
+  ::  Only an edit that ADDS walkers is judged against the track cap,
+  ::  for the same reason +socials-ok takes `was`: a track can be over
+  ::  its cap - +do-promote checks none of them - and while it is,
+  ::  asking "would this party fit if it were new?" refuses every edit
+  ::  to every party on that track, including one changing nothing but
+  ::  a Mass. They already hold their places; this is about the ones
+  ::  they are asking to add.
+  ::
+  ::  A track change is judged in full: the places move from one cap to
+  ::  the other, so nothing is already held on the one being joined.
+  =/  grew=?
+    ?|  !=(track.u.cur track.p.got)
+        %+  gth
+          (walkers:reg track.p.got people.p.got)
+        (walkers:reg track.u.cur people.u.cur)
+    ==
   ?:  ?&  !=(%waitlist status.u.cur)
+          grew
           ::  at-capacity cleared on purpose, exactly as +room-for does.
-          ::  It is there to hold NEWCOMERS out; a registration that
-          ::  already exists changing its own details is not one, and
-          ::  leaving it set refused every edit to every full-track
-          ::  party, for organizers as well as pilgrims. The cap itself
-          ::  is still checked below it, so a party cannot grow past it.
+          ::  It holds NEWCOMERS out; a registration that already exists
+          ::  changing its own details is not one.
           =(%waitlist (decide-submit:reg s(at-capacity [| |]) c track.p.got people.p.got))
       ==
     (send-err eyre-id 409 'people: no room for the added people')
