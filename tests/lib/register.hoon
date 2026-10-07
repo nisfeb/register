@@ -1409,6 +1409,26 @@
     (expect-eq !>(`(unit @ud)`[~ 0]) !>((n sun 'social')))
     (expect-eq !>(`(unit @ud)`[~ 0]) !>((n sun 'checked')))
   ==
+::  the roster row says whether ANYONE in the party is on their first
+::  Baby Steps Camino, which is what the filter needs: a returning
+::  pilgrim who brings a newcomer still has a newcomer with them.
+::
+++  test-en-row-first-bsc
+  =/  new=person:reg  some-person
+  =/  old=person:reg  new(first-bsc |)
+  =/  only-new=reg:reg  (some-reg %a %complete %full 1 t0)
+  =/  mixed=reg:reg  only-new(people ~[old new])
+  =/  all-old=reg:reg  only-new(people ~[old old])
+  =/  none=reg:reg  only-new(people ~)
+  ;:  weld
+    (expect-eq !>(`?`&) !>((gb:reg (en-row:reg only-new 7.500 0) 'first_bsc')))
+    ::  one newcomer among returning pilgrims still counts
+    (expect-eq !>(`?`&) !>((gb:reg (en-row:reg mixed 15.000 0) 'first_bsc')))
+    ::  nobody new, so not in the filter
+    (expect-eq !>(`?`|) !>((gb:reg (en-row:reg all-old 15.000 0) 'first_bsc')))
+    ::  and an empty party is not either
+    (expect-eq !>(`?`|) !>((gb:reg (en-row:reg none 0 0) 'first_bsc')))
+  ==
 ++  test-en-row-checked
   =/  p=person:reg  some-person
   =/  r0=reg:reg  (some-reg %abc123 %complete %full 2 t0)

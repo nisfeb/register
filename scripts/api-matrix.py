@@ -396,6 +396,7 @@ def run():
     growing()
     partial()
     truthful()
+    firsttimers()
     checkin(ana_rid, w2_rid)
     selfcheckin(ana_rid, ana_tok)
     backoffice(ana_rid)
@@ -563,6 +564,30 @@ def partial():
           d['status'] == 'payment' and d['fees'] == 3000, (d['status'], d['fees']))
     admin('POST', '/reg/' + d_rid, {'op': 'owed', 'clear': True})
     admin('POST', '/reg/' + d_rid, {'op': 'cancel', 'note': 'matrix cleanup'})
+    settle()
+
+
+def firsttimers():
+    """The roster row says whether ANYONE in the party is on their first
+    Baby Steps Camino, so the filter finds the parties with a newcomer
+    in them rather than only the all-newcomer ones."""
+    new = person('Nia', 'Newcomer')                       # first_bsc defaults true
+    old = person('Ron', 'Returning', first_bsc=False)
+    code, d = curl('POST', API + '/submit', party('full', 'matrix-first-mixed@example.com', [old, new]))
+    check('a party of one returning pilgrim and one newcomer', code == 200, (code, d))
+    mixed = d['rid']
+    code, d = curl('POST', API + '/submit', party('full', 'matrix-first-none@example.com', [old]))
+    check('and a party with nobody new', code == 200, (code, d))
+    none = d['rid']
+    settle()
+    code, d = admin('GET', '/regs')
+    rows = {r['id']: r for r in d['regs']}
+    check('the row flags the party that has a newcomer in it',
+          rows[mixed].get('first_bsc') is True, rows[mixed].get('first_bsc'))
+    check('and does not flag the one that has none',
+          rows[none].get('first_bsc') is False, rows[none].get('first_bsc'))
+    for rid in (mixed, none):
+        admin('POST', '/reg/' + rid, {'op': 'cancel', 'note': 'matrix cleanup'})
     settle()
 
 

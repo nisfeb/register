@@ -1083,6 +1083,10 @@
       ['waiver' s+status.waiver.r]
       ['exempt' b+exempt.r]
       ['assistance' b+assistance.r]
+      ::  anyone in the party, not everyone: the filter is for finding
+      ::  the people who need shepherding, and a returning pilgrim who
+      ::  brings a newcomer still has a newcomer with them
+      ['first_bsc' b+(lien people.r |=(p=person first-bsc.p))]
       ['knight_dame' b+(lien people.r |=(p=person knight-dame.p))]
       ['volunteer' b+(lien people.r |=(p=person volunteer.p))]
       ['nonwalker' [%b =(0 w)]]

@@ -19,6 +19,7 @@
     ['waitlist', 'wait list'], ['assistance', 'financial assistance'], ['unpaid', 'unpaid'],
     ['unsigned', 'unsigned'], ['draft', 'drafts'], ['cancelled', 'cancelled'],
     ['bambino', 'Bambino only'], ['nonwalker', 'non-walkers'],
+    ['first', 'with first-timers'],
     ['malta', 'NE Florida Order of Malta and volunteers'], ['exempt', 'exempt'],
     ['admin', 'admin adds']];
 
@@ -687,6 +688,8 @@
     if (seg === 'cancelled') return r.status === 'cancelled';
     if (seg === 'bambino') return r.track === 'bambino';
     if (seg === 'nonwalker') return !!r.nonwalker;
+    // any first-timer in the party puts it in this one
+    if (seg === 'first') return !!r.first_bsc;
     if (seg === 'malta') return (r.knight_dame || r.volunteer) && String(r.state || '').trim().toUpperCase() === 'FL';
     if (seg === 'exempt') return !!r.exempt;
     if (seg === 'admin') return r.source === 'admin';
@@ -751,6 +754,7 @@
       if (r.assistance) flags += '<span class="tag">assist</span>';
       if (r.source === 'admin') flags += '<span class="tag">admin</span>';
       if (r.nonwalker) flags += '<span class="tag">non-walker</span>';
+      if (r.first_bsc) flags += '<span class="tag">1st</span>';
       if (r.knight_dame) flags += '<span class="tag">K/D</span>';
       if (r.volunteer) flags += '<span class="tag">vol</span>';
       if (r.refunded) flags += '<span class="tag">refunded</span>';
