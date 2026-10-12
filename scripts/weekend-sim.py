@@ -35,6 +35,10 @@ def check(name, ok, detail=None):
 
 def curl(method, url, body=None, jar=None, actor=None, timeout=90):
     cmd = ['curl', '-s', '-m', str(timeout), '-X', method, '-w', '\n%{http_code}', url]
+    if url.endswith('?raw=1'):
+        # a newer kernel answers a ball ?raw=1 read with a 307 to
+        # /grubbery/api/file/..., and a plain curl reads nothing
+        cmd.insert(1, '-L')
     if jar:
         cmd += ['-b', jar]
     if actor:
