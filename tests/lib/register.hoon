@@ -122,6 +122,9 @@
   =/  got  (de-person:reg pj & 0)
   ?>  ?=(%& -.got)
   p.got
+++  some-intent
+  ^-  intent:reg
+  [%abcdef0123 t0 t1 'mary@example.com' 'for my mother' ~['healing' 'family'] %hidden 'read out']
 ++  some-reg
   |=  [id=@ta status=@tas track=@tas n=@ud at=@da]
   ^-  reg:reg
@@ -987,7 +990,9 @@
 ::
 ++  test-bundle-jam
   =/  b=bundle:reg
-    [%1 ~[(some-reg %aaa %complete %full 2 t0)] starter-settings:reg starter-copy:reg [%o ~]]
+    :*  %2  ~[(some-reg %aaa %complete %full 2 t0)]  starter-settings:reg  starter-copy:reg  [%o ~]
+        `~[some-intent]
+    ==
   =/  a=@  (jam-bundle:reg b)
   ;:  weld
     ::  jam then cue is identity
@@ -1012,7 +1017,7 @@
       waiver   [%paper '' %completed `t0]
       history  ~[[t0 'pilgrim' 'submitted'] [(add t0 ~m5) 'admin:sue' 'edited']]
     ==
-  =/  b=bundle:reg  [%1 ~[r] starter-settings:reg starter-copy:reg [%o ~]]
+  =/  b=bundle:reg  [%2 ~[r] starter-settings:reg starter-copy:reg [%o ~] `~[some-intent]]
   =/  j=json  (en-bundle:reg b)
   =/  broke=json
     (pairs:enjs:format ~[['regs' a+~[(pairs:enjs:format ~[['id' s+'oops']])]]])
@@ -1043,7 +1048,7 @@
 ++  test-bundle-docs
   =/  bare=json  (pairs:enjs:format ~[['regs' a+~]])
   =/  got  (de-bundle-why:reg bare)
-  =/  want=bundle:reg  [%1 ~ ~ ~ ~]
+  =/  want=bundle:reg  [%2 ~ ~ ~ ~ ~]
   =/  nulls=json
     %-  pairs:enjs:format
     :~  ['regs' a+~]  ['settings' ~]  ['copy' ~]  ['counts' ~]
@@ -1623,5 +1628,110 @@
     (expect !>((counted:reg st waiting t0)))
     (expect !>(!(counted:reg st waiting late)))
     (expect !>((counted:reg st paid late)))
+  ==
+::  ==  pilgrims in spirit
+::
+++  test-signup-mode
+  ;:  weld
+    (expect-eq !>(%register) !>((signup-mode:reg starter-settings:reg)))
+    (expect-eq !>(%spirit) !>((signup-mode:reg (put-key starter-settings:reg 'signup_mode' s+'spirit'))))
+    ::  anything else is the ordinary landing
+    (expect-eq !>(%register) !>((signup-mode:reg (put-key starter-settings:reg 'signup_mode' s+'SPIRIT'))))
+    (expect-eq !>(%register) !>((signup-mode:reg (put-key starter-settings:reg 'signup_mode' b+&))))
+  ==
+++  test-de-spirit
+  =/  form
+    |=  [e=@t t=@t]
+    (pairs:enjs:format ~[['email' s+e] ['text' s+t]])
+  =/  why
+    |=  j=json
+    ^-  @t
+    =/  g  (de-spirit:reg j)
+    ?:(?=(%| -.g) p.g '')
+  =/  at-cap  (de-spirit:reg (form 'a@b.co' (crip (reap 4.000 'x'))))
+  ;:  weld
+    (expect-eq !>(`(each [email=@t text=@t] @t)`[%& 'a@b.co' 'pray for us']) !>((de-spirit:reg (form 'a@b.co' 'pray for us'))))
+    (expect-eq !>('email: required') !>((why (form '' 'x'))))
+    (expect-eq !>('email: not an email address') !>((why (form 'a@ b.co' 'x'))))
+    (expect-eq !>('text: required') !>((why (form 'a@b.co' ''))))
+    ::  white space alone is no intention
+    (expect-eq !>('text: required') !>((why (form 'a@b.co' '  \0a\09 '))))
+    (expect-eq !>('text: over 4000 bytes') !>((why (form 'a@b.co' (crip (reap 4.001 'x'))))))
+    ::  at the cap it is taken
+    (expect !>(?=(%& -.at-cap)))
+  ==
+++  test-clean-tags
+  =/  twelve  (clean-tags:reg (turn (gulf 1 12) |=(n=@ (crip (a-co:co n)))))
+  ;:  weld
+    ::  trimmed, empties dropped, one of each whatever its case, first spelling kept
+    %+  expect-eq  !>(`(each (list @t) @t)`[%& ~['Healing' 'family']])
+    !>((clean-tags:reg ~[' Healing ' '' 'family' 'healing' 'FAMILY']))
+    (expect-eq !>(`(each (list @t) @t)`[%& ~]) !>((clean-tags:reg ~)))
+    %+  expect-eq  !>(`(each (list @t) @t)`[%| 'tags: over 40 bytes'])
+    !>((clean-tags:reg ~[(crip (reap 41 'x'))]))
+    ::  twelve is the most, and a thirteenth is refused
+    (expect !>(?=(%& -.twelve)))
+    %+  expect-eq  !>(`(each (list @t) @t)`[%| 'tags: at most 12'])
+    !>((clean-tags:reg (turn (gulf 1 13) |=(n=@ (crip (a-co:co n))))))
+  ==
+++  test-intent-json
+  =/  i=intent:reg  some-intent
+  =/  j=json  (en-intent:reg i)
+  =/  why
+    |=  j=json
+    ^-  @t
+    =/  g  (de-intent-full:reg j)
+    ?:(?=(%| -.g) p.g '')
+  ;:  weld
+    ::  the backup round trip is identity
+    (expect-eq !>(`(each intent:reg @t)`[%& i]) !>((de-intent-full:reg j)))
+    (expect-eq !>('intents: oops: id is not ten lowercase hex digits') !>((why (put-key j 'id' s+'oops'))))
+    (expect-eq !>('intents: abcdef0123: created is not a time') !>((why (put-key j 'created' s+'soon'))))
+    ::  an unknown flag reads as none rather than refusing the backup
+    %+  expect-eq  !>(%none)
+    !>(=/(g (de-intent-full:reg (put-key j 'flag' s+'weird')) ?>(?=(%& -.g) flag.p.g)))
+    ::  a stored grub reads, and a foreign noun does not
+    (expect-eq !>(`(unit intent:reg)``i) !>((read-intent:reg `stored-intent:reg`[%1 i])))
+    (expect-eq !>(`(unit intent:reg)`~) !>((read-intent:reg [%2 42])))
+  ==
+::  +test-bundle-before-intents: a backup made before the intentions
+::  still reads, as a bundle that says nothing about them (~), which is
+::  what makes a restore of it leave the ship's own alone
+::
+++  test-bundle-before-intents
+  =/  old=bundle-1:reg
+    [%1 ~[(some-reg %abc123def0 %complete %full 2 t0)] [%o ~] [%o ~] [%o ~]]
+  =/  lifted=bundle:reg  [%2 regs.old settings.old copy.old counts.old ~]
+  =/  oldj=json
+    %-  pairs:enjs:format
+    :~  ['version' (numb:enjs:format 1)]
+        ['regs' a+(turn regs.old en-reg-full:reg)]
+        ['settings' settings.old]  ['copy' copy.old]  ['counts' counts.old]
+    ==
+  =/  none=bundle:reg  lifted(intents `~)
+  ;:  weld
+    (expect-eq !>(`(unit bundle:reg)``lifted) !>((cue-bundle:reg (jam old))))
+    (expect-eq !>(`(unit bundle:reg)``lifted) !>((de-bundle:reg oldj)))
+    ::  a bundle that holds none says so, and it is not the same as ~
+    (expect-eq !>(`(unit bundle:reg)``none) !>((de-bundle:reg (en-bundle:reg none))))
+    (expect-eq !>(`(unit bundle:reg)``none) !>((cue-bundle:reg (jam-bundle:reg none))))
+    %+  expect-eq  !>('bundle: intents is not an array')
+    !>((why-of (de-bundle-why:reg (put-key oldj 'intents' s+'no'))))
+  ==
+++  test-csv-intents
+  =/  base=intent:reg  some-intent
+  =/  bad=intent:reg  base(id %abcdef0124, created t0, text '=HYPERLINK("x")', email '+1@x.co', tags ~)
+  =/  good=intent:reg  base(created t1, text 'line one\0aline two')
+  =/  doc=@t  (csv-intents:reg ~[bad good])
+  =/  rws=(list @t)  (turn (to-wain:format doc) |=(l=@t l))
+  ;:  weld
+    (expect-eq !>('id,created,email,intention,tags,flag,notes') !>(-.rws))
+    ::  a formula off the public form is text to a spreadsheet
+    (expect !>(?=(^ (find "'=HYPERLINK" (trip doc)))))
+    (expect !>(?=(^ (find "'+1@x.co" (trip doc)))))
+    ::  newest first, and the tags joined
+    (expect !>(?=(^ (find "abcdef0123,2026-12-04T13:05:00Z" (trip doc)))))
+    (expect-eq !>(~) !>((find "abcdef0124" (trip (snag 1 rws)))))
+    (expect !>(?=(^ (find "healing; family" (trip doc)))))
   ==
 --

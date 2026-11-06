@@ -196,3 +196,6 @@ body.editing .btn, body.editing .check, body.editing a.btn, body.editing .remove
 .picks.assist { margin-top: 1.4rem; }
 .picks.assist .note { margin: .3rem 0 .8rem 1.7rem; }
 .picks.assist .actions { margin: 0; }
+/* the pilgrim-in-spirit form; .hp is the box only a robot fills in */
+.spirit textarea { min-height: 9rem; }
+.hp { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }

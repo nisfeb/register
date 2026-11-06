@@ -142,10 +142,33 @@
 +$  stored-reg    [%3 =reg]
 +$  stored-reg-2  [%2 old=reg-2]
 +$  stored-reg-1  [%1 old=reg-1]
-::  +$bundle: a whole backup. Every registration entire, with its token,
-::  and the three documents as they stand.
+::  +$intent: one pilgrim in spirit, at /intents/<id>. Somebody who is
+::  not walking leaves an intention: something they ask the walkers to
+::  pray for, or something they will pray for themselves while the
+::  walk is on. The organizers tag them, and hide the ones that should
+::  not be read out (a spam flag is the same thing with a reason).
 ::
-+$  bundle  [%1 regs=(list reg) settings=json copy=json counts=json]
++$  intent
+  $:  id=@ta
+      created=@da
+      updated=@da
+      email=@t
+      text=@t
+      tags=(list @t)
+      flag=@tas                                 ::  %none %hidden %spam
+      notes=@t                                  ::  the organizers' own
+  ==
++$  stored-intent  [%1 =intent]
+::  +$bundle: a whole backup. Every registration entire, with its token,
+::  the three documents as they stand, and the intentions.
+::
+::  intents is a unit on purpose. A %1 bundle, made before there were
+::  intentions, reads as ~, and a restore of ~ leaves the intentions on
+::  the ship alone: restoring an old backup must not take away what has
+::  arrived since. [~ ~] is a bundle that really holds none.
+::
++$  bundle    [%2 regs=(list reg) settings=json copy=json counts=json intents=(unit (list intent))]
++$  bundle-1  [%1 regs=(list reg) settings=json copy=json counts=json]
 ::  the settings the code reads. Everything else in settings.json (the
 ::  organizations, the provider credentials) stays JSON.
 ::
@@ -180,6 +203,10 @@
 ++  max-log      2.000
 ++  max-copy     4.000
 ++  max-waiver   20.000
+++  max-intent   4.000                          ::  one intention, in bytes
+++  max-intents  20.000                         ::  how many the ship will hold
+++  max-tag      40
+++  max-tags     12
 ::  +copy-cap: how long one copy string may be. The waiver is the terms
 ::  themselves, so it gets room; everything else is a line or a short
 ::  paragraph a pilgrim reads on a page.
@@ -1719,18 +1746,162 @@
         (hist-cell history.r)
     ==
   (csv-doc [(csv-row csv-regs-header) rows])
+::  ==  pilgrims in spirit
+::
+::  +signup-mode: what the landing offers. %spirit is for an event that
+::  is full with a wait list longer than it can serve: the landing takes
+::  intentions and nobody new registers. A registration already made
+::  keeps every link it has.
+::
+++  signup-mode
+  |=  sj=json
+  ^-  @tas
+  ?:(=('spirit' (gs sj 'signup_mode')) %spirit %register)
+::  +all-space: nothing in it but spaces, tabs and line breaks
+::
+++  all-space
+  |=  t=@t
+  ^-  ?
+  (levy (trip t) |=(c=@tD (lte c 32)))
+::  +trim-space: without the spaces and line breaks at either end
+::
+++  trim-space
+  |=  t=@t
+  ^-  @t
+  (crip (flop (lstrip (flop (lstrip (trip t))))))
+++  lstrip
+  |=  l=tape
+  ^-  tape
+  ?~  l  ~
+  ?:  (lte i.l 32)  $(l t.l)
+  l
+++  low  |=(t=@t ^-(@t (crip (cass (trip t)))))
+::  +de-spirit: the public form. Both fields are required, and text that
+::  is only white space is no text.
+::
+++  de-spirit
+  |=  jon=json
+  ^-  (each [email=@t text=@t] @t)
+  =/  em  (str-field jon 'email' max-email & 'email')
+  ?:  ?=(%| -.em)  [%| p.em]
+  ?.  (is-email p.em)  [%| 'email: not an email address']
+  =/  tx  (str-field jon 'text' max-intent & 'text')
+  ?:  ?=(%| -.tx)  [%| p.tx]
+  ?:  (all-space p.tx)  [%| 'text: required']
+  [%& p.em p.tx]
+::  +clean-tags: trimmed, the empty ones dropped, and one of each however
+::  it was capitalised: the first spelling stays
+::
+++  clean-tags
+  |=  raw=(list @t)
+  ^-  (each (list @t) @t)
+  =|  out=(list @t)
+  |-  ^-  (each (list @t) @t)
+  ?~  raw  [%& (flop out)]
+  =/  t=@t  (trim-space i.raw)
+  ?:  =('' t)  $(raw t.raw)
+  ?:  (over-cap t max-tag)  [%| (rap 3 'tags: over ' (crip (a-co:co max-tag)) ' bytes' ~)]
+  ?:  (lien out |=(o=@t =((low o) (low t))))  $(raw t.raw)
+  ?:  (gte (lent out) max-tags)  [%| (rap 3 'tags: at most ' (crip (a-co:co max-tags)) ~)]
+  $(raw t.raw, out [t out])
+++  ok-flag  |=(f=@t ^-(? (one-of f ~['none' 'hidden' 'spam'])))
+::  +read-intent: a stored grub, or ~ when it is not one
+::
+++  read-intent
+  |=  n=*
+  ^-  (unit intent)
+  =/  v1=(unit stored-intent)  (mole |.(;;(stored-intent n)))
+  ?~(v1 ~ `intent.u.v1)
+++  newest-first
+  |=  l=(list intent)
+  ^-  (list intent)
+  (sort l |=([a=intent b=intent] (gth created.a created.b)))
+++  en-intent
+  |=  i=intent
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+id.i]
+      ['created' (en-time created.i)]
+      ['updated' (en-time updated.i)]
+      ['email' s+email.i]
+      ['text' s+text.i]
+      ['tags' a+(turn tags.i |=(t=@t `json`s+t))]
+      ['flag' s+flag.i]
+      ['notes' s+notes.i]
+  ==
+::  +de-intent-full: an intention out of a backup, the inverse of
+::  +en-intent
+::
+++  de-intent-full
+  |=  jon=json
+  ^-  (each intent @t)
+  =/  id=@t  (gs jon 'id')
+  ?.  (ok-rid id)  [%| (rap 3 'intents: ' id ': id is not ten lowercase hex digits' ~)]
+  =/  made=(unit @da)  (gt jon 'created')
+  ?~  made  [%| (rap 3 'intents: ' id ': created is not a time' ~)]
+  =/  tg  (clean-tags (strings (ga jon 'tags')))
+  ?:  ?=(%| -.tg)  [%| (rap 3 'intents: ' id ': ' p.tg ~)]
+  =/  f=@t  (gs jon 'flag')
+  :-  %&
+  :*  `@ta`id
+      u.made
+      (fall (gt jon 'updated') u.made)
+      (gs jon 'email')
+      (gs jon 'text')
+      p.tg
+      ?:(&((ok-flag f) !=('' f)) `@tas`f %none)
+      (gs jon 'notes')
+  ==
+++  de-intents-full
+  |=  [raw=(list json) acc=(list intent)]
+  ^-  (each (list intent) @t)
+  ?~  raw  [%& (flop acc)]
+  =/  got=(each intent @t)  (de-intent-full i.raw)
+  ?:  ?=(%| -.got)  [%| p.got]
+  (de-intents-full t.raw [p.got acc])
+::  +safe-cell: a cell a spreadsheet will not run. The intentions come
+::  off a public form, and a cell opening with = + - or @ is a formula
+::  to Excel and Sheets; a leading apostrophe makes it text.
+::
+++  safe-cell
+  |=  t=@t
+  ^-  @t
+  ?:  =('' t)  t
+  ?.  (one-of `@t`(end [3 1] t) ~['=' '+' '-' '@' '\09' '\0d'])  t
+  (cat 3 '\'' t)
+++  join-tags
+  |=  l=(list @t)
+  ^-  @t
+  ?~  l  ''
+  (rap 3 [i.l (turn t.l |=(t=@t (cat 3 '; ' t)))])
+++  csv-intents
+  |=  l=(list intent)
+  ^-  @t
+  =/  rows=(list @t)
+    %+  turn  (newest-first l)
+    |=  i=intent
+    %-  csv-row
+    :~  id.i  (en-iso created.i)  (safe-cell email.i)  (safe-cell text.i)
+        (safe-cell (join-tags tags.i))  flag.i  (safe-cell notes.i)
+    ==
+  (csv-doc [(csv-row ~['id' 'created' 'email' 'intention' 'tags' 'flag' 'notes']) rows])
 ::  ==  the bundle: the whole data set, readable or jammed
 ::
 ++  en-bundle
   |=  b=bundle
   ^-  json
   %-  pairs:enjs:format
-  :~  ['version' (en-num 1)]
-      ['regs' a+(turn regs.b en-reg-full)]
-      ['settings' settings.b]
-      ['copy' copy.b]
-      ['counts' counts.b]
-  ==
+  %+  weld
+    ^-  (list [@t json])
+    :~  ['version' (en-num 2)]
+        ['regs' a+(turn regs.b en-reg-full)]
+        ['settings' settings.b]
+        ['copy' copy.b]
+        ['counts' counts.b]
+    ==
+  ^-  (list [@t json])
+  ?~  intents.b  ~
+  ~[['intents' a+(turn u.intents.b en-intent)]]
 ++  de-regs-full
   |=  [raw=(list json) acc=(list reg)]
   ^-  (each (list reg) @t)
@@ -1760,7 +1931,15 @@
   ?.  (doc-ok jon 'counts')  [%| 'bundle: counts is not an object']
   =/  got  (de-regs-full (ga jon 'regs') ~)
   ?:  ?=(%| -.got)  [%| p.got]
-  [%& [%1 p.got (gj jon 'settings') (gj jon 'copy') (gj jon 'counts')]]
+  ::  a bundle from before the intentions has no key for them, and reads
+  ::  as ~ so a restore leaves the ship's own alone
+  =/  ins=(each (unit (list intent)) @t)
+    ?.  (has-key jon 'intents')  [%& ~]
+    ?.  ?=([%a *] (gj jon 'intents'))  [%| 'bundle: intents is not an array']
+    =/  di  (de-intents-full (ga jon 'intents') ~)
+    ?:(?=(%| -.di) [%| p.di] [%& `p.di])
+  ?:  ?=(%| -.ins)  [%| p.ins]
+  [%& [%2 p.got (gj jon 'settings') (gj jon 'copy') (gj jon 'counts') p.ins]]
 ++  de-bundle
   |=  jon=json
   ^-  (unit bundle)
@@ -1770,7 +1949,17 @@
 ::  +cue-bundle: a jam from a file. A truncated or foreign atom answers
 ::  ~ instead of crashing the fiber that read it.
 ::
-++  cue-bundle  |=(a=@ ^-((unit bundle) (mole |.(;;(bundle (cue a))))))
+++  cue-bundle
+  |=  a=@
+  ^-  (unit bundle)
+  =/  n=(unit *)  (mole |.((cue a)))
+  ?~  n  ~
+  =/  b2=(unit bundle)  (mole |.(;;(bundle u.n)))
+  ?^  b2  b2
+  ::  a jam from before the intentions: the same bundle, holding none
+  =/  b1=(unit bundle-1)  (mole |.(;;(bundle-1 u.n)))
+  ?~  b1  ~
+  `[%2 regs.u.b1 settings.u.b1 copy.u.b1 counts.u.b1 ~]
 ::  ==  helpers
 ::
 ::  +ring: append to a JSON array and keep the last max entries
@@ -1872,6 +2061,9 @@
       ==
       ['open' b+(window-open s now)]
       ['changes_open' b+(changes-open s now)]
+      ::  what the landing offers: 'register', or 'spirit' when the event
+      ::  is full and the landing takes intentions instead
+      ['signup' s+(signup-mode sj)]
       ::  the same fact the counts already tell: the page offers the wait
       ::  list rather than a place, per track
       :-  'at_capacity'
@@ -1948,6 +2140,19 @@
       ['landing.waitlist.button' s+'Join the wait list']
       ['landing.closed' s+'Registration is closed. Contact us at register@babystepscamino.com with any questions.']
       ['landing.notyet' s+'Registration opens {{opens}}. Come back then, or contact us at register@babystepscamino.com with any questions.']
+      ::  the landing when the signup mode is spirit: the event is full
+      ['spirit.title' s+'Walk with us as a pilgrim in spirit']
+      ['spirit.intro' s+'The Baby Steps Camino is full this year, and the wait list is longer than we can serve. You can still walk with us in spirit. Leave an intention: something you would like the pilgrims to pray for along the way, or something you will be praying for yourself while we walk, December 4 to 6.']
+      ['spirit.text.label' s+'Your intention']
+      ['spirit.text.help' s+'Only the organizers see what you write here.']
+      ['spirit.email.label' s+'Your email']
+      ['spirit.email.help' s+'We use it only to write to you about your intention.']
+      ['spirit.button' s+'Send my intention']
+      ['spirit.sending' s+'Sending']
+      ['spirit.done.title' s+'Thank you']
+      ['spirit.done.body' s+'Your intention has reached us, and we will carry it with us on the walk.']
+      ['spirit.another' s+'Send another intention']
+      ['spirit.error' s+'That did not go through. Check both boxes and try again.']
       ['form.title' s+'Your registration']
       ['form.people.title' s+'Who is coming?']
       ['form.people.help' s+'Add everyone you are registering, children included. You will sign the waiver and pay for the whole party.']
@@ -2190,6 +2395,19 @@
           'Pick up where you left off:'
           nl  nl
           '{{link}}'
+      ==
+      ::  the one email a pilgrim in spirit gets. It never repeats the
+      ::  intention: anybody can type any address into the form, and an
+      ::  email that carried their words would let them mail anything to
+      ::  anyone under the event's name.
+      ['email.spirit.subject' s+'Your intention for the {{event}}']
+      :-  'email.spirit.body'
+      :-  %s
+      %+  rap  3
+      :~
+          'Thank you for joining the {{event}} as a pilgrim in spirit.'
+          ' Your intention has reached us, and we will carry it with us'
+          ' on the walk, December 4 to 6.'
       ==
       ['email.cancelled.subject' s+'Your Baby Steps Camino registration was cancelled']
       :-  'email.cancelled.body'

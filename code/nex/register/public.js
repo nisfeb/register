@@ -234,6 +234,8 @@
   var sameAs = [];
   var manageWas = null;       // the status the manage view loaded
   var manageMade = '';        // when the registration the manage view holds was made
+  // the pilgrim-in-spirit form, kept across a repaint
+  var spirit = { email: '', text: '', done: false };
 
   // the fourteen pilgrim views, each reachable from edit mode with a
   // fixture, and the strings that belong to no view of their own
@@ -242,6 +244,7 @@
     ['waitlist', 'Wait list'], ['complete', 'Complete'], ['cancelled', 'Cancelled'],
     ['manage', 'Manage'], ['agreement', 'The agreement'], ['checkin', 'Check-in'],
     ['notyet', 'Not open yet'], ['closed', 'Closed'], ['soldout', 'Sold out'],
+    ['spirit', 'Pilgrim in spirit'], ['spirit_done', 'Pilgrim in spirit, sent'],
     ['other', 'Other strings']];
   // the strings no fixture puts on screen as a span of their own: a
   // status line, a dialog, what an error says, the few that only show
@@ -259,7 +262,7 @@
     'next.draft.title', 'next.draft.body',
     'manage.closed', 'manage.pay_more', 'manage.cancel.confirm', 'stub.banner',
     'checkin.early', 'checkin.over', 'checkin.gone', 'checkin.solo.body', 'checkin.solo.button',
-    'checkin.done', 'checkin.nobody'];
+    'checkin.done', 'checkin.nobody', 'spirit.error'];
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
     'August', 'September', 'October', 'November', 'December'];
 
@@ -417,6 +420,29 @@
     return out + '<div class="doors">' + door('full') + door('bambino') + '</div>' +
       '<p class="help choose">' + tx('landing.choose') + '</p>';
   }
+  // The landing when the event is full: no doors, one intention and an
+  // address. The box with class hp is for robots; a person never sees
+  // it, and the ship drops anything that arrives with it filled in.
+  function spiritView() {
+    var out = '<h1>' + tx('spirit.title') + '</h1><p>' + tx('spirit.intro') + '</p>';
+    if (spirit.done) {
+      return out + '<div class="card soft"><h2>' + tx('spirit.done.title') + '</h2><p>' + tx('spirit.done.body') + '</p>' +
+        '<button type="button" class="btn quiet" data-act="spirit-again">' + tx('spirit.another') + '</button></div>';
+    }
+    var cap = function (key, field) {
+      return editing ? '<div class="field">' + tx(key) + field + '</div>' : '<label>' + esc(t(key)) + field + '</label>';
+    };
+    return out + '<div class="card spirit"><div id="error"></div>' +
+      cap('spirit.text.label', '<textarea id="sp-text" data-spirit="text" rows="6" required>' + esc(spirit.text) + '</textarea>') +
+      '<p class="help">' + tx('spirit.text.help') + '</p>' +
+      cap('spirit.email.label', '<input type="email" id="sp-email" data-spirit="email" autocomplete="email" required value="' +
+        esc(spirit.email) + '">') +
+      '<p class="help">' + tx('spirit.email.help') + '</p>' +
+      '<div class="hp" aria-hidden="true"><label>Website<input type="text" id="sp-website" tabindex="-1" autocomplete="off"></label></div>' +
+      '<p><button type="button" class="btn" data-act="spirit-send">' + tx('spirit.button') + '</button></p></div>';
+  }
+  // the same loose test the ship makes, so a typo is caught here first
+  function looksLikeEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || '')); }
   // in edit mode a field's caption is a plain block, not a <label>: a
   // click inside a <label> jumps to the field it names, which would
   // take the caret straight out of the span being typed into
@@ -964,7 +990,7 @@
   function previewHtml(name) {
     // every module variable a preview may touch must be listed here
     var keep = { status: status, model: model, mode: mode, rid: rid, token: token, sameAs: sameAs,
-      manageMade: manageMade };
+      manageMade: manageMade, spirit: spirit };
     var out = '';
     try {
       status = JSON.parse(JSON.stringify(keep.status));
@@ -1003,6 +1029,10 @@
       } else if (name === 'checkin') {
         mode = 'checkin';
         out = checkinPage(checkinFixture());
+      } else if (name === 'spirit' || name === 'spirit_done') {
+        mode = 'spirit';
+        spirit = { email: '', text: '', done: name === 'spirit_done' };
+        out = spiritView();
       } else if (name === 'other') {
         out = otherHtml();
       } else {
@@ -1011,7 +1041,7 @@
       }
     } finally {
       status = keep.status; model = keep.model; mode = keep.mode; rid = keep.rid; token = keep.token;
-      sameAs = keep.sameAs; manageMade = keep.manageMade;
+      sameAs = keep.sameAs; manageMade = keep.manageMade; spirit = keep.spirit;
     }
     // the step is named on the ribbon so a click-through can wait for
     // the preview it asked for instead of sleeping and hoping
@@ -1193,6 +1223,13 @@
     if (!status) render(loading());
     refreshStatus().then(function () {
       if (gen !== routeGen) return;
+      // a full event takes intentions on the landing, and a link to the
+      // form lands there too. Every link a registration already holds
+      // (next, manage, check-in) works exactly as before.
+      if (status.signup === 'spirit' && (!parts[0] || parts[0] === 'form' || parts[0] === 'spirit')) {
+        model = null; sameAs = []; rid = null; token = null; mode = 'spirit';
+        return render(spiritView());
+      }
       if (parts[0] === 'form' && (parts[1] === 'full' || parts[1] === 'bambino')) {
         if (!status.open) { mode = 'landing'; return render(closedCard()); }
         mode = 'new';
@@ -1322,6 +1359,8 @@
   }
   function onChange(ev) {
     if (editing) return;
+    var sk = ev.target.getAttribute('data-spirit');
+    if (sk) { spirit[sk] = ev.target.value; return; }
     var el = ev.target, k = el.getAttribute('data-k');
     if (!k || !model) return;
     var box = el.type === 'checkbox';
@@ -1387,6 +1426,24 @@
       }).catch(function (e) { freeAsk(); leaving = null; showError(e.message); });
     }
     else if (act2 === 'submit') { clearTimeout(saveTimer); dirty = false; submit(el); }
+    else if (act2 === 'spirit-send') {
+      var txt = String(spirit.text || '').trim(), mail = String(spirit.email || '').trim();
+      if (!txt || !looksLikeEmail(mail)) {
+        showError(t('spirit.error'));
+        var bad = document.getElementById(txt ? 'sp-email' : 'sp-text');
+        if (bad) bad.focus();
+        return;
+      }
+      showError('');
+      var hp = document.getElementById('sp-website');
+      var freeSpirit = spin(el);
+      post('/spirit', { email: mail, text: spirit.text, website: hp ? hp.value : '' }).then(function () {
+        spirit = { email: '', text: '', done: true };
+        render(spiritView());
+        window.scrollTo(0, 0);
+      }).catch(function () { freeSpirit(); showError(t('spirit.error')); });
+    }
+    else if (act2 === 'spirit-again') { spirit.done = false; render(spiritView()); }
     else if (act2 === 'save') {
       showError('');
       var freeSave = spin(el);

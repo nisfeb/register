@@ -134,3 +134,11 @@ table.legend td { vertical-align: top; }
 table.legend code { background: var(--soft); padding: .05rem .3rem; border-radius: 3px; white-space: nowrap; }
 table.legend .eg { color: var(--muted); white-space: nowrap; }
 @media (max-width: 700px) { table.legend .eg { display: none; } }
+/* the pilgrims in spirit */
+.intent .said { white-space: pre-wrap; margin: .3rem 0 .6rem; font-size: 1rem; }
+.intent.flagged { opacity: .65; }
+.intent .tags { margin-bottom: .5rem; }
+.intent .tags .tag { font-size: .8rem; padding: .05rem .35rem; color: inherit; }
+.intent .tag .x { border: 0; background: none; cursor: pointer; padding: 0 .1rem; color: var(--muted); font-size: .9rem; line-height: 1; }
+.intent .tagin { width: 14rem; display: inline-block; }
+#f-sbulk { width: 16rem; display: inline-block; }

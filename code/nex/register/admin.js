@@ -319,7 +319,68 @@
     return out;
   }
 
+  // ---- the pilgrims in spirit, pure ----
+  // which intentions a filter keeps: the flag first (visible means not
+  // hidden and not spam), then a tag, then words in the text, the
+  // address, the tags or the note
+  function intentMatches(i, f) {
+    var flag = i.flag || 'none';
+    var show = f.show || 'visible';
+    if (show === 'visible' && flag !== 'none') return false;
+    if (show === 'hidden' && flag !== 'hidden') return false;
+    if (show === 'spam' && flag !== 'spam') return false;
+    var tags = i.tags || [];
+    if (f.tag === '-' && tags.length) return false;
+    if (f.tag && f.tag !== '-' && !tags.some(function (t) { return t.toLowerCase() === f.tag.toLowerCase(); })) return false;
+    var q = String(f.q || '').trim().toLowerCase();
+    if (!q) return true;
+    return [i.text, i.email, i.notes, tags.join(' ')].join('\n').toLowerCase().indexOf(q) >= 0;
+  }
+  // every tag in use, with how many carry it, most used first. Two
+  // spellings of one tag count as one, under the first spelling seen.
+  function tagCounts(list) {
+    var by = {}, order = [];
+    (list || []).forEach(function (i) {
+      (i.tags || []).forEach(function (t) {
+        var k = String(t).toLowerCase();
+        if (!by[k]) { by[k] = { tag: t, n: 0 }; order.push(k); }
+        by[k].n++;
+      });
+    });
+    return order.map(function (k) { return by[k]; })
+      .sort(function (a, b) { return b.n - a.n || a.tag.localeCompare(b.tag); });
+  }
+  // a tag added to a list that may already hold it in another case
+  function withTag(tags, t) {
+    var v = String(t || '').trim();
+    if (!v) return (tags || []).slice();
+    var has = (tags || []).some(function (x) { return x.toLowerCase() === v.toLowerCase(); });
+    return has ? tags.slice() : (tags || []).concat([v]);
+  }
+  function withoutTag(tags, t) {
+    return (tags || []).filter(function (x) { return x.toLowerCase() !== String(t).toLowerCase(); });
+  }
+
+  // the ship's list with this page's own writes laid over it: one the
+  // ship already shows is settled and dropped, one past its deadline is
+  // dropped as refused, and the rest stand in for the ship's copy
+  function sameIntent(a, b) {
+    return !!a && !!b && a.flag === b.flag && a.notes === b.notes &&
+      JSON.stringify(a.tags || []) === JSON.stringify(b.tags || []);
+  }
+  function settleIntents(doc, pending, now) {
+    var list = (doc && doc.intents) || [];
+    Object.keys(pending).forEach(function (id) {
+      var ship = list.filter(function (i) { return i.id === id; })[0];
+      if (!ship || sameIntent(ship, pending[id].want) || now > pending[id].until) delete pending[id];
+    });
+    if (doc) doc.intents = list.map(function (i) { return pending[i.id] ? pending[i.id].want : i; });
+    return doc;
+  }
+
   var pure = {
+    settleIntents: settleIntents,
+    intentMatches: intentMatches, tagCounts: tagCounts, withTag: withTag, withoutTag: withoutTag,
     setPath: setPath, getPath: getPath,
     esc: esc, money: money, varsOf: varsOf, missingVars: missingVars, mailGroups: mailGroups,
     ageText: ageText, patchReg: patchReg, settled: settled, patchRow: patchRow,
@@ -341,6 +402,14 @@
   var dayDoc = null, dayFilters = { seg: 'missing', q: '', again: false, force: false }, mailing = null;
   var model = null, before = null;
   var settingsDoc = null, copyDoc = null, countsDoc = null;
+  var intentsDoc = null;      // GET /intents: the signup mode and every intention
+  var spFilters = { q: '', tag: '', show: 'visible' };
+  var noteDrafts = {};        // an organizer's note typed and not yet saved, by id
+  // what this page wrote and the ship has not shown back yet, by id. The
+  // ship answers before its writer applies, so a read in between would
+  // paint the old copy; this one outranks it until it shows up, or
+  // until the deadline says the writer refused it.
+  var intentPending = {};
   var dry = null, fileBody = null, fileName = '';
   var sortBy = { col: 'created', up: false };
   var filters = { seg: 'active', q: '', track: 'all' };
@@ -1417,6 +1486,66 @@
           '</td><td class="eg">' + esc(v[2]) + '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
+  var SHOWS = [['visible', 'showing'], ['hidden', 'hidden'], ['spam', 'spam'], ['all', 'everything']];
+  function shownIntents() {
+    return ((intentsDoc || {}).intents || []).filter(function (i) { return intentMatches(i, spFilters); });
+  }
+  function intentCard(i) {
+    var flag = i.flag || 'none';
+    var tags = (i.tags || []).map(function (t) {
+      return '<span class="tag">' + esc(t) + ' <button type="button" class="x" data-act="intent-untag" data-id="' +
+        esc(i.id) + '" data-tag="' + esc(t) + '" title="Take this tag off" aria-label="Remove tag ' + esc(t) + '">×</button></span>';
+    }).join(' ');
+    var note = Object.prototype.hasOwnProperty.call(noteDrafts, i.id) ? noteDrafts[i.id] : (i.notes || '');
+    var out = '<div class="card intent' + (flag !== 'none' ? ' flagged' : '') + '" data-intent="' + esc(i.id) + '">';
+    out += '<p class="muted">' + esc(when(i.created)) + ' · <a href="mailto:' + esc(i.email) + '">' + esc(i.email) + '</a>' +
+      (flag !== 'none' ? ' · <b>' + esc(flag) + '</b>' : '') + '</p>';
+    out += '<div class="said">' + esc(i.text) + '</div>';
+    out += '<div class="tags">' + (tags || '<span class="muted">No tags</span>') +
+      ' <input type="text" class="tagin" list="intent-tags" data-tag-add="' + esc(i.id) + '" placeholder="Add a tag, then Enter" maxlength="40"></div>';
+    out += '<label>Note for the organizers<textarea data-note="' + esc(i.id) + '" rows="2">' + esc(note) + '</textarea></label>';
+    out += '<p class="actions">' +
+      '<button type="button" class="btn quiet small" data-act="intent-note" data-id="' + esc(i.id) + '">Save the note</button>';
+    if (flag !== 'hidden') out += '<button type="button" class="btn quiet small" data-act="intent-flag" data-flag="hidden" data-id="' + esc(i.id) + '">Hide</button>';
+    if (flag !== 'spam') out += '<button type="button" class="btn quiet small" data-act="intent-flag" data-flag="spam" data-id="' + esc(i.id) + '">Spam</button>';
+    if (flag !== 'none') out += '<button type="button" class="btn quiet small" data-act="intent-flag" data-flag="none" data-id="' + esc(i.id) + '">Show again</button>';
+    return out + '</p></div>';
+  }
+  function spiritAdminView() {
+    var all = (intentsDoc || {}).intents || [];
+    var counts = tagCounts(all);
+    var list = shownIntents();
+    var out = '<h1>Pilgrims in spirit</h1>';
+    if ((intentsDoc || {}).signup !== 'spirit') {
+      out += '<p class="say">The public page is taking registrations, not intentions. ' +
+        'Switch it in <a href="#settings">Settings</a>, under Sign-up.</p>';
+    }
+    out += '<div class="bar">';
+    out += '<div><label>Show</label><select id="f-sshow">' + SHOWS.map(function (s) {
+      return '<option value="' + s[0] + '"' + (spFilters.show === s[0] ? ' selected' : '') + '>' + esc(s[1]) + '</option>';
+    }).join('') + '</select></div>';
+    out += '<div><label>Tag</label><select id="f-stag"><option value="">any</option>' +
+      '<option value="-"' + (spFilters.tag === '-' ? ' selected' : '') + '>no tags yet</option>' +
+      counts.map(function (c) {
+        return '<option value="' + esc(c.tag) + '"' + (spFilters.tag.toLowerCase() === c.tag.toLowerCase() ? ' selected' : '') + '>' +
+          esc(c.tag) + ' (' + c.n + ')</option>';
+      }).join('') + '</select></div>';
+    out += '<div><label>Search</label><input type="text" id="f-sq" placeholder="Words, email, tag or note" value="' + esc(spFilters.q) + '"></div>';
+    var mails = emailsOf(list.map(function (i) { return { email: i.email }; }));
+    out += '<div><label>&nbsp;</label><button type="button" class="btn quiet small" data-act="intent-copy-emails"' +
+      (mails.length ? '' : ' disabled') + '>Copy ' + esc(mails.length) + (mails.length === 1 ? ' email' : ' emails') + '</button></div>';
+    out += '<div><label>&nbsp;</label><a class="btn quiet small" href="' + ADMIN + '/export/intents.csv">intentions.csv</a></div>';
+    out += '</div>';
+    out += '<datalist id="intent-tags">' + counts.map(function (c) { return '<option value="' + esc(c.tag) + '">'; }).join('') + '</datalist>';
+    out += '<p class="muted">' + esc(list.length + ' of ' + all.length + (all.length === 1 ? ' intention' : ' intentions')) + '</p>';
+    if (list.length) {
+      out += '<p class="actions"><input type="text" id="f-sbulk" list="intent-tags" maxlength="40" placeholder="A tag for all ' +
+        list.length + ' shown"> <button type="button" class="btn quiet small" data-act="intent-bulk-tag">Tag all shown</button></p>';
+    }
+    if (!all.length) return out + '<p class="muted">No intentions yet.</p>';
+    if (!list.length) return out + '<p class="muted">Nothing matches.</p>';
+    return out + list.map(intentCard).join('');
+  }
   function emailsView() {
     var by = mailGroups(copyDoc);
     var names = Object.keys(by).sort();
@@ -1457,6 +1586,15 @@
       s.at_capacity = { full: s.at_capacity, bambino: s.at_capacity };
     }
     var out = '<h1>Settings</h1>';
+    var mode = s.signup_mode === 'spirit' ? 'spirit' : 'register';
+    out += '<div class="card"><h3>Sign-up</h3>' +
+      '<label>The public page takes<select data-k="signup_mode">' +
+      [['register', 'registrations'], ['spirit', 'pilgrims in spirit']].map(function (o) {
+        return '<option value="' + o[0] + '"' + (mode === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+      }).join('') + '</select></label>' +
+      '<p class="help">With <b>pilgrims in spirit</b>, the landing offers no registration and no wait list. ' +
+      'It asks for an intention and an email instead, and they arrive under <a href="#spirit">In spirit</a>. ' +
+      'Every registration already made keeps its links: people can still sign, pay, change their weekend and check in.</p></div>';
     out += '<div class="card"><h3>Event</h3>' +
       field('event.name', 'Name', getPath(s, 'event.name')) +
       field('event.utc_offset_hours', 'Hours from UTC', getPath(s, 'event.utc_offset_hours'), 'number', ' step="1" min="-12" max="14"') +
@@ -1525,6 +1663,7 @@
     'set-copy-key': 'wording saved', 'set-counts': 'counts saved',
     checkin: 'checked in', 'mail-sent': 'email marked sent',
     restore: 'backup restored', 'resend-link': 'link asked for',
+    'intent-add': 'pilgrim in spirit', 'intent-set': 'intention changed',
   };
   var LOG_DAY = { fri: 'Friday', sat: 'Saturday', sun: 'Sunday' };
   function logWhat(op) {
@@ -1550,7 +1689,8 @@
       '<a class="btn quiet small" href="' + ADMIN + '/export/bundle.json">JSON bundle</a>' +
       '<a class="btn quiet small" href="' + ADMIN + '/export/bundle.jam">jam</a>' +
       '<a class="btn quiet small" href="' + ADMIN + '/export/people.csv">people.csv</a>' +
-      '<a class="btn quiet small" href="' + ADMIN + '/export/regs.csv">regs.csv</a></p>' +
+      '<a class="btn quiet small" href="' + ADMIN + '/export/regs.csv">regs.csv</a>' +
+      '<a class="btn quiet small" href="' + ADMIN + '/export/intents.csv">intentions.csv</a></p>' +
       '<p class="help">The jam is the emergency copy. Secrets are masked in both bundles and a restore keeps the stored ones.</p></div>';
     out += '<div class="card"><h3>Import</h3>' +
       '<label>A .json bundle or a .jam<input type="file" id="file" accept=".json,.jam"></label>' +
@@ -1566,7 +1706,9 @@
         '<dt>Earliest</dt><dd>' + esc(when(dry.earliest)) + '</dd>' +
         '<dt>Latest</dt><dd>' + esc(when(dry.latest)) + '</dd>' +
         '<dt>Event days</dt><dd>' + esc((dry.event_days || []).join(', ')) + '</dd>' +
-        '<dt>Would overwrite</dt><dd>' + esc(dry.overwrite) + '</dd></dl>' +
+        '<dt>Would overwrite</dt><dd>' + esc(dry.overwrite) + '</dd>' +
+        '<dt>Intentions</dt><dd>' + (dry.intents === null || dry.intents === undefined
+          ? 'none in this file: the ones here are left alone' : esc(dry.intents)) + '</dd></dl>' +
         '<p class="help">A restore stamps every registration it writes as updated now, ' +
         'so the 48 hour hold starts again for each one.</p>';
     } else if (fileBody) {
@@ -1787,6 +1929,9 @@
           paint(dayView());
         });
       }
+    } else if (r.name === 'spirit') {
+      if (!intentsDoc) paint(loading());
+      p = read('/intents').then(function (d) { intentsDoc = settleIntents(d, intentPending, Date.now()); paint(spiritAdminView()); });
     } else if (r.name === 'counts') {
       if (!countsDoc) paint(loading());
       p = read('/counts').then(function (d) { countsDoc = d; paint(countsView()); });
@@ -1829,6 +1974,47 @@
     });
   }
   function later() { setTimeout(refresh, 400); }
+  // ---- the pilgrims in spirit, written ----
+  function intentOf(id) {
+    return ((intentsDoc || {}).intents || []).filter(function (i) { return i.id === id; })[0] || null;
+  }
+  // the ship answers the intention as it will be, so the card takes it
+  // at once; the read after the beacon confirms it
+  function putIntent(got) {
+    if (!intentsDoc || !got || !got.id) return;
+    intentPending[got.id] = { want: got, until: Date.now() + 10000 };
+    intentsDoc.intents = intentsDoc.intents.map(function (i) { return i.id === got.id ? got : i; });
+  }
+  function intentWrite(id, body, el) {
+    var free = spin(el);
+    return write('/intent/' + encodeURIComponent(id), body).then(function (got) {
+      free();
+      putIntent(got);
+      if (body.notes !== undefined) {
+        delete noteDrafts[id];
+        dirty = Object.keys(noteDrafts).length > 0;
+      }
+      render(spiritAdminView());
+      say(body.flag === 'spam' ? 'Marked as spam.' : body.flag === 'hidden' ? 'Hidden.' :
+        body.flag === 'none' ? 'Showing again.' : 'Saved.', true);
+    }).catch(function (e) { free(); say(e.message); });
+  }
+  function intentBulk(list, tag, el) {
+    var free = spin(el), done = 0;
+    var chain = Promise.resolve();
+    list.forEach(function (i) {
+      chain = chain.then(function () {
+        return write('/intent/' + encodeURIComponent(i.id), { tags: withTag(i.tags, tag) }).then(function (got) {
+          putIntent(got); done++;
+        });
+      });
+    });
+    return chain.then(function () {
+      free(); render(spiritAdminView()); say('Tagged ' + done + '.', true);
+    }).catch(function (e) {
+      free(); render(spiritAdminView()); say('Tagged ' + done + ' of ' + list.length + ', then: ' + e.message);
+    });
+  }
   // ---- an action, painted before the ship has taken it ----
   // the registration and its roster row take the change at once, the
   // page renders, and the read that follows says whether it stuck
@@ -1932,6 +2118,13 @@
     if (el.id === 'f-seg') { filters.seg = el.value; return render(rosterView()); }
     if (el.id === 'f-track') { filters.track = el.value; return render(rosterView()); }
     if (el.id === 'f-q') { filters.q = el.value; if (view.querySelector('tbody')) render(rosterView()); return; }
+    if (el.id === 'f-sshow') { spFilters.show = el.value; return render(spiritAdminView()); }
+    if (el.id === 'f-stag') { spFilters.tag = el.value; return render(spiritAdminView()); }
+    if (el.id === 'f-sq') { spFilters.q = el.value; return render(spiritAdminView()); }
+    if (el.id === 'f-sbulk') return;
+    var noteId = el.getAttribute('data-note');
+    if (noteId) { noteDrafts[noteId] = el.value; dirty = true; return; }
+    if (el.getAttribute('data-tag-add')) return;
     if (el.id === 'd-seg') { dayFilters.seg = el.value; return render(dayView()); }
     if (el.id === 'd-q') { dayFilters.q = el.value; return render(dayView()); }
     if (el.id === 'd-again') { dayFilters.again = el.checked; return; }
@@ -1977,6 +2170,15 @@
       });
     }
   }
+  view.addEventListener('keydown', function (ev) {
+    var el = ev.target;
+    var id = el.getAttribute && el.getAttribute('data-tag-add');
+    if (!id || ev.key !== 'Enter') return;
+    ev.preventDefault();
+    var v = String(el.value || '').trim(), i = intentOf(id);
+    if (!v || !i) return;
+    act(function () { intentWrite(id, { tags: withTag(i.tags, v) }, el); });
+  });
   view.addEventListener('click', function (ev) {
     var th = ev.target.closest('th[data-sort]');
     if (th) {
@@ -2003,6 +2205,36 @@
     }
     if (a === 'checkin-mail') {
       return act(function () { sendCheckinMail((dayDoc || {}).day || 'fri', !!dayFilters.again); });
+    }
+    if (a === 'intent-flag') {
+      var fid = el.getAttribute('data-id');
+      return act(function () { intentWrite(fid, { flag: el.getAttribute('data-flag') }, el); });
+    }
+    if (a === 'intent-untag') {
+      var uid = el.getAttribute('data-id'), ui = intentOf(uid);
+      if (!ui) return;
+      return act(function () { intentWrite(uid, { tags: withoutTag(ui.tags, el.getAttribute('data-tag')) }, el); });
+    }
+    if (a === 'intent-note') {
+      var nid = el.getAttribute('data-id');
+      if (!Object.prototype.hasOwnProperty.call(noteDrafts, nid)) return say('Nothing to save.', true);
+      return act(function () { intentWrite(nid, { notes: noteDrafts[nid] }, el); });
+    }
+    if (a === 'intent-bulk-tag') {
+      var bulk = String(pick('f-sbulk') || '').trim();
+      if (!bulk) return say('Type the tag first.');
+      var them = shownIntents().filter(function (i) { return withTag(i.tags, bulk).length !== (i.tags || []).length; });
+      if (!them.length) return say('Every one shown already has that tag.', true);
+      if (!window.confirm('Add the tag "' + bulk + '" to ' + them.length + (them.length === 1 ? ' intention?' : ' intentions?'))) return;
+      return act(function () { intentBulk(them, bulk, el); });
+    }
+    if (a === 'intent-copy-emails') {
+      var iaddrs = emailsOf(shownIntents().map(function (i) { return { email: i.email }; })).join(', ');
+      if (!iaddrs) return;
+      var freeI = spin(el);
+      copyText(iaddrs).then(function () { freeI(); say('Copied. Paste into the To line of an email.', true); },
+        function () { freeI(); say('This browser would not copy. The addresses are in the console.'); try { console.log(iaddrs); } catch (e) { } });
+      return;
     }
     if (a === 'copy-emails') {
       var addrs = emailsOf(rows()).join(', ');

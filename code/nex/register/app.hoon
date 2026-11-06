@@ -6,6 +6,7 @@
 ::    /web.sig             binds /apps/register; one fiber per request
 ::    /requests/<id>       the ephemeral request fibers
 ::    /regs/<rid>          one registration       [/register %reg], retention on
+::    /intents/<id>        one pilgrim in spirit  [/register %intent], retention on
 ::    /settings.json       the event: fees, caps, window, providers
 ::    /copy.json           every string the pilgrim reads
 ::    /counts.json         actual counts per day per activity
@@ -87,6 +88,7 @@
           [%fall %& [/ %'web.sig'] [[/ %sig] ~]]
           [%fall %| /requests empty-dir:loader]
           [%fall %| /regs empty-dir:loader]
+          [%fall %| /intents empty-dir:loader]
           [%fall %| /tr empty-dir:loader]
           [%fall %| /beacon empty-dir:loader]
           [%fall %& [/ %'settings.json'] [[/ %json] starter-settings:reg]]
@@ -191,6 +193,8 @@
   ?:  =('set-copy-key' op)  (do-set-copy-key jon)
   ?:  =('set-owed' op)  (do-set-owed jon)
   ?:  =('set-counts' op)  (do-set-doc %'counts.json' 'set-counts' jon)
+  ?:  =('intent-add' op)  (do-intent-add jon)
+  ?:  =('intent-set' op)  (do-intent-set jon)
   (refuse op 'unknown op')
 ::  +refuse: a refusal that leaves the writer standing
 ::
@@ -509,6 +513,64 @@
         (rid-of jon)
     ==
   (pure:m |)
+::  +do-intent-add: a pilgrim in spirit. The route checked all of this;
+::  the writer checks it again against the tree as it is now, so a
+::  setting flipped back under the request still turns it away.
+::
+++  do-intent-add
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  id=@t  (gs:reg jon 'id')
+  ?.  (ok-rid:reg id)  (refuse 'intent-add' 'id: bad')
+  =/  got  (de-spirit:reg jon)
+  ?:  ?=(%| -.got)  (refuse 'intent-add' p.got)
+  ;<  sj=json  bind:m  (read-json (rf 0 / %'settings.json'))
+  ?.  =(%spirit (signup-mode:reg sj))  (refuse 'intent-add' 'closed')
+  ;<  have=(list intent:reg)  bind:m  (load-intents 0)
+  ?:  (gte (lent have) max-intents:reg)  (refuse 'intent-add' 'full')
+  ?:  (lien have |=(i=intent:reg =(id id.i)))  (refuse 'intent-add' 'id: taken')
+  ;<  now=@da  bind:m  get-time:io
+  =/  i=intent:reg  [`@ta`id now now email.p.got text.p.got ~ %none '']
+  ;<  ~  bind:m  (write-intent 0 i &)
+  ;<  ~  bind:m  (note-rid 'intent-add' & id 'pilgrim' '')
+  (pure:m &)
+::  +do-intent-set: an organizer's tags, flag or note on one. A key the
+::  poke leaves out keeps what is stored.
+::
+++  do-intent-set
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  id=@t  (gs:reg jon 'id')
+  =/  by=@t  (by-of jon)
+  ?.  (ok-rid:reg id)  (refuse 'intent-set' 'id: bad')
+  ?.  (is-admin by)  (refuse 'intent-set' 'organizers only')
+  ;<  cur=(unit intent:reg)  bind:m  (find-intent 0 `@ta`id)
+  ?~  cur  (refuse 'intent-set' 'no such intention')
+  =/  got  (intent-change u.cur jon)
+  ?:  ?=(%| -.got)  (refuse 'intent-set' p.got)
+  ?:  =(p.got u.cur)  (pure:m |)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ~  bind:m  (write-intent 0 p.got(updated now) |)
+  ;<  ~  bind:m  (note-rid 'intent-set' & id by '')
+  (pure:m &)
+::  +intent-change: an intention with an organizer's change laid on it,
+::  or what was wrong with the change. The route and the writer both ask.
+::
+++  intent-change
+  |=  [cur=intent:reg jon=json]
+  ^-  (each intent:reg @t)
+  =/  tg=(each (list @t) @t)
+    ?.  (has-key:reg jon 'tags')  [%& tags.cur]
+    ?.  ?=([%a *] (gj:reg jon 'tags'))  [%| 'tags: a list is required']
+    (clean-tags:reg (strings:reg (ga:reg jon 'tags')))
+  ?:  ?=(%| -.tg)  [%| p.tg]
+  =/  f=@t  ?.((has-key:reg jon 'flag') flag.cur (gs:reg jon 'flag'))
+  ?.  (ok-flag:reg f)  [%| 'flag: none, hidden or spam']
+  =/  n=@t  ?.((has-key:reg jon 'notes') notes.cur (gs:reg jon 'notes'))
+  ?:  (over-cap:reg n max-notes:reg)  [%| 'notes: too long']
+  [%& cur(tags p.tg, flag `@tas`f, notes n)]
 ::  +do-set-doc: one of the three documents, whole
 ::
 ++  do-set-doc
@@ -655,6 +717,39 @@
   ?.  fresh
     (over:io road [[/register %reg] `stored-reg:reg`[%3 r]])
   ;<  *  bind:m  (make-gained-soft:io road |+[[[/register %reg] `stored-reg:reg`[%3 r]] ~])
+  (pure:m ~)
+::  +load-intents: every pilgrim in spirit under /intents
+::
+++  load-intents
+  |=  up=@ud
+  =/  m  (fiber:fiber:nexus ,(list intent:reg))
+  ^-  form:m
+  ;<  vw=view:nexus  bind:m  (peek:io (rv up /intents) ~)
+  ?.  ?=([%ball *] vw)  (pure:m ~)
+  ?~  fil.ball.vw  (pure:m ~)
+  %-  pure:m
+  %+  murn  ~(tap by contents.u.fil.ball.vw)
+  |=  [nam=@ta c=[=sang:tarball gain=? bang=(unit tang)]]
+  (read-intent:reg (sang-noun:tarball sang.c))
+++  find-intent
+  |=  [up=@ud id=@ta]
+  =/  m  (fiber:fiber:nexus ,(unit intent:reg))
+  ^-  form:m
+  ?:  =('' id)  (pure:m ~)
+  ;<  vw=view:nexus  bind:m  (peek:io (rf up /intents id) ~)
+  ?.  ?=([%file *] vw)  (pure:m ~)
+  (pure:m (read-intent:reg (sang-noun:tarball sang.vw)))
+::  +write-intent: a fresh one with retention on, or the new version of
+::  one that exists
+::
+++  write-intent
+  |=  [up=@ud i=intent:reg fresh=?]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  road=road:tarball  (rf up /intents id.i)
+  ?.  fresh
+    (over:io road [[/register %intent] `stored-intent:reg`[%1 i]])
+  ;<  *  bind:m  (make-gained-soft:io road |+[[[/register %intent] `stored-intent:reg`[%1 i]] ~])
   (pure:m ~)
 ::  +poke-writer: one op to /main.sig from a request fiber
 ::
@@ -934,6 +1029,7 @@
     ==
   ?:  &(=('POST' meth) ?=([%hooks %stripe ~] suffix))            (serve-stripe-hook eyre-id ?~(body.request.req '' q.u.body.request.req))
   ?:  &(=('POST' meth) ?=([%api %resend-link ~] suffix))         (serve-resend eyre-id jon)
+  ?:  &(=('POST' meth) ?=([%api %spirit ~] suffix))              (serve-spirit eyre-id jon)
   ::  the PWA assets, served WITHOUT the cookie on purpose. A browser
   ::  fetches a manifest, an icon and a service worker uncredentialed:
   ::  only Chrome honours crossorigin=use-credentials and iOS never
@@ -991,6 +1087,8 @@
   ?:  &(=('POST' meth) ?=([%api %admin %add ~] suffix))          (own (act (serve-add eyre-id jon admin-by)))
   ?:  &(=('POST' meth) ?=([%api %admin %'checkin-mail' ~] suffix))  (own (act (serve-checkin-mail eyre-id jon admin-by)))
   ?:  &(=('GET' meth) ?=([%api %admin %export @ ~] suffix))      (own (serve-export eyre-id s3))
+  ?:  &(=('GET' meth) ?=([%api %admin %intents ~] suffix))       (own (serve-intents eyre-id))
+  ?:  &(=('POST' meth) ?=([%api %admin %intent @ ~] suffix))     (own (act (serve-intent-act eyre-id s3 jon admin-by)))
   ?:  &(=('POST' meth) ?=([%api %admin %import ~] suffix))       (own (act (serve-import eyre-id jon args admin-by)))
   (send-err eyre-id 404 'no such route')
 ::  +with-reg: the registration a public route names, proven by its
@@ -1107,6 +1205,106 @@
       ['position' (en-num:reg posn)]
       ['fees' (en-num:reg (fees-total:reg s probe))]
   ==
+::  +serve-spirit: a pilgrim in spirit, from the landing. Open only in
+::  the spirit signup mode. The confirmation goes to an address the
+::  first time it sends one, so the form cannot be used to fill
+::  somebody's inbox.
+::
+++  serve-spirit
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
+  ?.  =(%spirit (signup-mode:reg sj))  (send-err eyre-id 403 'closed')
+  ::  a box nobody can see, which only a robot fills in. It is answered
+  ::  as a success, so the robot learns nothing from it.
+  ?.  =('' (gs:reg jon 'website'))  (send-ok eyre-id)
+  =/  got  (de-spirit:reg jon)
+  ?:  ?=(%| -.got)  (send-err eyre-id 400 p.got)
+  ;<  have=(list intent:reg)  bind:m  (load-intents 1)
+  ?:  (gte (lent have) max-intents:reg)  (send-err eyre-id 503 'full')
+  ;<  eny=@uvJ  bind:m  get-entropy:io
+  =/  id=@ta  (rid-from:reg eny)
+  =/  want=@t  (lower email.p.got)
+  =/  first=?  !(lien have |=(i=intent:reg =(want (lower email.i))))
+  =/  pk=json
+    %-  pairs:enjs:format
+    :~  ['op' s+'intent-add']  ['id' s+id]  ['email' s+email.p.got]
+        ['text' s+text.p.got]  ['by' s+'pilgrim']
+    ==
+  ;<  err=(unit tang)  bind:m  (poke-writer pk)
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  ;<  *  bind:m
+    ?.  first  (pure:m ~)
+    ;<  *  bind:m  (send-spirit-mail email.p.got)
+    (pure:m ~)
+  (send-ok eyre-id)
+::  +send-spirit-mail: the one email a pilgrim in spirit gets. Like
+::  +send-mail it sends nothing in stub mode or without a key, and the
+::  ring holds the subject and never the body.
+::
+++  send-spirit-mail
+  |=  to=@t
+  =/  m  (fiber:fiber:nexus ,[ok=? subj=@t])
+  ^-  form:m
+  ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
+  ;<  raw-cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
+  =/  cj=json  (with-starter:reg raw-cj)
+  =/  s=settings:reg  (de-settings:reg sj)
+  =/  mj=json  (gj:reg sj 'mail')
+  =/  key=@t  (gs:reg mj 'resend_key')
+  =/  from=@t  (gs:reg mj 'from')
+  =/  all=(list [@t @t])
+    :~  ['site' (site-url sj)]
+        ['event' (gs:reg (gj:reg sj 'event') 'name')]
+        ['email' to]
+    ==
+  =/  subj=@t  (fill:reg (gs:reg cj 'email.spirit.subject') all)
+  =/  live=?  ?&(=(%live mode.s) !=('' key) !=('' from) !=('' to))
+  ;<  got=[ok=? why=@t]  bind:m
+    (try-send live key from to subj (fill:reg (gs:reg cj 'email.spirit.body') all))
+  =/  note=json
+    %-  pairs:enjs:format
+    :~  ['op' s+'note']  ['what' s+'email.spirit']  ['ok' b+ok.got]
+        ['why' s+?:(ok.got subj (rap 3 ~['not sent (' why.got '): ' subj]))]
+        ['by' s+?:(live 'mail' 'stub')]
+    ==
+  ;<  *  bind:m  (poke-writer note)
+  (pure:m [ok.got subj])
+::  +serve-intents: every pilgrim in spirit, newest first
+::
+++  serve-intents
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  have=(list intent:reg)  bind:m  (load-intents 1)
+  ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['signup' s+(signup-mode:reg sj)]
+      ['intents' a+(turn (newest-first:reg have) en-intent:reg)]
+  ==
+::  +serve-intent-act: an organizer's tags, flag or note on one. Checked
+::  here so a bad one is told why; the writer checks it again.
+::
+++  serve-intent-act
+  |=  [eyre-id=@ta id=@ta jon=json by=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
+  ;<  cur=(unit intent:reg)  bind:m  (find-intent 1 ?:((ok-rid:reg id) id %$))
+  ?~  cur  (send-err eyre-id 404 'no such intention')
+  =/  got  (intent-change u.cur jon)
+  ?:  ?=(%| -.got)  (send-err eyre-id 400 p.got)
+  =/  pk=json
+    %-  pairs:enjs:format
+    :~  ['op' s+'intent-set']  ['id' s+id]  ['by' s+by]
+        ['tags' a+(turn tags.p.got |=(t=@t `json`s+t))]
+        ['flag' s+flag.p.got]  ['notes' s+notes.p.got]
+    ==
+  ;<  err=(unit tang)  bind:m  (poke-writer pk)
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  (send-json eyre-id 200 (en-intent:reg p.got))
 ::  +serve-reg: the pilgrim's view of their own registration
 ::
 ++  serve-reg
@@ -2036,10 +2234,28 @@
   ;<  ~  bind:m  (put-doc %'counts.json' counts.b |)
   =/  doomed=(list @ta)  ?:(wipe dead ~)
   ;<  ~  bind:m  (cull-each 0 /regs doomed)
+  ::  the intentions only when the bundle carries them. A bundle from
+  ::  before them reads as ~ and leaves the ship's own exactly as it is,
+  ::  wipe or no wipe: nothing in it says they should go.
+  ;<  had=(list intent:reg)  bind:m  (load-intents 0)
+  =/  ihere=(set @ta)  (sy (turn had |=(i=intent:reg id.i)))
+  ;<  ~  bind:m  (restore-intents ihere (fall intents.b ~))
+  =/  idoomed=(list @ta)
+    ?~  intents.b  ~
+    ?.  wipe  ~
+    =/  ikeep=(set @ta)  (sy (turn u.intents.b |=(i=intent:reg id.i)))
+    (skip ~(tap in ihere) |=(i=@ta (~(has in ikeep) i)))
+  ;<  ~  bind:m  (cull-each 0 /intents idoomed)
   =/  culled=@ud  (lent doomed)
   =/  wrote=@t  (crip (a-co:co (lent regs.b)))
   =/  gone=@t  (crip (a-co:co culled))
-  =/  why=@t  (rap 3 'restored ' wrote ' registrations, culled ' gone ~)
+  =/  iwrote=@t  (crip (a-co:co ?~(intents.b 0 (lent u.intents.b))))
+  =/  igone=@t  (crip (a-co:co (lent idoomed)))
+  =/  why=@t
+    %+  rap  3
+    :~  'restored '  wrote  ' registrations, culled '  gone
+        '; intentions '  ?~(intents.b 'left alone' (rap 3 ~['restored ' iwrote ', culled ' igone]))
+    ==
   ;<  ~  bind:m  (note-rid 'restore' & why by '')
   (pure:m &)
 ::  +put-doc: a document a backup carries, written only when the bundle
@@ -2064,6 +2280,15 @@
   ?~  regs  (pure:m ~)
   ;<  ~  bind:m  (write-reg 0 i.regs !(~(has in here) id.i.regs))
   (restore-regs here t.regs)
+::  +restore-intents: one write per intention, fresh ones with retention
+::
+++  restore-intents
+  |=  [here=(set @ta) l=(list intent:reg)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  l  (pure:m ~)
+  ;<  ~  bind:m  (write-intent 0 i.l !(~(has in here) id.i.l))
+  (restore-intents here t.l)
 ::  +cull-each: remove each named grub from a directory, best effort
 ::
 ++  cull-each
@@ -2126,14 +2351,15 @@
   ;<  sj=json  bind:m  (read-json (rf up / %'settings.json'))
   ;<  cj=json  bind:m  (read-json (rf up / %'copy.json'))
   ;<  nj=json  bind:m  (read-json (rf up / %'counts.json'))
-  (pure:m [%1 regs (mask:reg sj) cj nj])
+  ;<  ins=(list intent:reg)  bind:m  (load-intents up)
+  (pure:m [%2 regs (mask:reg sj) cj nj `(newest-first:reg ins)])
 ::  +serve-export: the four downloads
 ::
 ++  serve-export
   |=  [eyre-id=@ta which=@ta]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ?.  ?=(?(%'people.csv' %'regs.csv' %'bundle.json' %'bundle.jam') which)
+  ?.  ?=(?(%'people.csv' %'regs.csv' %'intents.csv' %'bundle.json' %'bundle.jam') which)
     (send-err eyre-id 404 'no such export')
   ;<  now=@da  bind:m  get-time:io
   ;<  s=settings:reg  bind:m  (read-settings 1)
@@ -2146,6 +2372,11 @@
   ?:  =(%'regs.csv' which)
     =/  fname=@t  (rap 3 'register-regs-' day '.csv' ~)
     =/  body=octs  (as-octs:mimes:html (csv-regs:reg regs s))
+    (send-download eyre-id 'text/csv; charset=utf-8' fname body)
+  ?:  =(%'intents.csv' which)
+    ;<  ins=(list intent:reg)  bind:m  (load-intents 1)
+    =/  fname=@t  (rap 3 'register-intentions-' day '.csv' ~)
+    =/  body=octs  (as-octs:mimes:html (csv-intents:reg ins))
     (send-download eyre-id 'text/csv; charset=utf-8' fname body)
   ;<  b=bundle:reg  bind:m  (read-bundle 1)
   ?:  =(%'bundle.json' which)
@@ -2202,6 +2433,9 @@
         ['latest' (en-maybe-time:reg (max-date stamps))]
         ['event_days' (gj:reg (gj:reg settings.b 'event') 'days')]
         ['overwrite' (en-num:reg over)]
+        ::  null for a bundle from before the intentions: a restore of it
+        ::  leaves the ship's own alone
+        ['intents' ?~(intents.b ~ (en-num:reg (lent u.intents.b)))]
         ['confirm' s+confirm]
     ==
   =/  said=@t  (fall (get-key:kv:html-utils 'confirm' args) '')
