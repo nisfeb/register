@@ -5,7 +5,7 @@
 (function () {
   'use strict';
   var API = '/apps/register/api';
-  var KEEP = '/grubbery/api/keep/apps/shell.shell/desks/register.desk/desk/data/register.register_app/beacon/rev';
+  var KEEP = '/grubbery/api/keep/apps/shell/desks/register.desk/desk/data/register.register_app/beacon/rev';
   var DAYS = [['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
   var QKEY = 'register.queue';
   var BATCH = 200;

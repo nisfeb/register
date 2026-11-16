@@ -120,7 +120,7 @@
           [~ %'web.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%register web: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /apps/register])
-        (http-dispatch:io %register)
+        http-dispatch:io
           ::  one ephemeral fiber per in-flight request
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%register request: failed")
@@ -132,7 +132,7 @@
 ::
 ++  rf  |=([up=@ud p=path n=@ta] ^-(road:tarball [%| up [%& p n]]))
 ++  rv  |=([up=@ud p=path] ^-(road:tarball [%| up [%| p]]))
-++  srv  ~(. http-res:io [%| 1 %& ~ %'web.sig'])
+++  srv  http-res:io
 ::  ==  the ask
 ::
 ++  weir-json

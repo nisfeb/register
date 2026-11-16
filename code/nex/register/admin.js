@@ -7,7 +7,7 @@
   'use strict';
   var API = '/apps/register/api';
   var ADMIN = API + '/admin';
-  var KEEP = '/grubbery/api/keep/apps/shell.shell/desks/register.desk/desk/data/register.register_app/beacon/rev';
+  var KEEP = '/grubbery/api/keep/apps/shell/desks/register.desk/desk/data/register.register_app/beacon/rev';
   var SHRINE = 350;   // the Sunday capacity at the Shrine, reported not enforced
   var TEMPLATES = ['confirmation', 'manage', 'waitlist', 'promoted', 'assistance_approved',
     'assistance_declined', 'reminder', 'cancelled', 'checkin'];
