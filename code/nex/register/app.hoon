@@ -2689,10 +2689,17 @@
   =/  idx=(unit @ud)  (gn:reg it 'i')
   =/  i=@ud  (fall idx 0)
   =/  cur=(unit reg:reg)  (find-by-id regs ?:((ok-rid:reg rid) `@ta`rid %$))
+  ::  the person the tap means: by its name when it carries one, so a
+  ::  phone holding a roster from before an edit moved people still
+  ::  checks in the one it showed (+person-at)
+  =/  at=(unit @ud)
+    ?~  cur  ~
+    ?~  idx  ~
+    (person-at:reg people.u.cur u.idx (gs:reg it 'first') (gs:reg it 'last'))
   =/  why=@t
     ?~  idx  'bad index'
     ?~  cur  'no such registration'
-    ?.  (lth i (lent people.u.cur))  'no such person'
+    ?~  at  'no such person'
     ''
   ?.  =('' why)
     =/  row=json
@@ -2700,7 +2707,7 @@
     (apply-checkins regs day by t.items done [row bad])
   =/  pk=json
     %-  pairs:enjs:format
-    :~  ['op' s+'checkin']  ['rid' s+rid]  ['i' (en-num:reg i)]
+    :~  ['op' s+'checkin']  ['rid' s+rid]  ['i' (en-num:reg (need at))]
         ['day' s+day]  ['undo' b+(gb:reg it 'undo')]  ['by' s+by]
     ==
   ;<  err=(unit tang)  bind:m  (poke-writer pk)

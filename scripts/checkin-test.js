@@ -135,6 +135,14 @@ nb = page.nextBatch(many, 200);
 ok('a batch is at most the batch size, oldest first',
   nb.items.length === 200 && nb.items[0].rid === 'r0' && nb.items[199].rid === 'r199');
 
+// ---- what a tap sends ----
+ok('a tap sends its index and the name the phone showed',
+  JSON.stringify(page.tapBody({ rid: 'aaa', i: 2, undo: false, day: 'fri', first: 'Cal', last: 'Lee', at: 'x', by: 'y' })) ===
+  JSON.stringify({ rid: 'aaa', i: 2, undo: false, first: 'Cal', last: 'Lee' }));
+ok('an undo keeps its flag', page.tapBody({ rid: 'aaa', i: 0, undo: true, first: 'A', last: 'B' }).undo === true);
+ok('a tap queued before names were kept sends the index alone',
+  JSON.stringify(page.tapBody({ rid: 'aaa', i: 1, day: 'fri' })) === JSON.stringify({ rid: 'aaa', i: 1, undo: false }));
+
 // ---- the roster merge ----
 function rows() {
   return [

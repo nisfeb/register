@@ -87,6 +87,13 @@
     var d = live[0].day;
     return { day: d, items: live.filter(function (q) { return q.day === d; }).slice(0, max || BATCH) };
   }
+  // what one queued tap sends: the index, and the name when the phone
+  // had it, which the ship uses to find the person after an edit
+  function tapBody(q) {
+    var b = { rid: q.rid, i: q.i, undo: !!q.undo };
+    if (q.first || q.last) { b.first = q.first || ''; b.last = q.last || ''; }
+    return b;
+  }
   // the fetched rows are the ship's truth; the recent taps and the
   // queue are what this phone did since. Apply the rows, then the taps
   // the ship has already taken, then the queue on top, so an undo made
@@ -161,7 +168,7 @@
   }
 
   var pure = {
-    esc: esc, dayFor: dayFor, bandText: bandText, queueAdd: queueAdd, drained: drained, nextBatch: nextBatch,
+    esc: esc, dayFor: dayFor, bandText: bandText, queueAdd: queueAdd, drained: drained, nextBatch: nextBatch, tapBody: tapBody,
     mergeRoster: mergeRoster, matches: matches, tags: tags, actsFor: actsFor, waiting: waiting,
     clock: clock, localDay: localDay, openDay: openDay, mergeCounts: mergeCounts,
     countsToSend: countsToSend, syncText: syncText, RETRY: RETRY,
@@ -397,8 +404,13 @@
     queue = queueAdd(queue, item);
   }
   function tap(rid, i, undo) {
+    // the person's name goes with the index, so the ship checks in the
+    // one this phone showed even if an edit has moved people since
+    var row = rows.filter(function (r) { return r.rid === rid; })[0];
+    var who = row && (row.people || []).filter(function (x) { return Number(x.i) === Number(i); })[0];
     enqueue({
-      rid: rid, i: i, day: day, undo: !!undo, at: new Date().toISOString(), by: 'admin:' + actor
+      rid: rid, i: i, day: day, undo: !!undo, at: new Date().toISOString(), by: 'admin:' + actor,
+      first: who ? who.first : '', last: who ? who.last : ''
     });
     store(QKEY, queue);
     render();
@@ -422,7 +434,7 @@
       var batch = next.items;
       return post('/checkin', {
         day: next.day,
-        checkins: batch.map(function (q) { return { rid: q.rid, i: q.i, undo: !!q.undo }; })
+        checkins: batch.map(tapBody)
       }).then(function (d) {
         var kept = drained(batch, d);
         var stuck = {};
@@ -618,7 +630,8 @@
           if (!p.checked) {
             enqueue({
               rid: all, i: p.i, day: day, undo: false,
-              at: new Date().toISOString(), by: 'admin:' + actor
+              at: new Date().toISOString(), by: 'admin:' + actor,
+              first: p.first || '', last: p.last || ''
             });
           }
         });

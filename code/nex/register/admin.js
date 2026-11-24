@@ -1407,7 +1407,12 @@
     paint();
     var free = spin(el);
     var back = function () { Object.assign(row, was); dayDoc.done = wasDone; row.pending = false; };
-    writeApi('/checkin', { day: dayDoc.day, checkins: idxs.map(function (i) { return { rid: rid, i: i }; }) }).then(function (d) {
+    writeApi('/checkin', { day: dayDoc.day, checkins: idxs.map(function (i) {
+      // the name goes with the index: the ship finds the person by it
+      // if an edit moved people since this screen was painted
+      var who = (row.people || []).filter(function (x) { return x.i === i; })[0] || {};
+      return { rid: rid, i: i, first: who.first || '', last: who.last || '' };
+    }) }).then(function (d) {
       free();
       // the ship answers 200 and names what it would not take
       if ((d.rejected || []).length) { back(); paint(); return say(d.rejected[0].why || 'The ship did not take that check-in.'); }
@@ -2288,7 +2293,9 @@
       var undoI = Number(el.getAttribute('data-i'));
       return act(function () {
         var freeUndo = spin(el);
-        writeApi('/checkin', { day: undoDay, checkins: [{ rid: rid, i: undoI, undo: true }] })
+        writeApi('/checkin', { day: undoDay, checkins: [{ rid: rid, i: undoI, undo: true,
+          first: ((detail && detail.people || [])[undoI] || {}).first || '',
+          last: ((detail && detail.people || [])[undoI] || {}).last || '' }] })
           .then(function () { freeUndo(); say('Check-in undone.', true); later(); })
           .catch(function (e) { freeUndo(); say(e.message); });
       });

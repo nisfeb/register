@@ -643,15 +643,92 @@
     social-fri  |
     social-sat  |
   ==
-::  +keep-checkins: an edit replaces the people but keeps each position's
-::  check-ins, so a name fix on the beach does not lose a day
+::  +keep-checkins: an edit replaces the people but keeps each person's
+::  check-ins with that person. A check-in follows its person by name,
+::  so removing someone from the middle of a party, or putting the party
+::  in another order, leaves every check-in on the one who checked in.
+::  Keeping them by position moved them: drop the first of three and the
+::  second inherited the first's day while the third lost theirs. Only a
+::  person whose name matches nobody (a name fix on the beach) falls back
+::  to the place they stand, and only when the person who stood there is
+::  not still in the party under their own name.
 ::
 ++  keep-checkins
   |=  [old=(list person) new=(list person)]
   ^-  (list person)
   ?~  new  ~
-  ?~  old  new
-  [i.new(checkins checkins.i.old) $(old t.old, new t.new)]
+  =/  all=(list person)  new
+  =/  nn=@ud  (lent all)
+  =/  no=@ud  (lent old)
+  =/  by-name=(list (unit @ud))  (name-claims old all)
+  =/  taken=(set @ud)  (silt (murn by-name same))
+  =/  j=@ud  0
+  =/  acc=(list person)  ~
+  |-  ^-  (list person)
+  ?:  =(j nn)  (flop acc)
+  =/  p=person  (snag j all)
+  =/  k=(unit @ud)
+    =/  hit=(unit @ud)  (snag j by-name)
+    ?^  hit  hit
+    ?.  (lth j no)  ~
+    ?:  (~(has in taken) j)  ~
+    =/  there=person  (snag j old)
+    ?:  (lien all |=(q=person (same-person there q)))  ~
+    `j
+  =/  c=(map @tas checkin)  ?~(k ~ checkins:(snag u.k old))
+  $(j +(j), acc [p(checkins c) acc])
+::  +name-claims: for each new person, the first old person of the same
+::  name not already claimed by an earlier one. Two of one name in a
+::  party pair up in order.
+::
+++  name-claims
+  |=  [old=(list person) new=(list person)]
+  ^-  (list (unit @ud))
+  =/  taken=(set @ud)  ~
+  =/  acc=(list (unit @ud))  ~
+  |-  ^-  (list (unit @ud))
+  ?~  new  (flop acc)
+  =/  k=(unit @ud)  (first-free old i.new taken 0)
+  %=  $
+    new    t.new
+    acc    [k acc]
+    taken  ?~(k taken (~(put in taken) u.k))
+  ==
+++  first-free
+  |=  [old=(list person) p=person taken=(set @ud) k=@ud]
+  ^-  (unit @ud)
+  ?~  old  ~
+  ?:  &(!(~(has in taken) k) (same-person i.old p))  `k
+  $(old t.old, k +(k))
+::  +same-person: the same first and last name, case aside
+::
+++  same-person
+  |=  [a=person b=person]
+  ^-  ?
+  (name-is b first.a last.a)
+++  name-is
+  |=  [p=person first=@t last=@t]
+  ^-  ?
+  &(=((low first.p) (low first)) =((low last.p) (low last)))
+::  +person-at: the person a check-in tap means. A tap carries the index
+::  the phone saw and, from version 21, that person's name. The index
+::  wins while the name still matches it; after an edit moved people,
+::  the name finds them; a name nobody in the party has is no one, so
+::  the tap is refused rather than landing on whoever now stands at that
+::  index. A tap with no name (an older phone's queue) is the index.
+::
+++  person-at
+  |=  [people=(list person) i=@ud first=@t last=@t]
+  ^-  (unit @ud)
+  =/  n=@ud  (lent people)
+  ?:  &(=('' first) =('' last))
+    ?:((lth i n) `i ~)
+  ?:  &((lth i n) (name-is (snag i people) first last))  `i
+  =/  k=@ud  0
+  |-  ^-  (unit @ud)
+  ?~  people  ~
+  ?:  (name-is i.people first last)  `k
+  $(people t.people, k +(k))
 ::  ==  settings
 ::
 ++  de-settings

@@ -1747,4 +1747,59 @@
     (expect-eq !>(~) !>((find "abcdef0124" (trip (snag 1 rws)))))
     (expect !>(?=(^ (find "healing; family" (trip doc)))))
   ==
+::  an edit keeps every check-in with the person who made it, by name:
+::  removing someone from the middle or the front, reordering, adding,
+::  and a name fix in place
+::
+++  test-keep-checkins
+  =/  sp=person:reg  some-person
+  =/  base=person:reg  sp(checkins ~)
+  =/  ann=person:reg  base(first 'Ann', last 'Lee')
+  =/  bob=person:reg  base(first 'Bob', last 'Lee')
+  =/  cal=person:reg  base(first 'Cal', last 'Lee')
+  =/  dee=person:reg  base(first 'Dee', last 'Lee')
+  =/  in=(map @tas checkin:reg)  (malt ~[[%fri [t0 'admin:sue']]])
+  =/  old=(list person:reg)  ~[ann(checkins in) bob cal(checkins in)]
+  =/  ck  |=(p=person:reg ^-(? (~(has by checkins.p) %fri)))
+  =/  marks  |=(ps=(list person:reg) ^-((list ?) (turn ps ck)))
+  ;:  weld
+    ::  the middle one goes: Ann and Cal keep theirs
+    (expect-eq !>(`(list ?)`~[& &]) !>((marks (keep-checkins:reg old ~[ann cal]))))
+    ::  the first goes: Bob does not take Ann's, Cal keeps his
+    (expect-eq !>(`(list ?)`~[| &]) !>((marks (keep-checkins:reg old ~[bob cal]))))
+    ::  another order: each keeps their own
+    (expect-eq !>(`(list ?)`~[& | &]) !>((marks (keep-checkins:reg old ~[cal bob ann]))))
+    ::  someone added at the end has none
+    (expect-eq !>(`(list ?)`~[& | & |]) !>((marks (keep-checkins:reg old ~[ann bob cal dee]))))
+    ::  a name fixed in place keeps the place's check-in
+    (expect-eq !>(`(list ?)`~[& | &]) !>((marks (keep-checkins:reg old ~[ann bob cal(first 'Carl')]))))
+    ::  case does not matter
+    (expect-eq !>(`(list ?)`~[& &]) !>((marks (keep-checkins:reg old ~[ann(first 'ANN') cal]))))
+    ::  a newcomer put where a removed person stood does not inherit,
+    ::  while that person is still in the party elsewhere
+    (expect-eq !>(`(list ?)`~[| & &]) !>((marks (keep-checkins:reg old ~[dee ann cal]))))
+    ::  the check-in itself is carried whole
+    (expect-eq !>(in) !>(checkins:(snag 1 (keep-checkins:reg old ~[bob cal]))))
+    ::  no one left
+    (expect-eq !>(`(list person:reg)`~) !>((keep-checkins:reg old ~)))
+  ==
+::  a tap names its person: the index while the name matches it, the
+::  name after people moved, nobody when nobody has that name
+::
+++  test-person-at
+  =/  sp=person:reg  some-person
+  =/  base=person:reg  sp(checkins ~)
+  =/  ps=(list person:reg)
+    ~[base(first 'Ann', last 'Lee') base(first 'Cal', last 'Lee')]
+  ;:  weld
+    (expect-eq !>(`(unit @ud)``0) !>((person-at:reg ps 0 'Ann' 'Lee')))
+    ::  Cal was at 2 before Bob left: the name finds him at 1
+    (expect-eq !>(`(unit @ud)``1) !>((person-at:reg ps 2 'Cal' 'Lee')))
+    (expect-eq !>(`(unit @ud)``1) !>((person-at:reg ps 0 'cal' 'LEE')))
+    ::  Bob is gone: refused, never whoever stands at his index
+    (expect-eq !>(`(unit @ud)`~) !>((person-at:reg ps 1 'Bob' 'Lee')))
+    ::  no name: the index, if it is in the party
+    (expect-eq !>(`(unit @ud)``1) !>((person-at:reg ps 1 '' '')))
+    (expect-eq !>(`(unit @ud)`~) !>((person-at:reg ps 2 '' '')))
+  ==
 --
