@@ -12,8 +12,8 @@ push does.
 | ship | `~tev`, fake, pier `~/fleet/piers/tev` |
 | HTTP | http://localhost:8126 |
 | dojo | `tmux attach -t fleet`, window `tev` |
-| grubbery | the dev platform's pin (hoon-development `platform/grubbery.ref`) |
-| register | a dev desk at `/apps/shell.shell/desks/register.desk`, the path a real ship uses, following `/register-dev/code` in the ball; weir approved, stub mode |
+| grubbery | nisfeb/grubbery dist/single-release `900f7bb0`, the kernel the production comet ~hadmyn runs (its `/code/nex/desk.hoon` and `shell.hoon` match from `ae800da2` to `900f7bb0`). Built 2026-11-24 with `GRUBBERY_SRC=<worktree at 900f7bb0> PLATFORM_SET=register platform/build.sh`. The old eed73a6 set is kept as `~/fleet/snaps/register.old-eed73a6/` |
+| register | a dev desk at `/apps/shell/desks/register.desk`, the path a real ship uses, following `/register-dev/code` in the ball; weir approved, stub mode |
 | test desk | `%register-test`, mounted, set up for the kit |
 
 Below, `F=~/software/personal/hoon-development/fleet/fleet` and
@@ -23,15 +23,15 @@ your session's name so claims know who is asking.
 ## Reset
 
 ```sh
-$F reset register compiled   # register installed and approved, test desk set up
+$F reset register prod-copy-v20  # register 20 holding a copy of production (579 registrations), stub mode
+$F reset register prod-copy-v19  # the same copy on register 19, as production ran it on 2026-11-24
 $F reset register            # golden: grubbery and %unix, no register
 $F ls                        # is ~tev up?
 $F up register               # restart it from its event log (vere 4.6 sometimes segfaults)
 $F down register             # stop it when you are done
 ```
 
-Start every test from `compiled`. Refresh it after a deploy that tests
-should start from: `$F snap register compiled`. For a throwaway point,
+The `prod-copy` snapshots hold real attendee data: they are mode 600 and never leave this machine. They were loaded through the Backup page's restore from a production `bundle.jam`, then checked record by record against production's export; event days on `prod-copy-v20` start on 2026-11-24 so self check-in works on the day it was made. The gates that make new registrations (`public-checkin-click.js`, `weekend-sim.py`, `api-matrix.py`) need an open window and free places, so run them on the golden with register installed, not on a production copy. For a throwaway point,
 `$F --fast snap register before-x` takes seconds.
 
 ## Offline tests (no ship)
@@ -71,8 +71,20 @@ scripts/hoon-test-kit/ship-cookie.sh ~/fleet/piers/tev http://localhost:8126 $J
 python3 scripts/api-matrix.py http://localhost:8126 $J    # the HTTP gate, stub mode: 332 checks, ~8 min
 python3 scripts/page-smoke.py http://localhost:8126       # pages, types, auth: ~5 s
 python3 scripts/weekend-sim.py http://localhost:8126 $J   # the event weekend, day by day: 43 checks, ~2 min
-$F reset register compiled
+$F reset register prod-copy-v20
 ```
+
+## Check-in tests
+
+The check-in test plan is `docs/superpowers/plans/2026-11-24-checkin-test-plan.md`. On a production copy, with `C` a file holding the one cookie line (`urbauth-~tev=0v...`):
+
+```sh
+REG_BASE=http://localhost:8126 REG_COOKIE=$C node scripts/checkin-day-click.js   # R1: offline Friday taps stay Friday after a switch to Saturday
+REG_BASE=http://localhost:8126 REG_COOKIE=$C node scripts/checkin-hang-click.js  # R9: a hung request does not stall the queue, ~90 s
+scripts/checkin-crash.sh 30 150    # a burst of taps and self check-ins, kill -9 of ~tev at 30 s, then verify every acked write
+```
+
+`checkin-crash.sh` drives `checkin-durability.py`, which logs every write the ship acknowledged (fsynced per line) and then holds the ship's roster against it: a lost check-in or a surviving undo fails. Self check-ins need today to be an event day on the ship. On 2026-11-24, five crash runs (kill at 5, 15, 30, 45 and 70 s) lost nothing.
 
 Register stays in stub mode here: no Stripe or Resend key is set, so no
 card is charged and no mail leaves the ship. `providers.mode` live needs
@@ -114,24 +126,22 @@ scripts/dev-deploy.py http://localhost:8126 $J
 ```
 
 It writes the files of `code/` that differ into `/register-dev/code`
-(the PNGs by the explorer's multipart upload, so they stay `%mime`) and
+through the grubbery API (`peek` to read, `make` to write; the PNGs as their bytes, so they stay `%mime`) and
 stamps that tree's `version.json` with a dev version, which makes the
 desk pull. It refuses any ship that is not on localhost. A release that
 adds a road needs approving again: `--approve` posts the roads of the
 instance's own `weir.json` as `granted` to `/apps/grubbery/permits`
-(`approve-weir`), culls a fiber that parked while jailed, and reloads its
-permits.
+(`approve-weir`) and reloads its permits. `--wait` waits for the desk to take the new version and fails if anything under it is banged. `scripts/kernel.py` asks the ship where its shell lives.
 
-How `compiled` was made, from the golden: `dev-deploy.py ... --add
---approve`, then the test desk.
+A fresh install from the golden: `dev-deploy.py ... --add --wait --approve`.
 
 ## Looking inside with u
 
 ```sh
 $U register our
 $U register kids /register-dev/code
-$U register kids /apps/shell.shell/desks/register.desk/desk/data/register.register_app
-$U register file /apps/shell.shell/desks/register.desk/desk/code/version.json
+$U register kids /apps/shell/desks/register.desk/desk/data/register.register_app
+$U register file /apps/shell/desks/register.desk/desk/code/version.json
 ```
 
 `u` guards its subcommands. A raw `.^` in an expression that misses kills

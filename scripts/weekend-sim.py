@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 HOST = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:8080'
 JAR = sys.argv[2] if len(sys.argv) > 2 else '/tmp/wex.cookies'
 API = HOST + '/apps/register/api'
-INSTANCE = HOST + '/grubbery/ball/apps/shell.shell/desks/register.desk/desk/data/register.register_app'
+INSTANCE = HOST + '/grubbery/ball/apps/shell/desks/register.desk/desk/data/register.register_app'
 ACTOR = 'weekend'
 fails = []
 

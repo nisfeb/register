@@ -25,7 +25,7 @@ import base64, csv, json, os, subprocess, sys, tempfile, time, traceback
 
 HOST, JAR = sys.argv[1:3]
 API = HOST + '/apps/register/api'
-INSTANCE = HOST + '/grubbery/ball/apps/shell.shell/desks/register.desk/desk/data/register.register_app'
+INSTANCE = HOST + '/grubbery/ball/apps/shell/desks/register.desk/desk/data/register.register_app'
 ACTOR = 'matrix'
 TMP = tempfile.mkdtemp(prefix='register-matrix-')
 fails = []
