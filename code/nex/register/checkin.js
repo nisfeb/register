@@ -77,6 +77,16 @@
       return Object.assign({}, q, { why: why === RETRY ? '' : why });
     }).filter(Boolean);
   }
+  // the next taps to send: the oldest waiting tap's day, and up to max
+  // waiting taps from that day alone. A batch goes up under one day, so
+  // it must hold only that day's taps: a Friday tap queued offline and
+  // sent once the phone has moved on to Saturday is still Friday's.
+  function nextBatch(queue, max) {
+    var live = (queue || []).filter(function (q) { return !q.why; });
+    if (!live.length) return null;
+    var d = live[0].day;
+    return { day: d, items: live.filter(function (q) { return q.day === d; }).slice(0, max || BATCH) };
+  }
   // the fetched rows are the ship's truth; the recent taps and the
   // queue are what this phone did since. Apply the rows, then the taps
   // the ship has already taken, then the queue on top, so an undo made
@@ -151,7 +161,7 @@
   }
 
   var pure = {
-    esc: esc, dayFor: dayFor, bandText: bandText, queueAdd: queueAdd, drained: drained,
+    esc: esc, dayFor: dayFor, bandText: bandText, queueAdd: queueAdd, drained: drained, nextBatch: nextBatch,
     mergeRoster: mergeRoster, matches: matches, tags: tags, actsFor: actsFor, waiting: waiting,
     clock: clock, localDay: localDay, openDay: openDay, mergeCounts: mergeCounts,
     countsToSend: countsToSend, syncText: syncText, RETRY: RETRY,
@@ -238,9 +248,23 @@
     };
   }
   function loadingView() { return '<div class="loading"><span class="spin"></span>Loading</div>'; }
+  // every call gives up after a minute. On a weak signal a request can
+  // hang for many minutes, and a drain waiting on one sends nothing
+  // else: the taps queue up behind it. A tap resent after a timeout is
+  // safe, since the ship writes nothing for a tap that changes nothing.
+  var TIMEOUT = 60000;
   function api(url, opts) {
-    return track(fetch(url, opts || {}).then(function (r) {
+    var o = Object.assign({}, opts || {});
+    var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = null;
+    if (ctl) {
+      o.signal = ctl.signal;
+      timer = setTimeout(function () { ctl.abort(); }, TIMEOUT);
+    }
+    var clear = function () { if (timer) clearTimeout(timer); };
+    return track(fetch(url, o).then(function (r) {
       return r.text().then(function (txt) {
+        clear();
         var d = {};
         try { d = txt ? JSON.parse(txt) : {}; } catch (e) { d = {}; }
         if (!r.ok) {
@@ -250,6 +274,10 @@
         }
         return d;
       });
+    }).catch(function (e) {
+      clear();
+      if (e && e.name === 'AbortError') throw new Error('the ship took too long to answer');
+      throw e;
     }));
   }
   function post(path, body) {
@@ -388,11 +416,12 @@
   }
   function drainBatch() {
     return drainCounts().then(function () {
-      var live = queue.filter(function (q) { return !q.why; });
-      if (!live.length) { drawSync(); return; }
-      var batch = live.slice(0, BATCH);
+      var next = nextBatch(queue, BATCH);
+      if (!next) { drawSync(); return; }
+      // the batch's own day, never the screen's: see nextBatch
+      var batch = next.items;
       return post('/checkin', {
-        day: day,
+        day: next.day,
         checkins: batch.map(function (q) { return { rid: q.rid, i: q.i, undo: !!q.undo }; })
       }).then(function (d) {
         var kept = drained(batch, d);
@@ -406,6 +435,14 @@
         syncFail = '';
         drawSync();
         refreshed();
+        // taps this batch could not hold (another day's, or past a full
+        // batch) go up now rather than at the next tick. A tap the ship
+        // just refused is in this batch's day and waits for the tick.
+        var more = nextBatch(queue, BATCH);
+        // Only after progress: a full batch the ship refused whole would
+        // otherwise go straight back up, forever.
+        var moved = kept.length < batch.length;
+        if (moved && more && (more.day !== next.day || batch.length === BATCH)) return drainBatch();
       }).catch(function (e) {
         if (e.status === 403) return locked();
         syncFail = e.message || 'the taps did not go up';

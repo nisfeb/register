@@ -104,6 +104,37 @@ ok('and it is waiting again, so the next drain retries it', page.waiting(held) =
     parked.length === pair[1] && parked[0].why === pair[0] && page.waiting(parked) === 0);
 });
 
+// ---- the next batch: one day at a time ----
+// A batch goes up under one day. Friday taps queued offline and sent
+// once the phone shows Saturday must still go up as Friday's.
+let mixed = [];
+mixed = page.queueAdd(mixed, { rid: 'aaa', i: 0, day: 'fri', undo: false, at: '1' });
+mixed = page.queueAdd(mixed, { rid: 'bbb', i: 0, day: 'fri', undo: false, at: '2' });
+mixed = page.queueAdd(mixed, { rid: 'aaa', i: 0, day: 'sat', undo: false, at: '3' });
+mixed = page.queueAdd(mixed, { rid: 'ccc', i: 1, day: 'fri', undo: true, at: '4' });
+let nb = page.nextBatch(mixed, 200);
+ok('the oldest waiting tap chooses the batch day', nb.day === 'fri');
+ok('the batch holds only that day\'s taps',
+  nb.items.length === 3 && nb.items.every(function (q) { return q.day === 'fri'; }));
+ok('an undo keeps its own day in the batch', nb.items.some(function (q) { return q.rid === 'ccc' && q.undo; }));
+// once Friday's are taken, Saturday's go up as Saturday's
+const afterFri = mixed.filter(function (q) { return nb.items.indexOf(q) < 0; });
+nb = page.nextBatch(afterFri, 200);
+ok('the next batch is the other day, under its own day',
+  nb.day === 'sat' && nb.items.length === 1 && nb.items[0].rid === 'aaa');
+ok('nothing waiting means no batch', page.nextBatch([], 200) === null && page.nextBatch(null, 200) === null);
+// a parked tap (one the ship named a reason for) never chooses the day
+const parkedFirst = [{ rid: 'zzz', i: 0, day: 'sun', why: 'no such person' }].concat(mixed);
+ok('a parked tap neither goes up nor picks the day',
+  page.nextBatch(parkedFirst, 200).day === 'fri' &&
+  page.nextBatch(parkedFirst, 200).items.every(function (q) { return q.rid !== 'zzz'; }));
+// a day's taps past the batch size wait for the next batch, in order
+const many = [];
+for (let k = 0; k < 205; k += 1) many.push({ rid: 'r' + k, i: 0, day: 'sat', undo: false });
+nb = page.nextBatch(many, 200);
+ok('a batch is at most the batch size, oldest first',
+  nb.items.length === 200 && nb.items[0].rid === 'r0' && nb.items[199].rid === 'r199');
+
 // ---- the roster merge ----
 function rows() {
   return [
