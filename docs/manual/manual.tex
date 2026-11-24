@@ -260,6 +260,10 @@ Nothing from Friday or Saturday is offered, and the program clears those
 answers itself if anything ever sends them, so a Bambino pilgrim can
 never turn up on Friday's roster.
 
+When you have switched the public page to \textbf{pilgrims in spirit},
+there are no doors and no form: the page asks for an intention and an
+email instead. See \hyperref[sec:spirit]{Pilgrims in spirit}.
+
 The \textbf{state is a list} to pick from rather than a box to type in,
 so the spreadsheets come back with one spelling of Florida rather than
 five. Everything else about the address they type themselves.
@@ -439,8 +443,11 @@ leaves out abandoned sign-ups and cancellations.
 \textbf{complete} & Paid and signed. Nothing left to do. \\
 \textbf{pending} & Still owes a waiver, a payment, or an assistance
 decision. \\
-\textbf{stopped at the waiver} & Filled in the form but never signed the waiver, so not registered. Leaves out anyone you promoted off the wait list, who is waiting on the links you sent. \\
-\textbf{stopped at payment} & Signed the waiver but never paid, so not registered. \\
+\textbf{stopped at the waiver} & Filled in the form but never signed
+the waiver, so not registered. Leaves out anyone you offered a spot from
+the wait list: they are waiting on the links you sent. \\
+\textbf{stopped at payment} & Signed the waiver but never paid, so not
+registered. \\
 \textbf{wait list} & Waiting for a spot. \\
 \textbf{financial assistance} & Asked for help with the fee. \\
 \textbf{unpaid} & Has not paid. \\
@@ -449,6 +456,8 @@ decision. \\
 \textbf{cancelled} & Cancelled. \\
 \textbf{Bambino only} & The Sunday-only track. \\
 \textbf{non-walkers} & Coming, but not walking. \\
+\textbf{with first-timers} & Anyone in the party is on their first Baby
+Steps Camino. Worth a welcome. \\
 \textbf{NE Florida Order of Malta and volunteers} & Local members and
 volunteers. \\
 \textbf{exempt} & Marked as not counting against the caps. \\
@@ -600,6 +609,15 @@ registration.
 If a payment exists, \btn{Mark this payment refunded} flags it. The
 actual refund is done in Stripe; this only writes it on the record.
 
+\subsubsection{The fee for this party}
+
+The program works out what a party owes from the people in it and their
+track. This card lets you set a different figure for one party: a part
+scholarship, or an amount you agreed on the telephone. Put in the amount
+and press \btn{Set this fee}. It stands until you press \btn{Put the
+computed fee back}, and the card says which of the two you are looking
+at.
+
 \subsubsection{Waiver}
 
 \closeup{img/reg-waiver.png}{The Waiver card. This one was signed while
@@ -629,9 +647,19 @@ Which buttons appear depends on the status.
 \begin{tabularx}{\linewidth}{@{}L{1.85in}Y@{}}
 \toprule
 \btn{Offer them a spot} & On a wait-listed party. Moves them into the
-queue to sign and pay. \\[6pt]
-\btn{Approve assistance} & Completes the registration with no payment. \\[6pt]
-\btn{Decline assistance} & Sends them to the payment step. \\[6pt]
+queue to sign and pay. If it would take a track or a social over its
+cap, the program says which and asks you first. \\[6pt]
+\btn{Approve assistance} & Two outcomes, and the card spells out which
+one before you press. With no fee set by hand, it \textbf{waives} the
+whole fee and completes the registration. With a fee set by hand under
+\btn{The fee for this party}, it \textbf{lowers} the fee to that figure
+and sends them to the payment step to pay it. So to grant a reduced
+rate, set the fee first, then approve. \\[6pt]
+\btn{Decline assistance} & Sends them to the payment step owing the
+full fee, or the one you set. \\[6pt]
+\btn{The waived fee is due after all} & On a registration completed by
+assistance. Puts them back at the payment step owing the fee. Send them
+their link afterwards. \\[6pt]
 \btn{Cancel this registration} & For the whole party. Their spots go
 back. You are asked to confirm. \\[6pt]
 \btn{Put it back} & On a cancelled one. Returns it to exactly the
@@ -640,7 +668,11 @@ status it had before. \\
 \end{tabularx}
 
 Under the actions there is a box to pick an email template and press
-\btn{Send this email again}.
+\btn{Send this email again}. It lists only the emails that are true of
+this registration: \textit{A spot opened for you} only to somebody who
+has one, the wait-list email only to somebody on the wait list, the
+confirmation only once they are complete, and the cancellation only
+once they are cancelled. The program refuses the others even if asked.
 
 \begin{note}{Good to know: the clock}
 Times on these cards are shown in Greenwich time, which runs five hours
@@ -706,11 +738,67 @@ They move to the waiver step and their spots are held, whatever the
 cap, because you have looked. Their number in the queue is shown beside
 the status on the roster.
 
+\subsection{Calling a track full}
+
+Spots come free on their own: a party that does not finish paying loses
+its 48-hour hold, and its places go back. Left alone, those places go to
+whoever next opens the public page, ahead of the people already waiting.
+
+To stop that, tick \btn{The full Camino is at capacity} (or the Bambino
+one) in Settings. From then on every new party on that track goes to the
+wait list, however the numbers read, and you hand out the free places
+yourself with \btn{Offer them a spot}. Each track has its own box, so
+closing one leaves the other open. A party that walks on no day is still
+let through, since it takes no walking place, and nobody already part
+way through signing and paying is moved.
+
 \begin{note}{Good to know}
 Last year 50 to 60 people cancelled. Every cancellation frees spots,
 and the wait list is where you fill them. It is worth checking the wait
 list whenever a cancellation comes in.
 \end{note}
+
+% ---------------------------------------------------------------- 7b
+\section{Pilgrims in spirit}\label{sec:spirit}
+
+When the walk is truly full, the public page can stop offering
+registration and the wait list altogether, and invite people to join in
+spirit instead. Switch it in Settings, under \btn{Sign-up}: \btn{The
+public page takes} \textit{pilgrims in spirit}. Switch it back the same
+way.
+
+What a visitor then sees is one box for their intention, a prayer or a
+few words, and one for their email. Both are needed. They get a short
+confirmation by email, once per address, which never repeats what they
+wrote.
+
+Nothing already made is affected. Every registration keeps its links:
+people can still sign, pay, change their weekend and check in.
+
+\subsection{The In spirit screen}
+
+Press \btn{In spirit} at the top of the backoffice. Each intention is a
+card with the words, the email and when it came.
+
+\begin{tabularx}{\linewidth}{@{}L{1.6in}Y@{}}
+\toprule
+\btn{Show} & \textit{showing}, \textit{hidden}, \textit{spam} or
+\textit{everything}. \\[5pt]
+\btn{Tag} & Only the ones with one tag, or the ones with no tags yet. \\[5pt]
+\btn{Search} & Words, email, tag or note. \\[5pt]
+\btn{Copy emails} & Every address shown, ready to paste into an
+email. \\[5pt]
+\btn{intentions.csv} & The whole list as a spreadsheet. \\[5pt]
+\btn{Tag all shown} & Puts one tag on every card the filters show. You
+are asked to confirm. \\
+\bottomrule
+\end{tabularx}
+
+On each card: type a tag and press Enter to add it, press the
+\textbf{×} on a tag to take it off, write a note only you see and press
+\btn{Save the note}. \btn{Hide} tucks one out of the way, \btn{Spam}
+marks rubbish, and \btn{Show again} undoes either. Nothing is ever
+deleted.
 
 % ---------------------------------------------------------------- 8
 \section{The event weekend}
@@ -894,6 +982,9 @@ they close, and the last moment a pilgrim may change their own.}
 
 \begin{tabularx}{\linewidth}{@{}L{1.85in}Y@{}}
 \toprule
+\textbf{Sign-up} & What the public page takes: \textit{registrations},
+or \textit{pilgrims in spirit} once the walk is full. See
+\hyperref[sec:spirit]{Pilgrims in spirit}. \\[5pt]
 \textbf{Name} & What the event is called. \\[5pt]
 \textbf{Hours from UTC} & Leave it at $-5$. It tells the program what
 day it is in Florida, so check-in opens at the right hour. \\[5pt]
@@ -915,6 +1006,9 @@ show the time on \emph{your own computer}. If you are setting them up
 from another time zone, allow for it. \\[5pt]
 \textbf{Hold hours} & How long a spot is held for somebody who has not
 finished paying. 48 is the normal answer. \\[5pt]
+\textbf{At capacity} & One box per track. Ticked, every new party on
+that track goes to the wait list. See \textit{Calling a track full}
+under The wait list. \\[5pt]
 \textbf{Organizations} & The parishes and groups the sign-up form
 suggests. One per line. \\[5pt]
 \textbf{Providers} & The card and email arrangements. See below. \\
@@ -1104,7 +1198,11 @@ registration opens, and every evening during the walk.
 
 The \textbf{jam} is the emergency copy and the exact one. The
 \textbf{JSON bundle} holds the same information in a form a person can
-read. Both leave out passwords and keys.
+read. Both carry the pilgrims in spirit as well as the registrations,
+and both leave out passwords and keys. \btn{intentions.csv} beside them
+is the pilgrims in spirit as a spreadsheet. A backup taken before
+version 17 has no pilgrims in spirit in it, and restoring one leaves the
+ones you have alone.
 
 \subsection{Putting a backup back}
 
@@ -1185,6 +1283,8 @@ the History before you worry.
 \textbf{Bambino} & The Sunday-only track, the last 2.5 miles. \\
 \textbf{Cap} & The most people allowed on a track or at a social. \\
 \textbf{Complete} & Signed and paid. Nothing outstanding. \\
+\textbf{At capacity} & A track you have called full in Settings. New
+parties on it go to the wait list. \\
 \textbf{Adopt} & How a pilgrim signs the agreement: they read it on the
 page and press \btn{Adopt and sign}. \\
 \textbf{Draft} & A sign-up somebody started and never finished. \\
@@ -1195,6 +1295,10 @@ local Order of Malta members and volunteers. \\
 separate from the fee everywhere. \\
 \textbf{Hold} & The 48 hours a spot is kept for somebody who has signed
 up but not finished paying. \\
+\textbf{Intention} & What a pilgrim in spirit writes: a prayer or a
+few words. \\
+\textbf{Pilgrim in spirit} & Somebody who joins in prayer once the walk
+is full. Not a registration. \\
 \textbf{Party} & One registration, which may be one person or a whole
 family. \\
 \textbf{Live} & The opposite of rehearsal: real cards, real emails. \\
@@ -1225,7 +1329,8 @@ give one. \\
 
 \begin{enumerate}[leftmargin=*,itemsep=4pt]
 \item Open the roster. Read the line under the boxes for the totals.
-\item Segment \btn{pending}: who still owes a waiver or a payment.
+\item Segments \btn{stopped at the waiver} and \btn{stopped at
+  payment}: people who may think they are registered and are not.
 \item Segment \btn{financial assistance}: decisions waiting for you.
 \item Segment \btn{drafts}: press \btn{Copy emails} and chase them.
 \item Segment \btn{wait list} when somebody cancels.
@@ -1260,6 +1365,6 @@ give one. \\
 \end{enumerate}
 
 \vfill
-{\small This manual describes Register version 15.\par}
+{\small This manual describes Register version 19.\par}
 
 \end{document}
