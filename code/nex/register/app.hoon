@@ -424,7 +424,7 @@
   ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
   ?~  cur  (refuse 'promote' 'no such registration')
   ?.  =(%waitlist status.u.cur)  (refuse 'promote' 'not on the wait list')
-  =/  r=reg:reg  (set-status:reg u.cur(position 0) %waiver by 'promoted from the wait list' now)
+  =/  r=reg:reg  (set-status:reg u.cur(position 0) %waiver by promote-what:reg now)
   ;<  ~  bind:m  (write-reg 0 r |)
   ;<  ~  bind:m  (note-rid 'promote' & '' by rid)
   (pure:m &)

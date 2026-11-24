@@ -16,6 +16,7 @@
     ['social', 'Social'], ['bus', 'Bus'], ['trolley', 'Trolley']];
   var SUN_ACTS = [['sun_ten', '10 mile start'], ['sun_short', '2.5 mile start']];
   var SEGMENTS = [['active', 'registrations'], ['all', 'everything'], ['complete', 'complete'], ['pending', 'pending'],
+    ['waiver', 'stopped at the waiver'], ['payment', 'stopped at payment'],
     ['waitlist', 'wait list'], ['assistance', 'financial assistance'], ['unpaid', 'unpaid'],
     ['unsigned', 'unsigned'], ['draft', 'drafts'], ['cancelled', 'cancelled'],
     ['bambino', 'Bambino only'], ['nonwalker', 'non-walkers'],
@@ -82,6 +83,7 @@
     if (op === 'promote') {
       out.status = 'waiver';
       out.position = 0;
+      out.promoted = true;
       what = 'promoted from the wait list';
     } else if (op === 'assist') {
       // approving a party whose fee was set by hand lowers it rather
@@ -749,6 +751,11 @@
     if (seg === 'active') return live;
     if (seg === 'complete') return r.status === 'complete';
     if (seg === 'pending') return r.status === 'waiver' || r.status === 'payment' || r.status === 'assistance';
+    // filled in the form and stopped before finishing. A party promoted
+    // off the wait list is also at the waiver step, but it is waiting
+    // on the links it was sent, so it stays out of this one.
+    if (seg === 'waiver') return r.status === 'waiver' && !r.promoted;
+    if (seg === 'payment') return r.status === 'payment';
     if (seg === 'waitlist') return r.status === 'waitlist';
     if (seg === 'assistance') return r.status === 'assistance' || r.assistance;
     if (seg === 'unpaid') return live && r.paid === 'none';

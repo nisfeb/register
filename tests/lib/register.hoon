@@ -1434,6 +1434,19 @@
     ::  and an empty party is not either
     (expect-eq !>(`?`|) !>((gb:reg (en-row:reg none 0 0) 'first_bsc')))
   ==
+::  the roster row says whether an organizer promoted the party off the
+::  wait list, so the waiver segment can leave those parties out
+::
+++  test-en-row-promoted
+  =/  r=reg:reg  (some-reg %a %waitlist %full 1 t0)
+  =/  up=reg:reg  (set-status:reg r(position 0) %waiver 'sue' promote-what:reg t0)
+  =/  other=reg:reg  (set-status:reg r %waiver 'sue' 'reinstated' t0)
+  ;:  weld
+    (expect-eq !>(`?`&) !>((gb:reg (en-row:reg up 7.500 0) 'promoted')))
+    ::  any other move to the waiver step is not a promotion
+    (expect-eq !>(`?`|) !>((gb:reg (en-row:reg other 7.500 0) 'promoted')))
+    (expect-eq !>(`?`|) !>((gb:reg (en-row:reg r 7.500 0) 'promoted')))
+  ==
 ++  test-en-row-checked
   =/  p=person:reg  some-person
   =/  r0=reg:reg  (some-reg %abc123 %complete %full 2 t0)

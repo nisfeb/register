@@ -200,6 +200,10 @@
 ++  max-by       64
 ++  max-party    12
 ++  max-history  200
+::  the history line a promotion off the wait list writes. The roster
+::  row reads it back, so the two must be the same cord.
+::
+++  promote-what  'promoted from the wait list'
 ++  max-log      2.000
 ++  max-copy     4.000
 ++  max-waiver   20.000
@@ -1110,6 +1114,9 @@
       ['waiver' s+status.waiver.r]
       ['exempt' b+exempt.r]
       ['assistance' b+assistance.r]
+      ::  taken off the wait list by an organizer: a party at the waiver
+      ::  step that is waiting on the emailed links, not one that stopped
+      ['promoted' b+(lien history.r |=(s=step =(promote-what what.s)))]
       ::  anyone in the party, not everyone: the filter is for finding
       ::  the people who need shepherding, and a returning pilgrim who
       ::  brings a newcomer still has a newcomer with them
