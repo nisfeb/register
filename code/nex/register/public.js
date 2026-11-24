@@ -262,7 +262,7 @@
     'next.draft.title', 'next.draft.body',
     'manage.closed', 'manage.pay_more', 'manage.cancel.confirm', 'stub.banner',
     'checkin.early', 'checkin.over', 'checkin.gone', 'checkin.solo.body', 'checkin.solo.button',
-    'checkin.done', 'checkin.nobody', 'spirit.error'];
+    'checkin.done', 'checkin.nobody', 'checkin.slow', 'spirit.error'];
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
     'August', 'September', 'October', 'November', 'December'];
 
@@ -1480,7 +1480,13 @@
       showError('');
       if (!ticked.length) return showError(t('checkin.nobody'));
       var freeIn = spin(el);
-      post('/reg/' + rid + '/checkin?t=' + encodeURIComponent(token), { people: ticked }).then(function (c) {
+      // a slow ship frees the button after thirty seconds and says so:
+      // pressing again is safe, since a check-in only ever adds, and a
+      // pilgrim at the start line must not be left with a spinner
+      var slow = new Promise(function (res, rej) {
+        setTimeout(function () { var e = new Error(t('checkin.slow')); e.code = 'slow'; rej(e); }, 30000);
+      });
+      Promise.race([post('/reg/' + rid + '/checkin?t=' + encodeURIComponent(token), { people: ticked }), slow]).then(function (c) {
         render(checkinPage(c));
       }).catch(function (e) {
         freeIn();

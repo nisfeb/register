@@ -2593,7 +2593,7 @@
   (send-json eyre-id 200 (en-checkin-page:reg r day over opens))
 ::  +serve-checkin-mail: the morning's links. Complete parties with
 ::  nobody checked in that day yet, and no line saying the link went
-::  out, unless `again`. At most a hundred a press; the page presses
+::  out, unless `again`. At most a hundred a press (forty when live); the page presses
 ::  until none remain. Each recipient gets a ring note with the filled
 ::  subject and the history line the next press reads. A send that did
 ::  not go out gets no history line, so a repress retries it.
@@ -2606,6 +2606,15 @@
   ?~  want  (send-err eyre-id 400 'day: fri, sat or sun')
   =/  again=?  (gb:reg jon 'again')
   =/  mark=@t  (cat 3 'email.checkin.' u.want)
+  ;<  now=@da  bind:m  get-time:io
+  ::  a resend pages by time: the first press of a resend starts it now,
+  ::  answers that moment as `since`, and every later press sends it
+  ::  back, so each press resends to the parties whose link went out
+  ::  before the resend began and moves on. Without it a resend could
+  ::  only ever reach the first press's parties.
+  =/  since=@da
+    =/  ms=(unit @ud)  (gn:reg jon 'since')
+    ?~(ms now (from-unix-ms:chrono:userlib u.ms))
   ;<  raw-cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
   =/  cj=json  (with-starter:reg raw-cj)
@@ -2617,18 +2626,31 @@
     ::  a family that walks only Sunday gets no Friday link
     ?.  (there-that-day:reg r u.want)  |
     ?:  (lien people.r |=(p=person:reg (~(has ^by checkins.p) u.want)))  |
-    ?:  again  &
+    ?:  again  !(lien history.r |=(st=step:reg &(=(mark what.st) (gte at.st since))))
     !(lien history.r |=(st=step:reg =(mark what.st)))
-  =/  batch=(list reg:reg)  (scag 100 due)
+  ::  live sends go out at most two a second: the mail service refuses
+  ::  faster, and three refusals in a row end the press. A live press is
+  ::  forty, about thirty seconds, so it answers well inside the minute
+  ::  nginx gives a request; an answer cut off there would leave the
+  ::  sends running with no history lines yet, and a second press would
+  ::  mail the same people again.
+  ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
+  =/  live=?  =(%live mode:(de-settings:reg sj))
+  =/  pace=@dr  ?:(live ~s0..8000 ~s0)
+  =/  batch=(list reg:reg)  (scag ?:(live 40 100) due)
   =/  left=@ud  (sub (lent due) (lent batch))
-  ;<  sent=@ud  bind:m  (mail-each batch mark day-word by 0 0)
+  ;<  sent=@ud  bind:m  (mail-each batch mark day-word by pace 0 0)
   %^  send-json  eyre-id  200
-  (pairs:enjs:format ~[['sent' (en-num:reg sent)] ['remaining' (en-num:reg left)]])
+  %-  pairs:enjs:format
+  :~  ['sent' (en-num:reg sent)]
+      ['remaining' (en-num:reg left)]
+      ['since' (en-num:reg (unm:chrono:userlib since))]
+  ==
 ::  +mail-each: one recipient at a time: the ring note that stands in
 ::  for the send, then the history line
 ::
 ++  mail-each
-  |=  [batch=(list reg:reg) mark=@t day=@t by=@t sent=@ud bad=@ud]
+  |=  [batch=(list reg:reg) mark=@t day=@t by=@t pace=@dr sent=@ud bad=@ud]
   =/  m  (fiber:fiber:nexus ,@ud)
   ^-  form:m
   ?~  batch  (pure:m sent)
@@ -2640,13 +2662,14 @@
   ?:  (gte bad 3)  (pure:m sent)
   =/  r=reg:reg  i.batch
   ;<  got=[ok=? subj=@t]  bind:m  (send-mail r 'checkin' mark (mail-vars r 0 day) by)
+  ;<  ~  bind:m  ?:(=(~s0 pace) (pure:(fiber:fiber:nexus ,~) ~) (sleep:io pace))
   ::  a send that did not go out gets no history line, so the next
   ::  press of the button picks it up again
-  ?.  ok.got  (mail-each t.batch mark day by sent +(bad))
+  ?.  ok.got  (mail-each t.batch mark day by pace sent +(bad))
   =/  line=json
     (pairs:enjs:format ~[['op' s+'mail-sent'] ['rid' s+id.r] ['what' s+mark] ['by' s+by]])
   ;<  err2=(unit tang)  bind:m  (poke-writer line)
-  (mail-each t.batch mark day by ?^(err2 sent +(sent)) 0)
+  (mail-each t.batch mark day by pace ?^(err2 sent +(sent)) 0)
 ++  serve-checkin-roster
   |=  [eyre-id=@ta day=@t]
   =/  m  (fiber:fiber:nexus ,~)

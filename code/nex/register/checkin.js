@@ -384,7 +384,11 @@
       refreshed();
       return Promise.resolve();
     }
-    return api(API + '/checkin/roster?day=' + day).then(function (d) {
+    rosterAt = Date.now();
+    var out = rosterOut = api(API + '/checkin/roster?day=' + day);
+    var done = function () { if (rosterOut === out) rosterOut = null; };
+    out.then(done, done);
+    return out.then(function (d) {
       rows = d.rows || [];
       plan = d.planned || {};
       counts = d.counts || {};
@@ -404,6 +408,24 @@
   // was changed) eyre answers 401 before the app sees the request. Both
   // need the login again, and the queue waits on the phone meanwhile.
   function loggedOut(e) { return !!e && (e.status === 401 || e.status === 403); }
+  // a beacon change rereads the roster, but at most once every fifteen
+  // seconds and never while a read is out. Every check-in moves the
+  // beacon, so at the start line each tap made every phone read the
+  // whole roster: on a copy of production, eight phones made 110 roster
+  // reads a minute, the ship sat at 90% and a tap batch took 16 s to
+  // answer. This phone's own taps are painted at once; the others' show
+  // within fifteen seconds.
+  var ROSTER_GAP = 15000;
+  var rosterAt = 0, rosterOut = null, rosterTimer = null;
+  function soonRoster() {
+    if (rosterTimer) return;
+    var wait = Math.max(0, rosterAt + ROSTER_GAP - Date.now());
+    rosterTimer = setTimeout(function () {
+      rosterTimer = null;
+      if (rosterOut) { soonRoster(); return; }
+      fetchRoster();
+    }, wait);
+  }
   function locked() {
     stopped = true;
     reloginEl.hidden = false;
@@ -729,12 +751,12 @@
             var parsed = sseEvent(ev);
             if (!parsed.name || parsed.name.slice(-4) !== '/rev') return;
             if (parsed.name.indexOf('old') === 0) {
-              if (lastRev !== null && parsed.data && parsed.data !== lastRev) fetchRoster();
+              if (lastRev !== null && parsed.data && parsed.data !== lastRev) soonRoster();
               lastRev = parsed.data;
               return;
             }
             lastRev = parsed.data;
-            fetchRoster();
+            soonRoster();
           });
         }
       } catch (e) { /* the stream severed: reconnect below */ }

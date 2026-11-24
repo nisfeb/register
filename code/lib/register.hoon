@@ -2389,6 +2389,7 @@
       ['checkin.done' s+'You\'re checked in. A volunteer at the start has your wristband.']
       ['checkin.done.some' s+'{{names}} checked in. Anyone else can use this link when they arrive.']
       ['checkin.nobody' s+'Tick at least one person.']
+      ['checkin.slow' s+'That is taking longer than it should. Press the button again, or show this screen to a volunteer at the start.']
       ['email.confirmation.subject' s+'You are registered for the {{event}}']
       :-  'email.confirmation.body'
       :-  %s

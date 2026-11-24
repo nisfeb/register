@@ -1436,11 +1436,18 @@
     mailing = mine;
     var paint = function () { if (route().name === 'day') render(dayView()); };
     paint();
+    // a resend keeps `again` on every press and sends back the moment
+    // the ship started it, so each press moves on to parties not yet
+    // resent; turning `again` off after the first press stopped a
+    // resend at the first hundred
+    var since = null;
     function once() {
-      return write('/checkin-mail', { day: day, again: again }).then(function (d) {
+      var body = { day: day, again: again };
+      if (again && since !== null) body.since = since;
+      return write('/checkin-mail', body).then(function (d) {
         mine.sent += Number(d.sent) || 0;
         mine.remaining = Number(d.remaining) || 0;
-        again = false;
+        if (again && since === null) since = d.since;
         var said = document.getElementById('mail-said');
         if (said) said.textContent = mailSaid();
         // the writer takes a moment to land the last party's line, so
@@ -2517,11 +2524,17 @@
   // day that is the screen going blank every few seconds under somebody
   // trying to read it. catchUp reads INTO the caches instead, and
   // render() leaves the DOM alone when the answer has not changed.
+  // a beacon change reads again, but at most once every fifteen seconds:
+  // during check-in every tap moves the beacon, and an organizer's open
+  // Today screen read the whole registration list after each one. What
+  // this page itself changed it paints at once and does not wait for.
+  var CATCHUP_GAP = 15000, caughtAt = 0;
   function bumped() {
     reconcile();
     if (editing()) return;
-    clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(catchUp, 300);
+    if (refreshTimer) return;
+    var wait = Math.max(300, caughtAt + CATCHUP_GAP - Date.now());
+    refreshTimer = setTimeout(function () { refreshTimer = null; catchUp(); }, wait);
   }
   async function stream() {
     for (;;) {
@@ -2581,6 +2594,7 @@
   // render() leaves the DOM alone when it has not.
   function catchUp() {
     if (document.hidden || editing()) return;
+    caughtAt = Date.now();
     Promise.all([needRoster(), read('/counts').then(function (d) { countsDoc = d; })])
       .then(refresh, function () { });
   }
