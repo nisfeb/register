@@ -23,7 +23,7 @@ your session's name so claims know who is asking.
 ## Reset
 
 ```sh
-$F reset register prod-copy-v20  # register 20 holding a copy of production (579 registrations), stub mode
+$F reset register prod-copy-v21  # register 21 holding a copy of production (579 registrations, nobody checked in), stub mode
 $F reset register prod-copy-v19  # the same copy on register 19, as production ran it on 2026-11-24
 $F reset register            # golden: grubbery and %unix, no register
 $F ls                        # is ~tev up?
@@ -31,7 +31,7 @@ $F up register               # restart it from its event log (vere 4.6 sometimes
 $F down register             # stop it when you are done
 ```
 
-The `prod-copy` snapshots hold real attendee data: they are mode 600 and never leave this machine. They were loaded through the Backup page's restore from a production `bundle.jam`, then checked record by record against production's export; event days on `prod-copy-v20` start on 2026-11-24 so self check-in works on the day it was made. The gates that make new registrations (`public-checkin-click.js`, `weekend-sim.py`, `api-matrix.py`) need an open window and free places, so run them on the golden with register installed, not on a production copy. For a throwaway point,
+The `prod-copy` snapshots hold real attendee data: they are mode 600 and never leave this machine. They were loaded through the Backup page's restore from a production `bundle.jam`, then checked record by record against production's export; `prod-copy-v21` keeps the real event days (4 to 6 December). The gates that make new registrations (`public-checkin-click.js`, `weekend-sim.py`, `api-matrix.py`) need an open window and free places, so run them on the golden with register installed, not on a production copy. For a throwaway point,
 `$F --fast snap register before-x` takes seconds.
 
 ## Offline tests (no ship)
@@ -71,7 +71,7 @@ scripts/hoon-test-kit/ship-cookie.sh ~/fleet/piers/tev http://localhost:8126 $J
 python3 scripts/api-matrix.py http://localhost:8126 $J    # the HTTP gate, stub mode: 332 checks, ~8 min
 python3 scripts/page-smoke.py http://localhost:8126       # pages, types, auth: ~5 s
 python3 scripts/weekend-sim.py http://localhost:8126 $J   # the event weekend, day by day: 43 checks, ~2 min
-$F reset register prod-copy-v20
+$F reset register prod-copy-v21
 ```
 
 ## Check-in tests
@@ -81,8 +81,15 @@ The check-in test plan is `docs/superpowers/plans/2026-11-24-checkin-test-plan.m
 ```sh
 REG_BASE=http://localhost:8126 REG_COOKIE=$C node scripts/checkin-day-click.js   # R1: offline Friday taps stay Friday after a switch to Saturday
 REG_BASE=http://localhost:8126 REG_COOKIE=$C node scripts/checkin-hang-click.js  # R9: a hung request does not stall the queue, ~90 s
+REG_BASE=http://localhost:8126 REG_COOKIE=$C node scripts/checkin-login-click.js # R3: a lapsed login (401 and 403) asks for it, keeps the taps, drains after
+REG_BASE=http://localhost:8126 REG_COOKIE=$C node scripts/counts-race-click.js   # an open Counts screen never writes over a phone's figures
+python3 scripts/checkin-edit-probe.py http://localhost:8126 $J                     # removing a person keeps every check-in with its person; stale phones tap by name
 scripts/checkin-crash.sh 30 150    # a burst of taps and self check-ins, kill -9 of ~tev at 30 s, then verify every acked write
+python3 scripts/checkin-durability.py http://localhost:8126 $J burst /tmp/c.jsonl --volunteers 3 --editor 1 --seconds 120   # three phones, pilgrims and an organizer re-saving the same parties
+python3 scripts/checkin-load.py http://localhost:8126 $J /tmp/l.jsonl --minutes 10 --phones 8 --pier ~/fleet/piers/tev        # Friday morning: beacon-driven rereads, taps, self check-ins, the mail
 ```
+
+Run `checkin-durability.py ... verify LOG` after a burst or a load run: it fails on any acknowledged check-in the ship does not hold. The crash, concurrency and load runs need self check-in to work today, so move the event days on the test ship first (Settings, or PUT `/api/admin/settings`). Start from `prod-copy-v21`: the earlier `prod-copy-v20` was taken after test bursts and held test check-ins, and is deleted.
 
 `checkin-crash.sh` drives `checkin-durability.py`, which logs every write the ship acknowledged (fsynced per line) and then holds the ship's roster against it: a lost check-in or a surviving undo fails. Self check-ins need today to be an event day on the ship. On 2026-11-24, five crash runs (kill at 5, 15, 30, 45 and 70 s) lost nothing.
 

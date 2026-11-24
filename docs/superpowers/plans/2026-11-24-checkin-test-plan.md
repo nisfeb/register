@@ -125,3 +125,23 @@ Check-in is ready when phases 2 to 5 pass on a ship that matches production, and
 1. R2: the time the ship heard the tap is fine.
 2. Phase 5: the test ship reaches the phones over Tailscale.
 3. and 4. No backup job, watch or pier copy: sneagan takes backups by hand. The work is making sure no data-loss bug ships.
+
+## Results, 2026-11-24 (register 21, on a copy of production, kernel 900f7bb0)
+
+The register fleet set was rebuilt on the production comet's kernel and loaded with a copy of production (579 registrations, checked record by record), in stub mode. What the tests found, each reproduced on the shipped code before the fix and passing after:
+
+| | Found | Fix |
+|---|---|---|
+| R1 | Taps queued offline were posted under the day on screen: Friday's became Saturday's | released in 20 |
+| R9 | No request timeout: one hung request stalled every later tap for minutes | released in 20 |
+| R10 | An edit that removed or reordered people moved check-ins onto the wrong people (by position) | 21: by name; taps carry the name |
+| R11 | A login the ship no longer knows (401) never showed the login banner | 21 |
+| R12 | Counts were written whole: an open Counts screen put a phone's figures back; an emptied count became 0 | 21: merged field by field |
+| R13 | Every check-in made every open phone and backoffice reread everything: 90% CPU, taps 16 s, self check-in up to 52 s | 21: at most every 15 s; taps 0.5 s, self 4.8 s worst |
+| R14 | "Send again to everyone" stopped at the first hundred | 21: pages by time |
+| R15 | Live mail unpaced (rate limit) and a press could outrun nginx's minute | 21: two a second, forty a press |
+| R16 | A pilgrim's check-in spinner never gave up | 21: 30 s, then "press again" |
+
+Held without change: every acknowledged check-in survived seven kill -9 crashes at different points, three volunteers with pilgrims and an organizer re-saving the same parties, and two ten-minute load runs. R2 (time is when the ship heard the tap) stands by decision.
+
+Not tested here: real phones (phase 5), and live mail through Resend (needs the live key).
