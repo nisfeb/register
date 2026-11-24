@@ -7,7 +7,6 @@ The Baby Steps Camino runs Friday 4 to Sunday 6 December 2026. Check-in has to b
 1. Every check-in a volunteer or a pilgrim was told succeeded is on the ship afterwards, on the right person and the right day.
 2. Nothing sits silently on a phone. A tap that has not reached the ship is visible as waiting, and it reaches the ship once there is signal, even after the app is closed, the phone restarts, or the login lapses.
 3. If the ship itself fails, nothing acknowledged is lost, and check-in carries on (offline on the phones, or on paper) until it is back.
-4. A copy of the data exists off the box, no more than 15 minutes old, all weekend.
 
 ## How check-in works today
 
@@ -25,7 +24,7 @@ These are the risks the tests below are aimed at, most serious first.
 
 **R1. Queued taps can land on the wrong day (likely bug).** Each queued tap carries its own `day`, but `drainBatch` (`checkin.js`, about line 389) posts the whole batch under the screen's current day: `post('/checkin', {day: day, checkins: ...})`, and the items sent do not carry theirs. Two ways this bites: a phone offline at the end of Friday that reopens Saturday morning (the app opens on the event's own day) sends Friday's taps as Saturday check-ins, and a volunteer who switches the day tab while taps are waiting does the same. Fix: send each item's own day, or drain one day per batch. Needs a test in `checkin-test.js` and a ship-side check.
 
-**R2. The time recorded is when the ship heard the tap, not when it was made.** The batch carries only `rid`, `i` and `undo`. A tap made offline at 7:05 and sent at 9:40 reads 9:40, and `by` is the sending session, not the tap's own. Not loss, but the record is wrong in a way organizers will notice. Decide whether to carry `at` and `by` per item (the ship would need to accept a client time within the day).
+**R2. The time recorded is when the ship heard the tap, not when it was made.** The batch carries only `rid`, `i` and `undo`. A tap made offline at 7:05 and sent at 9:40 reads 9:40, and `by` is the sending session, not the tap's own. Not loss, but the record is wrong in a way organizers will notice. Decided 2026-11-24: the time the ship heard it is fine. No change.
 
 **R3. Login lasts seven days.** The ship's cookie is `Max-Age=604800`. A phone logged in on Saturday 28 November locks on Saturday 5 December. The app stops draining and shows "log in again" (the queue survives in `localStorage`), but a volunteer at the start line may not have the code. Mitigation: everyone logs in fresh on Thursday 3 December, and the code is on the volunteer lead's card. Test that a relogin drains what waited.
 
@@ -49,8 +48,7 @@ These are the risks the tests below are aimed at, most serious first.
 ## Phase 1: fixes (a day)
 
 1. R1: drain per day, or carry the day per item, so a tap is always recorded on the day it was made. Add fixture tests to `checkin-test.js`: a Friday tap drained on Saturday stays Friday; a day switch with taps waiting.
-2. R2, if sneagan wants it: carry `at` and `by` per item, and have the ship take a client time only when it falls on the event day.
-3. Release as version 20 using the 24 November recipe: export, push, rebuild, export again, diff every registration.
+2. Release as version 20 using the 24 November recipe: export, push, rebuild, export again, diff every registration.
 
 ## Phase 2: behaviour on the test ship (a day)
 
@@ -85,7 +83,7 @@ Measure the time to answer a tap batch, a roster fetch and a self check-in, the 
 
 ## Phase 5: real phones (half a day)
 
-A service worker needs HTTPS, so the phones need the test ship at an HTTPS address. Options, for sneagan to pick: a temporary subdomain on asimov's nginx proxied to a test ship, or a tunnel to the laptop.
+A service worker needs HTTPS, so the phones reach the test ship over Tailscale: `tailscale serve` on the laptop gives ~tev an HTTPS address on the tailnet, and the phones join the tailnet.
 
 On an iPhone (Safari, and added to the home screen) and an Android phone (Chrome):
 
@@ -96,16 +94,16 @@ On an iPhone (Safari, and added to the home screen) and an Android phone (Chrome
 
 ## Phase 6: the weekend itself
 
-1. **Freeze.** No releases from Wednesday 2 December until Monday 7 December, except to fix a check-in failure, and then only by the release recipe.
+sneagan takes the backups by hand, so there is no backup job, watch or pier copy. What remains:
+
+1. **Freeze.** No releases from Wednesday 2 December until Monday 7 December, except to fix a check-in failure, and then only by the release recipe (export, push, rebuild, export again, diff every registration).
 2. **Dress rehearsal on production, Thursday 3 December.** An organizer adds a test registration, a volunteer checks it in and undoes it from a phone at the start line, then the registration is cancelled. Everyone who will use the volunteer app logs in fresh then (R3).
-3. **Backups every 15 minutes, Friday to Sunday.** A job on the laptop exports `bundle.jam` and the roster through the admin API into `~/register-backups/event/`, keeps every copy, and is read-only on the ship. Plus a full pier copy Thursday night with the comet stopped, with sneagan's go.
-4. **A watch.** The same job checks the site answers, the registration count never drops, check-ins only grow except by an undo, and the comet's serf is not pinned. It alerts sneagan (not Telegram) if any of these fails.
-5. **Paper.** Thursday evening, print each day's roster from `people.csv`. If the ship is down at the start line, volunteers tick paper and the ticks are entered afterwards. Paper is the last guarantee against loss.
-6. **If the ship goes down.** Volunteers keep tapping: the app queues offline. Pilgrims with links are sent to a volunteer. Restart by the asimov procedure (`boot.sh --stop`, relaunch in `ships:7`, adopt), and announce on the volunteers' channel when it is back.
+3. **Paper, suggested.** Each day's roster printed from `people.csv`, for the start line if the ship is down.
+4. **If the ship goes down.** Volunteers keep tapping: the app queues offline. Pilgrims with links are sent to a volunteer. Restart by the asimov procedure (`boot.sh --stop`, relaunch in `ships:7`, adopt).
 
 ## Acceptance
 
-Check-in is ready when phases 2 to 5 pass on a ship that matches production, R1 is fixed and released, the 15-minute backup and watch have run for a full day before the event, and the paper rosters are printed.
+Check-in is ready when phases 2 to 5 pass on a ship that matches production, and R1 is fixed and released. No release goes out with a known way to lose or mislabel a check-in.
 
 ## Proposed schedule
 
@@ -117,14 +115,13 @@ Check-in is ready when phases 2 to 5 pass on a ship that matches production, R1 
 | Fri 27 Nov | Release 20, phase 2 |
 | Sat 28 Nov | Phases 3 and 4 |
 | Mon 30 Nov | Phase 5 on real phones |
-| Tue 1 Dec | Backup job and watch running; fixes from the tests |
+| Tue 1 Dec | Fixes from the tests |
 | Wed 2 Dec | Freeze |
-| Thu 3 Dec | Dress rehearsal, fresh logins, pier copy, paper rosters |
+| Thu 3 Dec | Dress rehearsal, fresh logins |
 | Fri 4 to Sun 6 Dec | The event |
 
-## Decisions for sneagan
+## Decisions (sneagan, 2026-11-24)
 
-1. R2: record the time the tap was made, or keep the time the ship heard it?
-2. Phase 5: an HTTPS address for the test ship. A temporary subdomain on asimov, or a tunnel?
-3. Who gets the watch's alerts on the weekend, and how?
-4. The Thursday pier copy needs the comet stopped for about 10 minutes. Is Thursday evening right?
+1. R2: the time the ship heard the tap is fine.
+2. Phase 5: the test ship reaches the phones over Tailscale.
+3. and 4. No backup job, watch or pier copy: sneagan takes backups by hand. The work is making sure no data-loss bug ships.
