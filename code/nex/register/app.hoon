@@ -588,6 +588,19 @@
   ::  and this is what keeps that true if something ever does. The other
   ::  documents are replaced as before, because a count has to be
   ::  removable.
+  ::  The counts document is merged too, field by field: a phone sends
+  ::  only the counts it has, and the backoffice only the fields an
+  ::  organizer changed, so two people saving the evening's numbers
+  ::  never write over each other. A count is removed by sending it as
+  ::  null, which is what an emptied box sends.
+  ?:  ?&(=(%'counts.json' name) ?=([%o *] cur))
+    =/  doc=json  (merge-json:reg cur sent)
+    ?:  =(cur doc)
+      ;<  ~  bind:m  (note-rid op & 'unchanged' (by-of jon) '')
+      (pure:m |)
+    ;<  ~  bind:m  (over:io (rf 0 / name) [[/ %json] doc])
+    ;<  ~  bind:m  (note-rid op & '' (by-of jon) '')
+    (pure:m &)
   =/  doc=json
     ?.  ?&(=(%'copy.json' name) ?=([%o *] cur))  sent
     ::  and only strings the app actually has. A caller that sends the

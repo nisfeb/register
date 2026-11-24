@@ -404,6 +404,10 @@
   var dayDoc = null, dayFilters = { seg: 'missing', q: '', again: false, force: false }, mailing = null;
   var model = null, before = null;
   var settingsDoc = null, copyDoc = null, countsDoc = null;
+  // the counts fields typed on this screen since it was read, path to
+  // value. Only these go up: the ship merges them into what it holds,
+  // so figures a volunteer saved meanwhile are never sent back over.
+  var countsEdits = {};
   var intentsDoc = null;      // GET /intents: the signup mode and every intention
   var spFilters = { q: '', tag: '', show: 'visible' };
   var noteDrafts = {};        // an organizer's note typed and not yet saved, by id
@@ -1946,7 +1950,7 @@
       p = read('/intents').then(function (d) { intentsDoc = settleIntents(d, intentPending, Date.now()); paint(spiritAdminView()); });
     } else if (r.name === 'counts') {
       if (!countsDoc) paint(loading());
-      p = read('/counts').then(function (d) { countsDoc = d; paint(countsView()); });
+      p = read('/counts').then(function (d) { countsDoc = d; countsEdits = {}; paint(countsView()); });
     } else if (r.name === 'emails') {
       if (!copyDoc) paint(loading());
       p = read('/copy').then(function (d) {
@@ -1978,7 +1982,7 @@
       if (Date.now() >= noticeUntil) say('');
     }).catch(function (e) {
       if (mine !== routeGen) return;
-      if (e.status === 403) {
+      if (e.status === 403 || e.status === 401) {
         paint('<p class="bad">This ship refused the request. Log in as the owner and reload.</p>');
       } else {
         paint('<p class="bad">' + esc(e.message) + '</p>');
@@ -2151,7 +2155,13 @@
     var val = isBox ? el.checked : el.value;
     var r = route();
     dirty = true;
-    if (r.name === 'counts') { setPath(countsDoc, k, val); return; }
+    if (r.name === 'counts') {
+      // a count is a number, and an emptied box is no count, not zero
+      if (/\.count$/.test(k)) val = String(val).trim() === '' ? null : Number(val);
+      setPath(countsDoc, k, val);
+      countsEdits[k] = val;
+      return;
+    }
     if (r.name === 'settings') { setPath(settingsDoc, k, val); return; }
     if (!model) return;
     setPath(model, k, val);
@@ -2359,11 +2369,29 @@
     }
     if (a === 'save-counts') {
       return act(function () {
+        var keys = Object.keys(countsEdits);
+        if (!keys.length) { dirty = false; return say('Nothing to save.', true); }
+        var body = {};
+        keys.forEach(function (k) { setPath(body, k, countsEdits[k]); });
+        var sending = countsEdits;
+        countsEdits = {};
         dirty = false;
         var freeCounts = spin(el);
-        say('Counts saved.', true);
-        write('/counts', countsDoc, 'PUT').then(function () { freeCounts(); })
-          .catch(function (e) { freeCounts(); say(e.message); });
+        write('/counts', body, 'PUT').then(function () {
+          freeCounts();
+          say('Counts saved.', true);
+          // what the ship now holds, others' figures included. A reread
+          // that fails is not a failed save: it is caught on its own.
+          read('/counts').then(function (d) {
+            if (route().name === 'counts' && !Object.keys(countsEdits).length) { countsDoc = d; render(countsView()); }
+          }).catch(function () { });
+        }, function (e) {
+          freeCounts();
+          // not saved: the edits wait for the next press
+          Object.keys(sending).forEach(function (k) { if (!(k in countsEdits)) countsEdits[k] = sending[k]; });
+          dirty = true;
+          say(e.message);
+        });
       });
     }
     if (a === 'save-mail') {

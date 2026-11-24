@@ -4,6 +4,7 @@
 Two modes, run against a TEST ship (it writes check-ins and undoes):
 
   checkin-durability.py BASE JAR burst LOG [--seconds N] [--day fri] [--parties N]
+                        [--volunteers N] [--editor 1]
   checkin-durability.py BASE JAR verify LOG
 
 burst fires volunteer taps (POST /api/checkin, check-ins and undos, one
@@ -127,6 +128,27 @@ def volunteer(ship, log, mine, day, until):
             time.sleep(1)
 
 
+def editor(ship, log, theirs, until):
+    """an organizer re-saving parties that are being checked in: the
+    backoffice's edit, with the people as they are and the org toggled,
+    so every save is a real write racing the taps"""
+    n = 0
+    while time.time() < until:
+        p = random.choice(theirs)
+        try:
+            st, reg = ship.req('GET', API + '/admin/reg/' + p['rid'])
+            if st == 200:
+                inp = {k: reg[k] for k in ('track', 'contact', 'org', 'why', 'assistance', 'together') if k in reg}
+                inp['org'] = (inp.get('org') or '').rstrip('.') + ('' if (inp.get('org') or '').endswith('.') else '.')
+                inp['people'] = [{k: v for k, v in q.items() if k != 'checkins'} for q in reg['people']]
+                st, _ = ship.req('POST', API + '/admin/reg/' + p['rid'], {'op': 'edit', 'input': inp})
+                n += st == 200
+        except Exception:
+            pass
+        time.sleep(0.3)
+    log.write(kind='editor', rid='-', i=-1, day='-', undo=False, acked=False, status=n)
+
+
 def pilgrim(ship, log, mine, day, until):
     while time.time() < until:
         p = random.choice(mine)
@@ -143,7 +165,7 @@ def pilgrim(ship, log, mine, day, until):
 
 
 def burst(ship, path, argv):
-    seconds, day, n = 120, 'fri', 40
+    seconds, day, n, vols, edit = 120, 'fri', 40, 1, False
     for k, v in zip(argv[::2], argv[1::2]):
         if k == '--seconds':
             seconds = int(v)
@@ -151,14 +173,23 @@ def burst(ship, path, argv):
             day = v
         elif k == '--parties':
             n = int(v)
+        elif k == '--volunteers':
+            vols = int(v)
+        elif k == '--editor':
+            edit = v == '1'
     ps = parties(ship, n)
     if len(ps) < 4:
         sys.exit('checkin-durability: need at least 4 complete parties, have %d' % len(ps))
     half = len(ps) // 2
     log = Log(path)
     until = time.time() + seconds
-    ts = [threading.Thread(target=volunteer, args=(ship, log, ps[:half], day, until)),
-          threading.Thread(target=pilgrim, args=(ship, log, ps[half:], day, until))]
+    # each volunteer works its own slice, so the order of one person's
+    # taps is the order they were sent; the editor races all of them
+    vp = ps[:half]
+    ts = [threading.Thread(target=volunteer, args=(ship, log, vp[k::vols], day, until)) for k in range(vols)]
+    ts.append(threading.Thread(target=pilgrim, args=(ship, log, ps[half:], day, until)))
+    if edit:
+        ts.append(threading.Thread(target=editor, args=(ship, log, ps, until)))
     for t in ts:
         t.start()
     for t in ts:
@@ -171,6 +202,9 @@ def verify(ship, path):
     after = {}      # key -> an attempt after the last ack was not acked
     for line in open(path):
         e = json.loads(line)
+        if e['kind'] == 'editor':
+            print('verify: the editor saved %d edits during the burst' % e['status'])
+            continue
         key = (e['rid'], int(e['i']), e['day'])
         if e['acked']:
             last[key] = e

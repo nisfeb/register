@@ -155,6 +155,13 @@
   // a typed day goes up only once Save has armed it. Typing alone sends
   // nothing, so the fifteen second drain cannot write a half typed day
   // over what the ship already has.
+  // what a counts box holds: a number for a count, the text for the
+  // rest. An emptied count is no count (null), never zero.
+  function countValue(field, raw) {
+    if (field !== 'count') return raw;
+    var t = String(raw === undefined || raw === null ? '' : raw).trim();
+    return t === '' ? null : Number(t);
+  }
   function countsToSend(pending, armed) {
     if (!armed || !pending) return null;
     return Object.keys(pending).length ? pending : null;
@@ -171,7 +178,7 @@
     esc: esc, dayFor: dayFor, bandText: bandText, queueAdd: queueAdd, drained: drained, nextBatch: nextBatch, tapBody: tapBody,
     mergeRoster: mergeRoster, matches: matches, tags: tags, actsFor: actsFor, waiting: waiting,
     clock: clock, localDay: localDay, openDay: openDay, mergeCounts: mergeCounts,
-    countsToSend: countsToSend, syncText: syncText, RETRY: RETRY,
+    countsToSend: countsToSend, countValue: countValue, syncText: syncText, RETRY: RETRY,
   };
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; }
   if (typeof document === 'undefined') { return; }
@@ -354,8 +361,8 @@
 
   // ---- the roster ----
   function rosterKey() { return 'register.roster.' + day; }
-  function countsKey() { return 'register.counts.' + day; }
-  function armKey() { return 'register.counts.' + day + '.save'; }
+  function countsKey(d) { return 'register.counts.' + (d || day); }
+  function armKey(d) { return 'register.counts.' + (d || day) + '.save'; }
   // the day's counts as the screen shows them: what the ship holds for
   // the day, under what this phone has typed and not sent yet
   function shownCounts() {
@@ -386,11 +393,17 @@
       refreshed();
     }).catch(function (e) {
       firstLoad = false;
-      if (e.status === 403) return locked();
+      if (loggedOut(e)) return locked();
       say(e.message);
       refreshed();
     });
   }
+  // the ship no longer takes this phone's login. With no cookie at all
+  // (the browser dropped an expired one) the app answers 403; with a
+  // cookie the ship no longer knows (its session ran out, or the code
+  // was changed) eyre answers 401 before the app sees the request. Both
+  // need the login again, and the queue waits on the phone meanwhile.
+  function loggedOut(e) { return !!e && (e.status === 401 || e.status === 403); }
   function locked() {
     stopped = true;
     reloginEl.hidden = false;
@@ -436,6 +449,13 @@
         day: next.day,
         checkins: batch.map(tapBody)
       }).then(function (d) {
+        // only the ship's own answer clears taps. Anything else that
+        // came back 200 (a page from a proxy, an empty body) says
+        // nothing about them, so they stay and go up again.
+        if (!d || typeof d.applied !== 'number') {
+          var none = new Error('the ship gave no answer for the taps');
+          throw none;
+        }
         var kept = drained(batch, d);
         var stuck = {};
         kept.forEach(function (q) { stuck[q.rid + ':' + q.i] = true; });
@@ -456,7 +476,7 @@
         var moved = kept.length < batch.length;
         if (moved && more && (more.day !== next.day || batch.length === BATCH)) return drainBatch();
       }).catch(function (e) {
-        if (e.status === 403) return locked();
+        if (loggedOut(e)) return locked();
         syncFail = e.message || 'the taps did not go up';
         drawSync();
       });
@@ -465,19 +485,32 @@
   // the typed day goes up on Save, and after a Save made offline on the
   // first drain with a signal. A bare keystroke sends nothing.
   function drainCounts() {
-    var pending = countsToSend(recall(countsKey(), null), recall(armKey(), false));
-    if (!pending) return Promise.resolve();
-    return api(API + '/admin/counts').then(function (doc) {
-      var merged = Object.assign({}, doc || {});
-      merged[day] = mergeCounts(merged[day], pending);
-      return put('/admin/counts', merged).then(function () {
-        try { localStorage.removeItem(countsKey()); } catch (e) { }
-        try { localStorage.removeItem(armKey()); } catch (e) { }
-        countsDoc = merged;
-        say('Counts saved.', true);
+    // every day's saved counts, not only the day on screen: Friday's
+    // evening numbers saved offline still go up once the phone has
+    // moved on to Saturday. Each goes up as that day alone, and the
+    // ship merges it into what it holds.
+    var chain = Promise.resolve();
+    DAYS.forEach(function (dd) {
+      var d = dd[0];
+      chain = chain.then(function () {
+        var pending = countsToSend(recall(countsKey(d), null), recall(armKey(d), false));
+        if (!pending) return;
+        var body = {};
+        body[d] = pending;
+        var sent = JSON.stringify(pending);
+        return put('/admin/counts', body).then(function () {
+          // typing that came after the send stays for the next one
+          if (JSON.stringify(recall(countsKey(d), null)) === sent) {
+            try { localStorage.removeItem(countsKey(d)); } catch (e) { }
+            try { localStorage.removeItem(armKey(d)); } catch (e) { }
+          }
+          if (countsDoc) countsDoc[d] = mergeCounts(countsDoc[d], pending);
+          say('Counts saved.', true);
+        });
       });
-    }).catch(function (e) {
-      if (e.status === 403) locked();
+    });
+    return chain.catch(function (e) {
+      if (loggedOut(e)) locked();
     });
   }
 
@@ -650,12 +683,13 @@
   view.addEventListener('input', function (ev) {
     var k = ev.target.getAttribute('data-count');
     if (!k) return;
-    // the draft starts as the day on screen, so the figures the
-    // volunteer did not retype are still there when it goes up
-    var pending = recall(countsKey(), null) || mergeCounts({}, shownCounts());
+    // the draft holds only what this phone typed. The ship merges it
+    // field by field, so a figure somebody else saved since this screen
+    // was painted is never sent back over theirs.
+    var pending = recall(countsKey(), null) || {};
     var parts = k.split('.');
     pending[parts[0]] = Object.assign({}, pending[parts[0]]);
-    pending[parts[0]][parts[1]] = parts[1] === 'count' ? Number(ev.target.value) : ev.target.value;
+    pending[parts[0]][parts[1]] = countValue(parts[1], ev.target.value);
     store(countsKey(), pending);
     drawSync();
   });

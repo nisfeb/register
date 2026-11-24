@@ -1802,4 +1802,32 @@
     (expect-eq !>(`(unit @ud)``1) !>((person-at:reg ps 1 '' '')))
     (expect-eq !>(`(unit @ud)`~) !>((person-at:reg ps 2 '' '')))
   ==
+::  the counts document merges field by field: a save carries only what
+::  it changed, and what it leaves out stays
+::
+++  test-merge-json
+  =/  cur=json
+    (need (de:json:html '{"fri":{"walk":{"count":120,"time":"7:00"},"mass":{"count":80}},"sat":{"walk":{"count":90}}}'))
+  =/  one=json  (need (de:json:html '{"fri":{"walk":{"note":"windy"}}}'))
+  =/  got=json  (merge-json:reg cur one)
+  =/  at
+    |=  [j=json p=(list @t)]
+    ^-  json
+    ?~  p  j
+    ?.  ?=([%o *] j)  ~
+    $(j (fall (~(get by p.j) i.p) ~), p t.p)
+  ;:  weld
+    ::  the new field lands beside the others
+    (expect-eq !>(`json`s+'windy') !>((at got ~['fri' 'walk' 'note'])))
+    (expect-eq !>(`json`n+'120') !>((at got ~['fri' 'walk' 'count'])))
+    (expect-eq !>(`json`s+'7:00') !>((at got ~['fri' 'walk' 'time'])))
+    ::  other activities and other days are untouched
+    (expect-eq !>(`json`n+'80') !>((at got ~['fri' 'mass' 'count'])))
+    (expect-eq !>(`json`n+'90') !>((at got ~['sat' 'walk' 'count'])))
+    ::  a value replaces, and null clears
+    (expect-eq !>(`json`n+'125') !>((at (merge-json:reg cur (need (de:json:html '{"fri":{"walk":{"count":125}}}'))) ~['fri' 'walk' 'count'])))
+    (expect-eq !>(`json`~) !>((at (merge-json:reg cur (need (de:json:html '{"fri":{"walk":{"count":null}}}'))) ~['fri' 'walk' 'count'])))
+    ::  onto nothing, the sent document is the document
+    (expect-eq !>(one) !>((merge-json:reg ~ one)))
+  ==
 --

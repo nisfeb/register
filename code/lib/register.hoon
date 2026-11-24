@@ -710,6 +710,19 @@
   |=  [p=person first=@t last=@t]
   ^-  ?
   &(=((low first.p) (low first)) =((low last.p) (low last)))
+::  +merge-json: b laid over a. Objects merge key by key, all the way
+::  down; anything else in b, null included, replaces what a had.
+::
+++  merge-json
+  |=  [a=json b=json]
+  ^-  json
+  ?.  &(?=([%o *] a) ?=([%o *] b))  b
+  =/  acc=(map @t json)  p.a
+  =/  kv=(list [k=@t v=json])  ~(tap by p.b)
+  |-  ^-  json
+  ?~  kv  [%o acc]
+  =/  was=json  (fall (~(get by acc) k.i.kv) ~)
+  $(kv t.kv, acc (~(put by acc) k.i.kv (merge-json was v.i.kv)))
 ::  +person-at: the person a check-in tap means. A tap carries the index
 ::  the phone saw and, from version 21, that person's name. The index
 ::  wins while the name still matches it; after an edit moved people,

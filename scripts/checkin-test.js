@@ -135,6 +135,12 @@ nb = page.nextBatch(many, 200);
 ok('a batch is at most the batch size, oldest first',
   nb.items.length === 200 && nb.items[0].rid === 'r0' && nb.items[199].rid === 'r199');
 
+// ---- a counts box ----
+ok('a count is a number', page.countValue('count', '120') === 120);
+ok('an emptied count is no count, not zero', page.countValue('count', '') === null && page.countValue('count', '  ') === null);
+ok('a zero typed is zero', page.countValue('count', '0') === 0);
+ok('time and note stay text', page.countValue('note', 'windy') === 'windy' && page.countValue('time', '') === '');
+
 // ---- what a tap sends ----
 ok('a tap sends its index and the name the phone showed',
   JSON.stringify(page.tapBody({ rid: 'aaa', i: 2, undo: false, day: 'fri', first: 'Cal', last: 'Lee', at: 'x', by: 'y' })) ===
