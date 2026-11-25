@@ -145,3 +145,21 @@ The register fleet set was rebuilt on the production comet's kernel and loaded w
 Held without change: every acknowledged check-in survived seven kill -9 crashes at different points, three volunteers with pilgrims and an organizer re-saving the same parties, and two ten-minute load runs. R2 (time is when the ship heard the tap) stands by decision.
 
 Not tested here: real phones (phase 5), and live mail through Resend (needs the live key).
+
+## Second and third review passes, 2026-11-24 night
+
+Three more independent reviews (one of 18 to 21, then ship and pages separately) and the fixes, each with a test that fails on the code before it where one could be written:
+
+| | Found | Fix |
+|---|---|---|
+| R17 | A tap the ship refused was painted as checked in on the phone (the row object was changed in place) | mergeRoster works on a copy; checkin-stale-click.js |
+| R18 | A name fixed at the desk made stale phones' taps refused | taps carry the party size; same size, the index stands |
+| R19 | An edit between route and writer could put a tap on the wrong person; a tap the writer refused was already answered as applied | the writer re-resolves by name; a barrier poke and a read-back confirm every check-in |
+| R20 | A slow roster answer was painted under the next day; a day with nothing stored showed the last day's rows | answers kept and shown only for the day asked |
+| R21 | A name with letters past Latin-1 made every request fail silently | names go in the header as plain letters |
+| R22 | Two tabs on one phone overwrote each other's queue | the queue is saved merged; checkin-tabs-click.js |
+| R23 | An update opened on a weak signal could throw away the offline copy | the service worker installs all or nothing |
+| R24 | Mail failures read as "everyone had one already"; a failed resend started over | failures counted and shown; a resend resumes |
+| R25 | A counts save the ship could not read the file for would overwrite every count | refused |
+
+scripts/full-regression.sh runs every gate on a fresh install and every check-in test on the production copy, and checks each reset first. Final run ALL GREEN. Load with the read-back and the morning mail running in the same five minutes: taps 2.4 s median, 8.9 s worst; self check-in 1.4 s median, 10.6 s worst; nothing acknowledged lost. Press the morning mail before people arrive: it competes with check-in for the ship.
