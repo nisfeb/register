@@ -28,7 +28,7 @@ kill -9 $KING ${SERF:-}
 echo "crash: killed ~tev (king $KING serf ${SERF:-none}) at ${AT}s"
 sleep 3
 T0=$(date +%s)
-FLEET_WHO=${FLEET_WHO:-register-checkin} "$F" up register >/dev/null 2>&1
+"$F" --as "${REGISTER_FLEET_WHO:-register-checkin}" up register >/dev/null 2>&1
 until curl -s -m 5 -o /dev/null -w '%{http_code}' $B/apps/register/api/status | grep -q 200; do sleep 2; done
 echo "crash: ~tev answering again after $(( $(date +%s) - T0 ))s"
 wait $BURST

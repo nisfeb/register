@@ -74,6 +74,15 @@ python3 scripts/weekend-sim.py http://localhost:8126 $J   # the event weekend, d
 $F reset register prod-copy-v21
 ```
 
+## Everything at once
+
+```sh
+scripts/full-regression.sh              # every gate on a fresh install over the golden, then every check-in test on prod-copy-v21: ~35 min
+SKIP_FRESH=1 scripts/full-regression.sh # only the production-copy half
+```
+
+It checks each reset before running anything on it (one king on 8126; the golden does not serve register yet; the copy has 405 non-draft rows and nobody checked in) and stops if a reset did not take. It uses the claim name `register-checkin`, or `REGISTER_FLEET_WHO`, never an inherited `FLEET_WHO`: a shell that exports another session's name has its resets refused, and the tests then run on whatever the ship held. That happened once.
+
 ## Check-in tests
 
 The check-in test plan is `docs/superpowers/plans/2026-11-24-checkin-test-plan.md`. On a production copy, with `C` a file holding the one cookie line (`urbauth-~tev=0v...`):
