@@ -82,16 +82,34 @@
   // it must hold only that day's taps: a Friday tap queued offline and
   // sent once the phone has moved on to Saturday is still Friday's.
   function nextBatch(queue, max) {
-    var live = (queue || []).filter(function (q) { return !q.why; });
+    // a tap with no day the ship knows could only ever be refused, and
+    // as the oldest it would hold up every tap behind it
+    var live = (queue || []).filter(function (q) { return !q.why && DAYS.some(function (d) { return d[0] === q.day; }); });
     if (!live.length) return null;
     var d = live[0].day;
     return { day: d, items: live.filter(function (q) { return q.day === d; }).slice(0, max || BATCH) };
+  }
+  // taps carrying no day the ship knows, parked so they neither hold up
+  // the queue nor count as waiting
+  function parkDayless(queue) {
+    return (queue || []).map(function (q) {
+      if (q.why || DAYS.some(function (d) { return d[0] === q.day; })) return q;
+      return Object.assign({}, q, { why: 'no day' });
+    });
+  }
+  // what a volunteer reads under a tap the ship refused
+  function stuckText(why) {
+    if (why === 'no such person') {
+      return 'Not checked in: this party changed since the list loaded. Check the name and tap again.';
+    }
+    return 'Not checked in. The ship would not take this tap: ' + why;
   }
   // what one queued tap sends: the index, and the name when the phone
   // had it, which the ship uses to find the person after an edit
   function tapBody(q) {
     var b = { rid: q.rid, i: q.i, undo: !!q.undo };
     if (q.first || q.last) { b.first = q.first || ''; b.last = q.last || ''; }
+    if (q.n) b.n = q.n;
     return b;
   }
   // the fetched rows are the ship's truth; the recent taps and the
@@ -107,9 +125,13 @@
       if (!row) return;
       var p = (row.people || []).filter(function (x) { return Number(x.i) === Number(q.i); })[0];
       if (!p) return;
+      // a tap the ship refused is not a check-in: the row keeps what the
+      // ship holds and says why, so nobody is waved through on a tick
+      // that never landed. Tapping again sends a fresh tap.
+      if (q.why) { p.why = q.why; return; }
       if (q.undo) { p.checked = false; p.at = null; p.by = ''; }
       else { p.checked = true; p.at = p.at || q.at; p.by = p.by || q.by || ''; }
-      p.why = q.why || '';
+      p.why = '';
     });
     return rows || [];
   }
@@ -175,7 +197,7 @@
   }
 
   var pure = {
-    esc: esc, dayFor: dayFor, bandText: bandText, queueAdd: queueAdd, drained: drained, nextBatch: nextBatch, tapBody: tapBody,
+    esc: esc, stuckText: stuckText, parkDayless: parkDayless, dayFor: dayFor, bandText: bandText, queueAdd: queueAdd, drained: drained, nextBatch: nextBatch, tapBody: tapBody,
     mergeRoster: mergeRoster, matches: matches, tags: tags, actsFor: actsFor, waiting: waiting,
     clock: clock, localDay: localDay, openDay: openDay, mergeCounts: mergeCounts,
     countsToSend: countsToSend, countValue: countValue, syncText: syncText, RETRY: RETRY,
@@ -422,7 +444,9 @@
     var wait = Math.max(0, rosterAt + ROSTER_GAP - Date.now());
     rosterTimer = setTimeout(function () {
       rosterTimer = null;
-      if (rosterOut) { soonRoster(); return; }
+      // a read still out: look again in a second, not at once, or a
+      // slow read would spin this timer until it answers
+      if (rosterOut) { rosterTimer = setTimeout(function () { rosterTimer = null; soonRoster(); }, 1000); return; }
       fetchRoster();
     }, wait);
   }
@@ -445,7 +469,8 @@
     var who = row && (row.people || []).filter(function (x) { return Number(x.i) === Number(i); })[0];
     enqueue({
       rid: rid, i: i, day: day, undo: !!undo, at: new Date().toISOString(), by: 'admin:' + actor,
-      first: who ? who.first : '', last: who ? who.last : ''
+      first: who ? who.first : '', last: who ? who.last : '',
+      n: row ? (row.people || []).length : 0
     });
     store(QKEY, queue);
     render();
@@ -463,6 +488,8 @@
   }
   function drainBatch() {
     return drainCounts().then(function () {
+      // a tap with no day the ship knows is parked with its reason
+      queue = parkDayless(queue);
       var next = nextBatch(queue, BATCH);
       if (!next) { drawSync(); return; }
       // the batch's own day, never the screen's: see nextBatch
@@ -521,11 +548,12 @@
         body[d] = pending;
         var sent = JSON.stringify(pending);
         return put('/admin/counts', body).then(function () {
-          // typing that came after the send stays for the next one
+          // typing that came after the send stays for the next Save; it
+          // goes up only when Save is pressed again, never by itself
           if (JSON.stringify(recall(countsKey(d), null)) === sent) {
             try { localStorage.removeItem(countsKey(d)); } catch (e) { }
-            try { localStorage.removeItem(armKey(d)); } catch (e) { }
           }
+          try { localStorage.removeItem(armKey(d)); } catch (e) { }
           if (countsDoc) countsDoc[d] = mergeCounts(countsDoc[d], pending);
           say('Counts saved.', true);
         });
@@ -599,7 +627,7 @@
           esc(r.rid) + ':' + esc(p.i) + '">' +
           esc(band.ok ? 'Check in' : 'Check in, ' + bandText(band).toLowerCase()) + '</button>';
       }
-      if (p.why) out += '<div class="stuck">' + esc('The ship would not take this tap: ' + p.why) + '</div>';
+      if (p.why) out += '<div class="stuck">' + esc(stuckText(p.why)) + '</div>';
       out += '</div>';
     });
     if ((r.people || []).length > 1) {
@@ -686,7 +714,8 @@
             enqueue({
               rid: all, i: p.i, day: day, undo: false,
               at: new Date().toISOString(), by: 'admin:' + actor,
-              first: p.first || '', last: p.last || ''
+              first: p.first || '', last: p.last || '',
+              n: (row.people || []).length
             });
           }
         });

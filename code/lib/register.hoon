@@ -724,14 +724,17 @@
   =/  was=json  (fall (~(get by acc) k.i.kv) ~)
   $(kv t.kv, acc (~(put by acc) k.i.kv (merge-json was v.i.kv)))
 ::  +person-at: the person a check-in tap means. A tap carries the index
-::  the phone saw and, from version 21, that person's name. The index
+::  the phone saw and, from version 21, that person's name and the size
+::  of the party as the phone saw it (seen, 0 when not sent). The index
 ::  wins while the name still matches it; after an edit moved people,
-::  the name finds them; a name nobody in the party has is no one, so
+::  the name finds them. A name nobody in the party has is a spelling
+::  fixed since the phone read the roster when the party is the size it
+::  was, so the index stands; when the size changed, someone left, and
 ::  the tap is refused rather than landing on whoever now stands at that
 ::  index. A tap with no name (an older phone's queue) is the index.
 ::
 ++  person-at
-  |=  [people=(list person) i=@ud first=@t last=@t]
+  |=  [people=(list person) i=@ud first=@t last=@t seen=@ud]
   ^-  (unit @ud)
   =/  n=@ud  (lent people)
   ?:  &(=('' first) =('' last))
@@ -739,7 +742,9 @@
   ?:  &((lth i n) (name-is (snag i people) first last))  `i
   =/  k=@ud  0
   |-  ^-  (unit @ud)
-  ?~  people  ~
+  ?~  people
+    ?:  &(=(seen n) (lth i n))  `i
+    ~
   ?:  (name-is i.people first last)  `k
   $(people t.people, k +(k))
 ::  ==  settings
@@ -2245,7 +2250,6 @@
       ['spirit.email.label' s+'Your email']
       ['spirit.email.help' s+'We use it only to write to you about your intention.']
       ['spirit.button' s+'Send my intention']
-      ['spirit.sending' s+'Sending']
       ['spirit.done.title' s+'Thank you']
       ['spirit.done.body' s+'Your intention has reached us, and we will carry it with us on the walk.']
       ['spirit.another' s+'Send another intention']

@@ -174,7 +174,9 @@ async function main() {
   check('the party this run undid a check-in for offers a check-in button', dayBtn !== null);
   if (dayBtn) {
     await dayBtn.click();
-    await sleep(300);
+    // read at the next paint: a fast test ship answers inside 300 ms,
+    // and the row is no longer pending by the time a fixed wait ends
+    await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => r())));
     const ticks = await p.$$eval('tr.pending .tick', (ns) => ns.length);
     check('the tick paints the moment the button is pressed', ticks >= 1, ticks);
     await gone(p, 'tr.pending', 60000);

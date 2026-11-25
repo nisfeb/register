@@ -2313,7 +2313,14 @@
         writeApi('/checkin', { day: undoDay, checkins: [{ rid: rid, i: undoI, undo: true,
           first: ((detail && detail.people || [])[undoI] || {}).first || '',
           last: ((detail && detail.people || [])[undoI] || {}).last || '' }] })
-          .then(function () { freeUndo(); say('Check-in undone.', true); later(); })
+          .then(function (d) {
+            freeUndo();
+            // the ship answers 200 and names what it would not take
+            var no = (d && d.rejected) || [];
+            if (no.length) return say('Not undone: ' + (no[0].why || 'the ship refused it') + '. Reload the registration and try again.');
+            say('Check-in undone.', true);
+            later();
+          })
           .catch(function (e) { freeUndo(); say(e.message); });
       });
     }

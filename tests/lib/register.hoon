@@ -1792,15 +1792,20 @@
   =/  ps=(list person:reg)
     ~[base(first 'Ann', last 'Lee') base(first 'Cal', last 'Lee')]
   ;:  weld
-    (expect-eq !>(`(unit @ud)``0) !>((person-at:reg ps 0 'Ann' 'Lee')))
+    (expect-eq !>(`(unit @ud)``0) !>((person-at:reg ps 0 'Ann' 'Lee' 2)))
     ::  Cal was at 2 before Bob left: the name finds him at 1
-    (expect-eq !>(`(unit @ud)``1) !>((person-at:reg ps 2 'Cal' 'Lee')))
-    (expect-eq !>(`(unit @ud)``1) !>((person-at:reg ps 0 'cal' 'LEE')))
-    ::  Bob is gone: refused, never whoever stands at his index
-    (expect-eq !>(`(unit @ud)`~) !>((person-at:reg ps 1 'Bob' 'Lee')))
+    (expect-eq !>(`(unit @ud)``1) !>((person-at:reg ps 2 'Cal' 'Lee' 3)))
+    (expect-eq !>(`(unit @ud)``1) !>((person-at:reg ps 0 'cal' 'LEE' 3)))
+    ::  Bob is gone (the phone saw three, there are two): refused, never
+    ::  whoever stands at his index
+    (expect-eq !>(`(unit @ud)`~) !>((person-at:reg ps 1 'Bob' 'Lee' 3)))
+    ::  a spelling fixed since the phone read it: same size, the index
+    (expect-eq !>(`(unit @ud)``1) !>((person-at:reg ps 1 'Kal' 'Lee' 2)))
+    ::  a phone that sent no size: a name nobody has is refused
+    (expect-eq !>(`(unit @ud)`~) !>((person-at:reg ps 1 'Kal' 'Lee' 0)))
     ::  no name: the index, if it is in the party
-    (expect-eq !>(`(unit @ud)``1) !>((person-at:reg ps 1 '' '')))
-    (expect-eq !>(`(unit @ud)`~) !>((person-at:reg ps 2 '' '')))
+    (expect-eq !>(`(unit @ud)``1) !>((person-at:reg ps 1 '' '' 0)))
+    (expect-eq !>(`(unit @ud)`~) !>((person-at:reg ps 2 '' '' 0)))
   ==
 ::  the counts document merges field by field: a save carries only what
 ::  it changed, and what it leaves out stays

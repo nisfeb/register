@@ -135,6 +135,24 @@ nb = page.nextBatch(many, 200);
 ok('a batch is at most the batch size, oldest first',
   nb.items.length === 200 && nb.items[0].rid === 'r0' && nb.items[199].rid === 'r199');
 
+// ---- refused taps, sizes and days ----
+{
+  const rws = [{ rid: 'aaa', people: [{ i: 0, first: 'A', last: 'L', checked: false }] }];
+  const out = page.mergeRoster(rws, [], [{ rid: 'aaa', i: 0, day: 'fri', undo: false, why: 'no such person' }], 'fri');
+  ok('a tap the ship refused is not painted as a check-in', out[0].people[0].checked === false);
+  ok('and the row says why', out[0].people[0].why === 'no such person');
+  ok('a party that changed reads as not checked in, with what to do',
+    /^Not checked in: this party changed/.test(page.stuckText('no such person')));
+  ok('any other refusal reads as not checked in too', /^Not checked in\./.test(page.stuckText('bad index')));
+  ok('a tap sends the size of the party the phone saw', page.tapBody({ rid: 'a', i: 0, first: 'A', last: 'L', n: 3 }).n === 3);
+  const odd = [{ rid: 'x', i: 0, undo: false }, { rid: 'y', i: 0, day: 'fri', undo: false }];
+  ok('a tap with no day does not choose or join a batch',
+    page.nextBatch(odd, 200).day === 'fri' && page.nextBatch(odd, 200).items.length === 1);
+  const parked = page.parkDayless(odd);
+  ok('it is parked with its reason, so it is not counted as waiting',
+    parked[0].why === 'no day' && !parked[1].why && page.waiting(parked) === 1);
+}
+
 // ---- a counts box ----
 ok('a count is a number', page.countValue('count', '120') === 120);
 ok('an emptied count is no count, not zero', page.countValue('count', '') === null && page.countValue('count', '  ') === null);

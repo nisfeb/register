@@ -91,7 +91,7 @@ def stale():
     inp['people'] = [{k: v for k, v in p.items() if k != 'checkins'} for p in reg['people'][1:]]
     st, _ = req('POST', '/admin/reg/' + rid, {'op': 'edit', 'input': inp})
     print(f'case: a phone that saw {rid} before {seen[0][0]} was removed taps by its old indices')
-    tap = lambda i: {'rid': rid, 'i': i, 'first': seen[i][0], 'last': seen[i][1]}
+    tap = lambda i: {'rid': rid, 'i': i, 'first': seen[i][0], 'last': seen[i][1], 'n': 3}
     st, out = req('POST', '/checkin', {'day': 'fri', 'checkins': [tap(2), tap(0)]})
     bad = {(b['rid'], b['i']): b['why'] for b in out.get('rejected', [])}
     check(f'the tap for the removed {seen[0][0]} is refused, not given to someone else',
@@ -103,8 +103,35 @@ def stale():
     req('POST', '/checkin', {'day': 'fri', 'checkins': [{'rid': rid, 'i': i, 'undo': True} for i in range(2)]})
 
 
+def renamed():
+    """an organizer fixes a spelling; a phone that read the roster before
+    taps that person by the old name: the party is the size it was, so
+    the tap lands on them"""
+    st, d = req('GET', '/checkin/roster?day=fri')
+    used = getattr(case, 'used', set())
+    row = next(r for r in d['rows'] if r['rid'] not in used and r['status'] == 'complete' and
+               len(r['people']) == 3 and not any(p['checked'] for p in r['people']))
+    rid = row['rid']
+    used.add(rid); case.used = used
+    seen = [(p['first'], p['last']) for p in row['people']]
+    st, reg = req('GET', '/admin/reg/' + rid)
+    inp = {k: reg[k] for k in ('track', 'contact', 'org', 'why', 'assistance', 'together') if k in reg}
+    inp['people'] = [{k: v for k, v in p.items() if k != 'checkins'} for p in reg['people']]
+    inp['people'][1]['first'] = seen[1][0] + 'x'
+    st, _ = req('POST', '/admin/reg/' + rid, {'op': 'edit', 'input': inp})
+    print(f'case: {seen[1][0]} in {rid} renamed to {seen[1][0]}x; a phone taps by the old name')
+    st, out = req('POST', '/checkin', {'day': 'fri', 'checkins': [
+        {'rid': rid, 'i': 1, 'first': seen[1][0], 'last': seen[1][1], 'n': 3}]})
+    check('the tap is taken', not out.get('rejected'), out)
+    after = roster(rid)
+    check(f'{seen[1][0]}x is checked in', after['people'][1]['checked'] is True, after['people'])
+    check('nobody else is', not after['people'][0]['checked'] and not after['people'][2]['checked'])
+    req('POST', '/checkin', {'day': 'fri', 'checkins': [{'rid': rid, 'i': 1, 'undo': True}]})
+
+
 case(1)
 case(0)
 stale()
+renamed()
 print('FAIL (%d)' % fails if fails else 'ALL OK')
 sys.exit(1 if fails else 0)

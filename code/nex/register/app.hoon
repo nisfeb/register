@@ -2593,7 +2593,7 @@
   (send-json eyre-id 200 (en-checkin-page:reg r day over opens))
 ::  +serve-checkin-mail: the morning's links. Complete parties with
 ::  nobody checked in that day yet, and no line saying the link went
-::  out, unless `again`. At most a hundred a press (forty when live); the page presses
+::  out, unless `again`. At most a hundred a press (twenty-five when live); the page presses
 ::  until none remain. Each recipient gets a ring note with the filled
 ::  subject and the history line the next press reads. A send that did
 ::  not go out gets no history line, so a repress retries it.
@@ -2630,14 +2630,15 @@
     !(lien history.r |=(st=step:reg =(mark what.st)))
   ::  live sends go out at most two a second: the mail service refuses
   ::  faster, and three refusals in a row end the press. A live press is
-  ::  forty, about thirty seconds, so it answers well inside the minute
+  ::  twenty-five: half a second's pause and the send itself each, so
+  ::  about thirty seconds when a send takes a second, well inside the minute
   ::  nginx gives a request; an answer cut off there would leave the
   ::  sends running with no history lines yet, and a second press would
   ::  mail the same people again.
   ;<  sj=json  bind:m  (read-json (rf 1 / %'settings.json'))
   =/  live=?  =(%live mode:(de-settings:reg sj))
   =/  pace=@dr  ?:(live ~s0..8000 ~s0)
-  =/  batch=(list reg:reg)  (scag ?:(live 40 100) due)
+  =/  batch=(list reg:reg)  (scag ?:(live 25 100) due)
   =/  left=@ud  (sub (lent due) (lent batch))
   ;<  sent=@ud  bind:m  (mail-each batch mark day-word by pace 0 0)
   %^  send-json  eyre-id  200
@@ -2731,7 +2732,7 @@
   =/  at=(unit @ud)
     ?~  cur  ~
     ?~  idx  ~
-    (person-at:reg people.u.cur u.idx (gs:reg it 'first') (gs:reg it 'last'))
+    (person-at:reg people.u.cur u.idx (gs:reg it 'first') (gs:reg it 'last') (fall (gn:reg it 'n') 0))
   =/  why=@t
     ?~  idx  'bad index'
     ?~  cur  'no such registration'
