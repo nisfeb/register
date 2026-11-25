@@ -333,7 +333,12 @@
   }
   function post(path, body, asActor) {
     var heads = { 'content-type': 'application/json' };
-    if (asActor) heads['x-actor'] = actor;
+    // a header carries Latin-1 at most; a name past that made fetch throw
+    if (asActor) {
+      var hn = String(actor || '');
+      try { hn = hn.normalize('NFD'); } catch (e) { }
+      heads['x-actor'] = hn.replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '').trim() || 'owner';
+    }
     return api(path, { method: 'POST', keepalive: true, headers: heads, body: JSON.stringify(body || {}) });
   }
   function wait(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }

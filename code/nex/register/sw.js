@@ -40,15 +40,23 @@
   }
   if (typeof self === 'undefined' || !self.addEventListener) { return; }
 
+  // all or nothing: a new worker takes over, and deletes the last
+  // release's cache, only once it holds every shell file. Opened first
+  // on a weak signal or logged out, it used to install with gaps and
+  // throw the working cache away, and the next cold start with no
+  // signal had no app. A failed install leaves the old worker and its
+  // cache in place, and the browser tries again on a later open.
   self.addEventListener('install', function (e) {
-    e.waitUntil(caches.open(V).then(function (c) {
-      return Promise.all(SHELL.map(function (u) {
-        return fetch(u).then(function (r) {
-          if (keepable(u, r)) return c.put(u, r.clone());
-        }).catch(function () { });
-      }));
-    }).catch(function () { }));
-    self.skipWaiting();
+    e.waitUntil(Promise.all(SHELL.map(function (u) {
+      return fetch(u).then(function (r) {
+        if (!keepable(u, r)) throw new Error('not keepable: ' + u);
+        return [u, r];
+      });
+    })).then(function (got) {
+      return caches.open(V).then(function (c) {
+        return Promise.all(got.map(function (p) { return c.put(p[0], p[1]); }));
+      });
+    }).then(function () { return self.skipWaiting(); }));
   });
 
   self.addEventListener('activate', function (e) {

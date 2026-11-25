@@ -187,6 +187,9 @@
   ?:  =('set-notes' op)  (do-set-notes jon)
   ?:  =('add' op)  (do-add jon)
   ?:  =('checkin' op)  (do-checkin jon)
+  ::  a barrier changes nothing: the writer takes one poke at a time, so
+  ::  its taking this one means every poke sent before it has applied
+  ?:  =('barrier' op)  (pure:m |)
   ?:  =('mail-sent' op)  (do-mail-sent jon)
   ?:  =('set-settings' op)  (do-set-doc %'settings.json' 'set-settings' jon)
   ?:  =('set-copy' op)  (do-set-doc %'copy.json' 'set-copy' jon)
@@ -593,9 +596,18 @@
   ::  organizer changed, so two people saving the evening's numbers
   ::  never write over each other. A count is removed by sending it as
   ::  null, which is what an emptied box sends.
-  ?:  ?&(=(%'counts.json' name) ?=([%o *] cur))
-    =/  doc=json  (merge-json:reg cur sent)
-    ?:  =(cur doc)
+  ?:  =(%'counts.json' name)
+    ::  read strictly: read-json answers an empty object for a file it
+    ::  could not read, and merging onto that would write the sent
+    ::  fields as the whole document, every other count gone
+    ;<  vw=view:nexus  bind:m  (peek:io (rf 0 / name) ~)
+    =/  have=(unit json)
+      ?.  ?=([%file *] vw)  `[%o ~]
+      (mole |.(!<(json (need-vase:tarball sang.vw))))
+    ?~  have  (refuse op 'counts.json could not be read')
+    =/  base=json  ?:(?=([%o *] u.have) u.have [%o ~])
+    =/  doc=json  (merge-json:reg base sent)
+    ?:  =(base doc)
       ;<  ~  bind:m  (note-rid op & 'unchanged' (by-of jon) '')
       (pure:m |)
     ;<  ~  bind:m  (over:io (rf 0 / name) [[/ %json] doc])
@@ -2579,8 +2591,10 @@
     (pairs:enjs:format ~[['rid' s+id.u.cur] ['i' (en-num:reg i)]])
   ::  the party is already in hand, so the batch is checked against it
   ::  alone rather than against a fresh read of the whole tree
-  ;<  out=[done=@ud bad=(list json)]  bind:m
+  ;<  got=[done=@ud bad=(list json)]  bind:m
     (apply-checkins ~[u.cur] u.day 'pilgrim' items 0 ~)
+  ;<  out=[done=@ud bad=(list json)]  bind:m
+    (confirm-checkins u.day items got)
   ?^  bad.out  (send-err eyre-id 500 'the ship did not take the check-in')
   ::  the writer applies after this answer leaves, so the page is
   ::  painted from the same rule the writer runs, not from a read that
@@ -2612,9 +2626,13 @@
   ::  back, so each press resends to the parties whose link went out
   ::  before the resend began and moves on. Without it a resend could
   ::  only ever reach the first press's parties.
+  ::  never later than now: a `since` in the future would make every
+  ::  party due on every press
   =/  since=@da
     =/  ms=(unit @ud)  (gn:reg jon 'since')
-    ?~(ms now (from-unix-ms:chrono:userlib u.ms))
+    ?~  ms  now
+    =/  at=@da  (from-unix-ms:chrono:userlib u.ms)
+    ?:((gth at now) now at)
   ;<  raw-cj=json  bind:m  (read-json (rf 1 / %'copy.json'))
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
   =/  cj=json  (with-starter:reg raw-cj)
@@ -2644,6 +2662,10 @@
   %^  send-json  eyre-id  200
   %-  pairs:enjs:format
   :~  ['sent' (en-num:reg sent)]
+      ::  the ones this press tried and did not send: the mail service
+      ::  refused them, or three refusals in a row ended the press. They
+      ::  have no history line, so the next press tries them again.
+      ['failed' (en-num:reg (sub (lent batch) (min sent (lent batch))))]
       ['remaining' (en-num:reg left)]
       ['since' (en-num:reg (unm:chrono:userlib since))]
   ==
@@ -2705,8 +2727,10 @@
   =/  items=(list json)  (ga:reg jon 'checkins')
   ?:  (gth (lent items) 200)  (send-err eyre-id 400 'checkins: over 200 in one batch')
   ;<  regs=(list reg:reg)  bind:m  (load-regs 1)
-  ;<  out=[done=@ud bad=(list json)]  bind:m
+  ;<  got=[done=@ud bad=(list json)]  bind:m
     (apply-checkins regs u.want by items 0 ~)
+  ;<  out=[done=@ud bad=(list json)]  bind:m
+    (confirm-checkins u.want items got)
   %^  send-json  eyre-id  200
   (pairs:enjs:format ~[['applied' (en-num:reg done.out)] ['rejected' a+bad.out]])
 ::  +apply-checkins: one writer op per good item, one named refusal per
@@ -2746,6 +2770,8 @@
     %-  pairs:enjs:format
     :~  ['op' s+'checkin']  ['rid' s+rid]  ['i' (en-num:reg (need at))]
         ['day' s+day]  ['undo' b+(gb:reg it 'undo')]  ['by' s+by]
+        ['first' s+(gs:reg it 'first')]  ['last' s+(gs:reg it 'last')]
+        ['n' (en-num:reg (fall (gn:reg it 'n') 0))]
     ==
   ;<  err=(unit tang)  bind:m  (poke-writer pk)
   ::  a writer that would not take the poke is neither applied nor
@@ -2758,6 +2784,55 @@
       ==
     (apply-checkins regs day by t.items done [row bad])
   (apply-checkins regs day by t.items +(done) bad)
+::  +confirm-checkins: what the batch said it applied, read back. A
+::  writer poke is answered when the writer takes it, not when it has
+::  applied it, and the writer can still refuse a tap the route took
+::  (an edit removed the person in between). So a barrier goes to the
+::  writer after the batch; the writer takes one poke at a time, and its
+::  taking the barrier means every tap above has landed or been refused.
+::  Each check-in the route took is then read back from its registration,
+::  and one that did not land is answered as not taken, so the phone keeps
+::  it and sends it again, and a resend for someone who left is refused
+::  by name where the volunteer sees it.
+::
+++  confirm-checkins
+  |=  [day=@tas items=(list json) got=[done=@ud bad=(list json)]]
+  =/  m  (fiber:fiber:nexus ,[@ud (list json)])
+  ^-  form:m
+  ;<  *  bind:m  (poke-writer (pairs:enjs:format ~[['op' s+'barrier']]))
+  =/  refused=(set [@t @ud])
+    %-  silt
+    %+  turn  bad.got
+    |=(j=json [(gs:reg j 'rid') (fall (gn:reg j 'i') 0)])
+  (confirm-each day items refused done.got bad.got)
+++  confirm-each
+  |=  [day=@tas items=(list json) refused=(set [@t @ud]) done=@ud bad=(list json)]
+  =/  m  (fiber:fiber:nexus ,[@ud (list json)])
+  ^-  form:m
+  ?~  items  (pure:m [done bad])
+  =/  it=json  i.items
+  =/  rid=@t  (gs:reg it 'rid')
+  =/  idx=(unit @ud)  (gn:reg it 'i')
+  ?~  idx  (confirm-each day t.items refused done bad)
+  ?:  (~(has in refused) [rid u.idx])  (confirm-each day t.items refused done bad)
+  ::  only check-ins are read back. An undo the writer refused is for
+  ::  someone no longer in the party, and reading undos back as well
+  ::  could set two phones resending a tap and an undo at each other
+  ?:  (gb:reg it 'undo')  (confirm-each day t.items refused done bad)
+  ;<  cur=(unit reg:reg)  bind:m  (find-reg 1 ?:((ok-rid:reg rid) `@ta`rid %$))
+  =/  landed=?
+    ?~  cur  |
+    =/  at=(unit @ud)
+      (person-at:reg people.u.cur u.idx (gs:reg it 'first') (gs:reg it 'last') (fall (gn:reg it 'n') 0))
+    ?~  at  |
+    (~(has by checkins:(snag u.at people.u.cur)) day)
+  ?:  landed  (confirm-each day t.items refused done bad)
+  =/  row=json
+    %-  pairs:enjs:format
+    :~  ['rid' s+rid]  ['i' (en-num:reg u.idx)]
+        ['why' s+'the ship did not take this tap']
+    ==
+  (confirm-each day t.items refused ?:(=(0 done) 0 (dec done)) [row bad])
 ::  +do-checkin: one person checked in, or the check-in taken back. A
 ::  tap that changes nothing writes nothing: no grub, no ring entry, no
 ::  beacon, so two volunteers tapping the same name cost one write.
@@ -2775,7 +2850,12 @@
   ;<  now=@da  bind:m  get-time:io
   ;<  cur=(unit reg:reg)  bind:m  (find-reg 0 rid)
   ?~  cur  (refuse 'checkin' 'no such registration')
-  =/  next=(unit reg:reg)  (with-checkin:reg u.cur i u.want by now undo)
+  ::  the person again, against the record as the writer holds it: an
+  ::  edit may have moved people since the route resolved the tap
+  =/  at=(unit @ud)
+    (person-at:reg people.u.cur i (gs:reg jon 'first') (gs:reg jon 'last') (fall (gn:reg jon 'n') 0))
+  ?~  at  (refuse 'checkin' 'no such person')
+  =/  next=(unit reg:reg)  (with-checkin:reg u.cur u.at u.want by now undo)
   ?~  next  (refuse 'checkin' 'no such person')
   ?:  =(u.next u.cur)  (pure:m |)
   ;<  ~  bind:m  (write-reg 0 u.next |)

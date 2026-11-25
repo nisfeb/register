@@ -490,10 +490,18 @@
   function read(path) { return api(ADMIN + path); }
   // every mutating call names the organizer; the ship refuses one that
   // does not, and that refusal reopens the prompt
+  // the name as an HTTP header can carry it (see the check-in app): a
+  // name with letters past Latin-1 made every write fail in fetch
+  function headerName(a) {
+    var t = String(a || '');
+    try { t = t.normalize('NFD'); } catch (e) { }
+    t = t.replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '').trim();
+    return t || 'organizer';
+  }
   function write(path, body, method) {
     return api(ADMIN + path, {
       method: method || 'POST',
-      headers: { 'content-type': 'application/json', 'x-actor': actor },
+      headers: { 'content-type': 'application/json', 'x-actor': headerName(actor) },
       body: JSON.stringify(body === undefined ? {} : body)
     }).catch(function (e) {
       if (e.status === 400 && /actor/.test(String(e.message))) askActor();
@@ -505,7 +513,7 @@
   function writeApi(path, body) {
     return api(API + path, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-actor': actor },
+      headers: { 'content-type': 'application/json', 'x-actor': headerName(actor) },
       body: JSON.stringify(body === undefined ? {} : body)
     }).catch(function (e) {
       if (e.status === 400 && /actor/.test(String(e.message))) askActor();
@@ -1390,8 +1398,11 @@
     if (!m) return stub + 'Sends the link to every complete party expected ' + (label || 'today') + ', not yet checked in, that has not had one.';
     if (m.running) return stub + 'Sent ' + m.sent + ', ' + m.remaining + ' to go';
     if (m.error) return stub + m.error;
+    var failed = m.failed ? ' ' + m.failed + (m.failed === 1 ? ' link' : ' links') +
+      ' could not be sent: the mail service refused. Press the button again to retry them.' : '';
+    if (!m.sent && m.failed) return stub + 'No links went out.' + failed;
     if (!m.sent) return stub + 'Sent 0 links: everyone had one already, or is checked in.';
-    return stub + 'Sent ' + m.sent + (m.sent === 1 ? ' link.' : ' links.');
+    return stub + 'Sent ' + m.sent + (m.sent === 1 ? ' link.' : ' links.') + failed;
   }
   // the day's check-in, painted at once: the tick shows and the read
   // after the write confirms it
@@ -1431,30 +1442,39 @@
     });
   }
   // press the route until nothing remains, saying how far it is
+  var resendSince = {};
   function sendCheckinMail(day, again) {
-    var mine = { running: true, sent: 0, remaining: 0 };
+    var mine = { running: true, sent: 0, failed: 0, remaining: 0 };
     mailing = mine;
     var paint = function () { if (route().name === 'day') render(dayView()); };
     paint();
     // a resend keeps `again` on every press and sends back the moment
     // the ship started it, so each press moves on to parties not yet
     // resent; turning `again` off after the first press stopped a
-    // resend at the first hundred
-    var since = null;
+    // resend at the first hundred. The moment is kept per day across
+    // presses of the button, so a resend cut off by an error and
+    // pressed again picks up where it stopped instead of starting over.
+    var since = again ? (resendSince[day] || null) : null;
     function once() {
       var body = { day: day, again: again };
       if (again && since !== null) body.since = since;
       return write('/checkin-mail', body).then(function (d) {
-        mine.sent += Number(d.sent) || 0;
+        var sentNow = Number(d.sent) || 0, failedNow = Number(d.failed) || 0;
+        mine.sent += sentNow;
+        mine.failed = failedNow;
         mine.remaining = Number(d.remaining) || 0;
-        if (again && since === null) since = d.since;
+        if (again && since === null) { since = d.since; resendSince[day] = since; }
         var said = document.getElementById('mail-said');
         if (said) said.textContent = mailSaid();
         // the writer takes a moment to land the last party's line, so
         // the next press waits for it rather than sending it twice
-        if (mine.remaining > 0 && (Number(d.sent) || 0) > 0) {
+        // on while sends are going out: more remain, or some failed and
+        // the service is still taking others. A press that sent nothing
+        // stops, and the failures are shown.
+        if (sentNow > 0 && (mine.remaining > 0 || failedNow > 0)) {
           return new Promise(function (r) { setTimeout(r, 1500); }).then(once);
         }
+        if (again && !mine.remaining && !failedNow) delete resendSince[day];
         mine.running = false;
         dayFilters.again = false; dayFilters.force = false;
         paint();

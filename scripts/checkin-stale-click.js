@@ -78,6 +78,48 @@ async function main() {
   check('the queue holds nothing waiting', await p.evaluate(() =>
     JSON.parse(localStorage.getItem('register.queue') || '[]').filter((q) => !q.why).length === 0));
 
+  // the same refusal online, with no roster read to cover it: the phone
+  // has painted the tap, the ship refuses it, and nothing refetches
+  const row2 = (await get('/checkin/roster?day=fri')).rows.find((r) => r.rid !== rid && r.status === 'complete' &&
+    r.wristband.ok && r.people.length === 3 && !r.people.some((x) => x.checked));
+  const rid2 = row2.rid;
+  const q = await browser.newPage();
+  await q.setCookie({ name: cn, value: cr.join('='), domain: new URL(BASE).hostname, path: '/' });
+  q.on('pageerror', (e) => { console.log('  PAGE ERROR ' + e.message); fails++; });
+  await q.goto(BASE + '/apps/register/checkin', { waitUntil: 'networkidle2' });
+  await q.evaluate(() => { localStorage.removeItem('register.queue'); localStorage.setItem('register.actor', 'StaleClick'); });
+  await q.reload({ waitUntil: 'networkidle2' });
+  await q.click('button[data-day="fri"]');
+  await q.waitForSelector('.party', { timeout: 30000 });
+  // from here the phone reads no roster and no beacon: only taps go up
+  await q.setRequestInterception(true);
+  q.on('request', (r) => {
+    const u = r.url();
+    if (u.includes('/checkin/roster') || u.includes('/grubbery/api/keep/')) return r.abort();
+    r.continue();
+  });
+  const reg2 = await get('/admin/reg/' + rid2);
+  const input2 = { track: reg2.track, contact: reg2.contact, org: reg2.org, why: reg2.why,
+    assistance: reg2.assistance, together: reg2.together,
+    people: reg2.people.filter((_, i) => i !== 1).map((x) => { const y = Object.assign({}, x); delete y.checkins; return y; }) };
+  await fetch(API + '/admin/reg/' + rid2, { method: 'POST', headers: hdr, body: JSON.stringify({ op: 'edit', input: input2 }) });
+  await q.type('#q', rid2);
+  await sleep(300);
+  await q.click('[data-tap="' + rid2 + ':1"]');
+  const end2 = Date.now() + 40000;
+  let stuck2 = '';
+  while (Date.now() < end2) {
+    stuck2 = await q.evaluate(() => { const e = document.querySelector('.stuck'); return e ? e.textContent : ''; });
+    if (stuck2) break;
+    await sleep(500);
+  }
+  check('online, with no roster read after it, the refused tap says so', /^Not checked in/.test(stuck2), stuck2);
+  const shown2 = await q.evaluate((r) => {
+    const party = Array.from(document.querySelectorAll('.party')).find((x) => x.textContent.includes(r));
+    return party ? Array.from(party.querySelectorAll('.tap')).map((b) => b.className + '|' + b.textContent) : [];
+  }, rid2);
+  check('and no button shows a check-in that never landed', shown2.every((t) => !/\bon\b/.test(t.split('|')[0])), shown2.join(' ; '));
+
   await browser.close();
   console.log(fails ? 'FAIL (' + fails + ')' : 'ALL OK');
   process.exit(fails ? 1 : 0);

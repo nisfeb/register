@@ -153,6 +153,32 @@ ok('a batch is at most the batch size, oldest first',
     parked[0].why === 'no day' && !parked[1].why && page.waiting(parked) === 1);
 }
 
+// ---- the third review ----
+{
+  const rws = [{ rid: 'aaa', people: [{ i: 0, first: 'A', last: 'L', checked: false }] }];
+  page.mergeRoster(rws, [], [{ rid: 'aaa', i: 0, day: 'fri', undo: false }], 'fri');
+  ok('painting a queued tap leaves the fetched rows as the ship sent them', rws[0].people[0].checked === false);
+  const again = page.mergeRoster(rws, [], [{ rid: 'aaa', i: 0, day: 'fri', undo: false, why: 'no such person' }], 'fri');
+  ok('so a tap refused after it was painted shows as not checked in', again[0].people[0].checked === false);
+  ok('a name with letters past Latin-1 goes in a header as plain letters', page.headerName('Nguyễn Thị') === 'Nguyen Thi');
+  ok('accents keep their base letter', page.headerName('José Müller') === 'Jose Muller');
+  ok('a name that is all emoji still sends a name', page.headerName('🙏') === 'volunteer');
+  const seen = {};
+  const mine = [{ rid: 'a', i: 0, day: 'fri', at: '1' }];
+  mine.forEach((q) => { seen[page.tapKey(q)] = true; });
+  const disk = [{ rid: 'b', i: 0, day: 'fri', at: '2' }];
+  const both = page.adoptForeign(mine, disk, seen);
+  ok('a tap the other tab stored is taken in', both.length === 2 && both.some((q) => q.rid === 'b'));
+  seen[page.tapKey(disk[0])] = true;
+  ok('a tap this tab already held (and sent) is not taken back in', page.adoptForeign(mine, disk, seen).length === 1);
+  const newer = page.adoptForeign([{ rid: 'a', i: 0, day: 'fri', at: '1' }], [{ rid: 'a', i: 0, day: 'fri', at: '5', undo: true }], {});
+  ok('the later of two taps for one person wins', newer.length === 1 && newer[0].undo === true);
+  const older = page.adoptForeign([{ rid: 'a', i: 0, day: 'fri', at: '5', undo: true }], [{ rid: 'a', i: 0, day: 'fri', at: '1' }], {});
+  ok('and an older one from the other tab does not replace it', older.length === 1 && older[0].undo === true);
+  ok('a half-typed count is not a count', page.countValue('count', '1e') === undefined);
+  ok('nor a negative or a fraction', page.countValue('count', '-3') === undefined && page.countValue('count', '2.5') === undefined);
+}
+
 // ---- a counts box ----
 ok('a count is a number', page.countValue('count', '120') === 120);
 ok('an emptied count is no count, not zero', page.countValue('count', '') === null && page.countValue('count', '  ') === null);

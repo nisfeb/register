@@ -73,7 +73,7 @@ for r in rows:
     if l and " " not in l and sum(l.lower() in h for h in H)==1: print(r["rid"], l); break')
 step checkin-click        timeout 300 node scripts/checkin-click.js $RID "$LAST"
 step admin-click          timeout 420 node scripts/admin-click.js $RID
-for t in checkin-day-click checkin-hang-click checkin-login-click checkin-stale-click counts-race-click; do
+for t in checkin-day-click checkin-hang-click checkin-login-click checkin-stale-click checkin-tabs-click counts-race-click; do
   step $t timeout 300 node scripts/$t.js
 done
 step checkin-edit-probe   timeout 300 python3 scripts/checkin-edit-probe.py $REG_BASE $J

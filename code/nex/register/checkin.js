@@ -97,6 +97,37 @@
       return Object.assign({}, q, { why: 'no day' });
     });
   }
+  // the name as an HTTP header can carry it: Latin letters keep their
+  // base letter, anything a header cannot hold is dropped. A name with
+  // letters past Latin-1 made fetch throw, and every tap sat unsent.
+  function headerName(a) {
+    var t = String(a || '');
+    try { t = t.normalize('NFD'); } catch (e) { }
+    t = t.replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '').trim();
+    return t || 'volunteer';
+  }
+  // the queue as two tabs of the app on one phone share it. Each keeps
+  // its own copy; a tap the other tab stored, that this one has never
+  // held, is taken in, so neither overwrites the other's taps. One this
+  // tab has held already (sent, or replaced by a later tap) is not.
+  function tapKey(q) { return q.rid + ':' + q.i + ':' + q.day + '@' + (q.at || ''); }
+  function adoptForeign(mine, disk, seen) {
+    var out = (mine || []).slice();
+    (disk || []).forEach(function (d) {
+      if (seen[tapKey(d)]) return;
+      if (out.some(function (q) { return sameTap(q, d) && String(q.at || '') >= String(d.at || ''); })) return;
+      out = queueAdd(out, d);
+    });
+    return out;
+  }
+  // a count box: a whole number, or empty for no count. Anything else
+  // (a half-typed 1e, a minus) is not a count and changes nothing.
+  function countValue(field, raw) {
+    if (field !== 'count') return raw;
+    var t = String(raw === undefined || raw === null ? '' : raw).trim();
+    if (t === '') return null;
+    return /^\d+$/.test(t) ? Number(t) : undefined;
+  }
   // what a volunteer reads under a tap the ship refused
   function stuckText(why) {
     if (why === 'no such person') {
@@ -117,6 +148,9 @@
   // the ship has already taken, then the queue on top, so an undo made
   // a moment ago outranks the tap it takes back.
   function mergeRoster(rows, recent, queue, day) {
+    // a copy: the fetched rows stay as the ship sent them, so a tap
+    // painted before the ship refused it never lingers in them
+    rows = JSON.parse(JSON.stringify(rows || []));
     var by = {};
     (rows || []).forEach(function (r) { by[r.rid] = r; });
     (recent || []).concat(queue || []).forEach(function (q) {
@@ -177,13 +211,6 @@
   // a typed day goes up only once Save has armed it. Typing alone sends
   // nothing, so the fifteen second drain cannot write a half typed day
   // over what the ship already has.
-  // what a counts box holds: a number for a count, the text for the
-  // rest. An emptied count is no count (null), never zero.
-  function countValue(field, raw) {
-    if (field !== 'count') return raw;
-    var t = String(raw === undefined || raw === null ? '' : raw).trim();
-    return t === '' ? null : Number(t);
-  }
   function countsToSend(pending, armed) {
     if (!armed || !pending) return null;
     return Object.keys(pending).length ? pending : null;
@@ -197,7 +224,7 @@
   }
 
   var pure = {
-    esc: esc, stuckText: stuckText, parkDayless: parkDayless, dayFor: dayFor, bandText: bandText, queueAdd: queueAdd, drained: drained, nextBatch: nextBatch, tapBody: tapBody,
+    esc: esc, stuckText: stuckText, headerName: headerName, adoptForeign: adoptForeign, tapKey: tapKey, parkDayless: parkDayless, dayFor: dayFor, bandText: bandText, queueAdd: queueAdd, drained: drained, nextBatch: nextBatch, tapBody: tapBody,
     mergeRoster: mergeRoster, matches: matches, tags: tags, actsFor: actsFor, waiting: waiting,
     clock: clock, localDay: localDay, openDay: openDay, mergeCounts: mergeCounts,
     countsToSend: countsToSend, countValue: countValue, syncText: syncText, RETRY: RETRY,
@@ -250,7 +277,22 @@
     recent = recent.filter(function (r) { return now - r.done < 20000; });
     return recent;
   }
-  function store(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
+  function store(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+  // every queue the tab has held, by tap, so a tap it sent is not taken
+  // back in from what another tab stored
+  var seenTaps = {};
+  function saveQueue() {
+    queue.forEach(function (q) { seenTaps[tapKey(q)] = true; });
+    queue = adoptForeign(queue, recall(QKEY, []), seenTaps);
+    queue.forEach(function (q) { seenTaps[tapKey(q)] = true; });
+    if (!store(QKEY, queue)) {
+      // the phone would not keep the queue: the taps live only in this
+      // tab until they go up. Say so plainly and keep saying it.
+      say('This phone could not save the taps. Keep this screen open with signal until the badge reads Synced.');
+      return false;
+    }
+    return true;
+  }
   function recall(k, dflt) {
     try {
       var raw = localStorage.getItem(k);
@@ -298,7 +340,9 @@
       timer = setTimeout(function () { ctl.abort(); }, TIMEOUT);
     }
     var clear = function () { if (timer) clearTimeout(timer); };
-    return track(fetch(url, o).then(function (r) {
+    var sent;
+    try { sent = fetch(url, o); } catch (e) { sent = Promise.reject(e); }
+    return track(sent.then(function (r) {
       return r.text().then(function (txt) {
         clear();
         var d = {};
@@ -319,14 +363,14 @@
   function post(path, body) {
     return api(API + path, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-actor': actor },
+      headers: { 'content-type': 'application/json', 'x-actor': headerName(actor) },
       body: JSON.stringify(body)
     });
   }
   function put(path, body) {
     return api(API + path, {
       method: 'PUT',
-      headers: { 'content-type': 'application/json', 'x-actor': actor },
+      headers: { 'content-type': 'application/json', 'x-actor': headerName(actor) },
       body: JSON.stringify(body)
     });
   }
@@ -382,7 +426,7 @@
   }
 
   // ---- the roster ----
-  function rosterKey() { return 'register.roster.' + day; }
+  function rosterKey(d) { return 'register.roster.' + (d || day); }
   function countsKey(d) { return 'register.counts.' + (d || day); }
   function armKey(d) { return 'register.counts.' + (d || day) + '.save'; }
   // the day's counts as the screen shows them: what the ship holds for
@@ -392,7 +436,8 @@
   }
   function paintStored() {
     var kept = recall(rosterKey(), null);
-    if (!kept) return;
+    // nothing kept for this day: an empty day, never the last day's rows
+    if (!kept) { rows = []; plan = {}; counts = {}; firstLoad = true; return; }
     firstLoad = false;
     rows = kept.rows || [];
     plan = kept.planned || {};
@@ -407,14 +452,22 @@
       return Promise.resolve();
     }
     rosterAt = Date.now();
-    var out = rosterOut = api(API + '/checkin/roster?day=' + day);
+    var asked = day;
+    var out = rosterOut = api(API + '/checkin/roster?day=' + asked);
     var done = function () { if (rosterOut === out) rosterOut = null; };
     out.then(done, done);
     return out.then(function (d) {
-      rows = d.rows || [];
-      plan = d.planned || {};
-      counts = d.counts || {};
-      store(rosterKey(), { rows: rows, planned: plan, counts: counts, at: new Date().toISOString() });
+      // kept under the day it was asked for, and shown only if that is
+      // still the day on screen: a slow Friday answer must not paint
+      // Friday's ticks under Saturday
+      var keep = { rows: d.rows || [], planned: d.planned || {}, counts: d.counts || {}, at: new Date().toISOString() };
+      if (d.day && d.day !== asked) return;
+      store(rosterKey(asked), keep);
+      if (countsDoc) countsDoc[asked] = keep.counts;
+      if (day !== asked) return;
+      rows = keep.rows;
+      plan = keep.planned;
+      counts = keep.counts;
       firstLoad = false;
       refreshed();
     }).catch(function (e) {
@@ -472,7 +525,7 @@
       first: who ? who.first : '', last: who ? who.last : '',
       n: row ? (row.people || []).length : 0
     });
-    store(QKEY, queue);
+    saveQueue();
     render();
     drain();
   }
@@ -487,7 +540,9 @@
     return inFlight;
   }
   function drainBatch() {
-    return drainCounts().then(function () {
+    // counts go up on their own: a slow counts save never holds up taps
+    drainCounts();
+    return Promise.resolve().then(function () {
       // a tap with no day the ship knows is parked with its reason
       queue = parkDayless(queue);
       var next = nextBatch(queue, BATCH);
@@ -511,8 +566,11 @@
         recent = fresh().concat(batch.filter(function (q) {
           return !stuck[q.rid + ':' + q.i];
         }).map(function (q) { return Object.assign({}, q, { done: Date.now() }); }));
-        queue = kept.concat(queue.filter(function (q) { return batch.indexOf(q) < 0; }));
-        store(QKEY, queue);
+        // a refused tap is kept only while no newer tap for that person
+        // has been made since it went up
+        var rest = queue.filter(function (q) { return batch.indexOf(q) < 0; });
+        queue = kept.filter(function (k) { return !rest.some(function (q) { return sameTap(q, k); }); }).concat(rest);
+        saveQueue();
         syncFail = '';
         drawSync();
         refreshed();
@@ -560,7 +618,8 @@
       });
     });
     return chain.catch(function (e) {
-      if (loggedOut(e)) locked();
+      if (loggedOut(e)) return locked();
+      say('Counts not saved yet: ' + e.message + '. They stay on this phone and go up with the next Save.');
     });
   }
 
@@ -719,7 +778,7 @@
             });
           }
         });
-        store(QKEY, queue);
+        saveQueue();
         render();
         // the paint above replaced the button, so the spinner goes on
         // the one now on screen, and it holds until the taps are up
@@ -740,7 +799,9 @@
     var pending = recall(countsKey(), null) || {};
     var parts = k.split('.');
     pending[parts[0]] = Object.assign({}, pending[parts[0]]);
-    pending[parts[0]][parts[1]] = countValue(parts[1], ev.target.value);
+    var v = countValue(parts[1], ev.target.value);
+    if (v === undefined) return;
+    pending[parts[0]][parts[1]] = v;
     store(countsKey(), pending);
     drawSync();
   });
@@ -795,6 +856,27 @@
 
   // ---- boot ----
   queue = recall(QKEY, []) || [];
+  queue.forEach(function (q) { seenTaps[tapKey(q)] = true; });
+  // another tab of the app on this phone stored taps: take them in
+  window.addEventListener('storage', function (ev) {
+    if (ev.key !== QKEY) return;
+    queue = adoptForeign(queue, recall(QKEY, []), seenTaps);
+    queue.forEach(function (q) { seenTaps[tapKey(q)] = true; });
+    render();
+    drawSync();
+  });
+  // once, on the first open of version 21: a counts draft version 20
+  // left that was never saved held the whole day as it was shown, not
+  // just what was typed, and saving it now would send old figures over
+  // newer ones. A draft that was saved (armed) is kept and goes up.
+  if (recall('register.version', 0) < 21) {
+    DAYS.forEach(function (dd) {
+      if (!recall('register.counts.' + dd[0] + '.save', false)) {
+        try { localStorage.removeItem('register.counts.' + dd[0]); } catch (e) { }
+      }
+    });
+    store('register.version', 21);
+  }
   day = openDay(null, localDay(new Date()), recall('register.day', null));
   drawActor();
   paintStored();
